@@ -1,0 +1,7 @@
+@PACKAGE_INIT@
+
+# cutenes-core has no dependencies (constitution Principle II), so consuming
+# the exported targets is all a find_package() caller needs.
+include("${CMAKE_CURRENT_LIST_DIR}/cutenes-core-targets.cmake")
+
+check_required_components(cutenes-core)

@@ -33,13 +33,13 @@ independently testable increment. Paths follow plan.md's source tree.
 
 **Purpose**: Build system, public API skeleton, CI, licensing, test-ROM access.
 
-- [ ] T001 Create root `CMakeLists.txt`: `cmake_minimum_required(3.21)`, `project(cutenes VERSION 0.1.0 LANGUAGES CXX)`, `add_subdirectory(core)`, guarded `tests/` behind `CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR`
-- [ ] T002 Create `core/CMakeLists.txt`: target `cutenes-core` + alias `cutenes-core::cutenes-core`, `target_compile_features(cutenes-core PUBLIC cxx_std_20)`, PRIVATE flags `-ffp-contract=off` (GCC/Clang) / `/fp:strict` (MSVC), `-Wconversion -Werror`, `install(TARGETS ... EXPORT)` + `install(EXPORT)` + versioned package config (plan.md, research D6)
-- [ ] T003 [P] Create public header skeleton mirroring contracts/core-api.md: `core/include/cutenes/{cutenes.hpp, machine.hpp, cartridge.hpp, controller.hpp, state_view.hpp, media.hpp, save_state.hpp}` — types and signatures only, no implementation
-- [ ] T004 [P] Create `tests/CMakeLists.txt`: GoogleTest via pinned FetchContent (`gtest_force_shared_crt ON`), `enable_testing()`, `gtest_discover_tests()`, ctest label scheme `unit|tier1|tier2`
-- [ ] T005 [P] Add `LICENSE` (MIT, copyright Timothy Justus), `third_party/NOTICE.md` (per-item provenance template), `README.md` stub linking constitution and specs
-- [ ] T006 [P] Add test-ROM submodule `tests/roms` -> `christopherpow/nes-test-roms` (pinned commit) via `.gitmodules`; vendor zlib-licensed Holy Mapperel ROMs + LICENSE copy under `third_party/holy-mapperel/` (research D11)
-- [ ] T007 [P] Create `.github/workflows/build.yml`: 3-OS matrix (ubuntu/macos/windows-latest, Release+Debug, Ninja, ccache/sccache via `CMAKE_CXX_COMPILER_LAUNCHER`), submodule checkout, `ctest --output-on-failure`, dedicated Linux UBSan job `-fsanitize=undefined -fno-sanitize-recover=all` (research D12)
+- [x] T001 Create root `CMakeLists.txt`: `cmake_minimum_required(3.21)`, `project(cutenes VERSION 0.1.0 LANGUAGES CXX)`, `add_subdirectory(core)`, guarded `tests/` behind `CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR`
+- [x] T002 Create `core/CMakeLists.txt`: target `cutenes-core` + alias `cutenes-core::cutenes-core`, `target_compile_features(cutenes-core PUBLIC cxx_std_20)`, PRIVATE flags `-ffp-contract=off` (GCC/Clang) / `/fp:strict` (MSVC), `-Wconversion -Werror`, `install(TARGETS ... EXPORT)` + `install(EXPORT)` + versioned package config (plan.md, research D6)
+- [x] T003 [P] Create public header skeleton mirroring contracts/core-api.md: `core/include/cutenes/{cutenes.hpp, machine.hpp, cartridge.hpp, controller.hpp, state_view.hpp, media.hpp, save_state.hpp}` — types and signatures only, no implementation
+- [x] T004 [P] Create `tests/CMakeLists.txt`: GoogleTest via pinned FetchContent (`gtest_force_shared_crt ON`), `enable_testing()`, `gtest_discover_tests()`, ctest label scheme `unit|tier1|tier2`
+- [x] T005 [P] Add `LICENSE` (MIT, copyright Timothy Justus), `third_party/NOTICE.md` (per-item provenance template), `README.md` stub linking constitution and specs
+- [x] T006 [P] Add test-ROM submodule `tests/roms` -> `christopherpow/nes-test-roms` (pinned commit) via `.gitmodules`; vendor zlib-licensed Holy Mapperel ROMs + LICENSE copy under `third_party/holy-mapperel/` (research D11)
+- [x] T007 [P] Create `.github/workflows/build.yml`: 3-OS matrix (ubuntu/macos/windows-latest, Release+Debug, Ninja, ccache/sccache via `CMAKE_CXX_COMPILER_LAUNCHER`), submodule checkout, `ctest --output-on-failure`, dedicated Linux UBSan job `-fsanitize=undefined -fno-sanitize-recover=all` (research D12)
 
 ---
 

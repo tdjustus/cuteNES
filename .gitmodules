@@ -1,0 +1,4 @@
+[submodule "tests/roms"]
+	path = tests/roms
+	url = https://github.com/christopherpow/nes-test-roms
+	shallow = true

@@ -1,0 +1,88 @@
+#pragma once
+
+#include <cutenes/cartridge.hpp>
+#include <cutenes/controller.hpp>
+#include <cutenes/media.hpp>
+#include <cutenes/save_state.hpp>
+#include <cutenes/state_view.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+
+namespace cutenes {
+
+enum class RunState : std::uint8_t { NeedsRom, Paused, Running };
+
+struct MachineConfig {
+    // 44100 | 48000 | 96000; growth by appended fields only from v1.1 on
+    // (contracts/core-api.md).
+    std::uint32_t audioSampleRate = 48000;
+};
+
+// The single emulation session — aggregate root of the core (data-model.md).
+// Exception-free, single-threaded, no I/O, no wall-clock reads; identical
+// operation sequences on identical state produce byte-identical output
+// (spec FR-012).
+class Machine {
+public:
+    explicit Machine(const MachineConfig& config = {});
+    ~Machine();
+
+    Machine(Machine&&) noexcept;
+    Machine& operator=(Machine&&) noexcept;
+
+    Machine(const Machine&) = delete;
+    Machine& operator=(const Machine&) = delete;
+
+    // --- Cartridge (FR-001) ---------------------------------------------
+    LoadResult loadCartridge(const std::uint8_t* data, std::size_t size);
+    void ejectCartridge();
+    const CartridgeInfo& cartridgeInfo() const;
+
+    // --- Run control (FR-008) -------------------------------------------
+    void powerOn();                          // cold boot: P=$24, S=$FD,
+                                             // 7-cycle reset (research D4)
+    void reset();                            // reset-button behavior
+    void runFrames(std::uint32_t frames);    // blocking; sinks n frames
+    void frameAdvance();                     // exactly one frame
+    void stepInstruction();                  // one CPU instruction; dependent
+                                             // components advance to the
+                                             // next instruction boundary
+    void pause();
+    void resume();
+    RunState runState() const;
+
+    // --- Input (FR-007) --------------------------------------------------
+    void setController(Port port, ButtonSet buttons); // full replace
+    ButtonSet controller(Port port) const;
+
+    // --- Media sinks (FR-009, FR-010) -------------------------------------
+    void setVideoSink(IVideoSink* sink);
+    void setAudioSink(IAudioSink* sink);
+
+    // --- Observation & modification (FR-016) ------------------------------
+    CpuState cpu() const;
+    void readMemory(std::uint16_t addr, std::size_t len,
+                    std::uint8_t* dst) const;
+    WriteError writeMemory(std::uint16_t addr, const std::uint8_t* src,
+                           std::size_t len);
+    WriteError writeCpuRegister(std::uint16_t addr, std::uint8_t value);
+
+    // --- Save states (FR-011) and SRAM (FR-006 battery) -------------------
+    SaveStateBlob captureState(); // any instant, mid-frame included
+    LoadStateError loadState(const std::uint8_t* data, std::size_t size);
+    SramRange sram() const;       // empty view when cartridge has no battery
+    void loadSram(const std::uint8_t* data, std::size_t size); // pad/trim
+
+    // --- Region & counters -------------------------------------------------
+    Region region() const;
+    std::uint64_t frameCounter() const;
+    std::uint64_t masterCycle() const; // the sole time source
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+};
+
+} // namespace cutenes
