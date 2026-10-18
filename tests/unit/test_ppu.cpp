@@ -23,14 +23,14 @@ struct PpuHarness {
     cutenes::Scheduler scheduler{cutenes::regionProfile(cutenes::Region::Ntsc)};
     cutenes::Cartridge cart;
     cutenes::Ppu ppu{cutenes::regionProfile(cutenes::Region::Ntsc), scheduler};
-    int nmiCount = 0;
 
     explicit PpuHarness(bool vertical = false)
     {
         const auto rom = makeNrom(vertical);
         (void)cutenes::Cartridge::load(rom.data(), rom.size(), cart);
         ppu.attachCartridge(&cart);
-        ppu.setNmiCallback([this] { ++nmiCount; });
+        // NMI is now a sampled level line (nmiLine()); the
+        // edge detection lives in the CPU.
         ppu.reset(/*cold=*/true);
         scheduler.reset();
     }
@@ -96,22 +96,18 @@ TEST(Ppu, VblankFlagAndNmiAtLine241Dot1)
     PpuHarness h;
     h.scheduler.advanceMaster(29700 * 12); // clear the write-ignore window
     h.ppu.cpuWrite(0x2000, 0x80); // enable NMI
-    EXPECT_EQ(h.nmiCount, 0);
+    EXPECT_FALSE(h.ppu.nmiLine());
 
-    // Run THROUGH scanline 241, dot 1 of frame 2 (one extra dot so the
-    // stepDot that processes dot 1 has executed).
+    // Run THROUGH scanline 241, dot 1 of frame 2 — but past the 2-dot
+    // read-suppression race window so the flag reads back set.
     const std::uint64_t targetTicks =
-        (kDotsPerFrame + 241 * kDotsPerLine + 2) * kDot;
+        (kDotsPerFrame + 241 * kDotsPerLine + 4) * kDot;
     h.scheduler.advanceMaster(targetTicks - h.scheduler.now());
     h.ppu.runTo(h.scheduler.now());
     EXPECT_NE(h.ppu.cpuRead(0x2002) & 0x80, 0);
-    // (nmiCount checked below: the run crossed two vblinks)
+    EXPECT_FALSE(h.ppu.nmiLine()); // the read just cleared the flag
 
-    // The run crossed two frames' vblank lines (frame 1 was still unstepped
-    // when NMI was enabled), so exactly two NMI edges fired.
-    EXPECT_EQ(h.nmiCount, 2);
-
-    // Reading $2002 cleared the flag.
+    // Reading again still shows clear.
     EXPECT_EQ(h.ppu.cpuRead(0x2002) & 0x80, 0);
 }
 

@@ -58,8 +58,9 @@ public:
 private:
     std::uint8_t rd(std::uint16_t addr);
     void wr(std::uint16_t addr, std::uint8_t value);
-    void tickHalf();
-    void tick() { tickHalf(); tickHalf(); }
+    void tickHalf(bool phi2);
+    void sampleNmi();
+    void tick() { tickHalf(false); tickHalf(false); sampleNmi(); }
     std::uint8_t fetch() { return rd(m_pc++); }
 
     void push(std::uint8_t value);
@@ -113,6 +114,7 @@ private:
     bool m_nmiPending = false;
     bool m_irqLine = false;
     bool m_jammed = false;
+    bool m_nmiWasHigh = false;
     std::function<void(const CpuState&)> m_trace;
 };
 

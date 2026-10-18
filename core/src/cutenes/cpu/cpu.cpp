@@ -12,6 +12,7 @@
 #include <utility>
 
 namespace cutenes {
+
 namespace {
 
 constexpr auto Imp = Cpu::Mode::Imp;
@@ -308,7 +309,7 @@ Cpu::Cpu(Bus& bus, Scheduler& scheduler, Tickable* ppu, Tickable* apu)
 {
 }
 
-void Cpu::tickHalf()
+void Cpu::tickHalf(bool /*phi2*/)
 {
     m_sched.advanceMaster(m_sched.cpuCycleToMaster(1) / 2);
     const std::uint64_t now = m_sched.now();
@@ -318,21 +319,46 @@ void Cpu::tickHalf()
     if (m_apu != nullptr) {
         m_apu->runTo(now);
     }
+    (void)0;
+}
+
+void Cpu::sampleNmi()
+{
+    if (m_ppu == nullptr) {
+        return;
+    }
+    // The pin is sampled right after the bus access (during phi2), before
+    // the cycle's second half advances time — a $2000 write that enables
+    // NMI one cycle before the flag clear still raises the line in time
+    // (07-nmi_on_timing rows 3-4).
+    const bool line = m_ppu->nmiLine();
+    if (line && !m_nmiWasHigh) {
+        m_nmiPending = true;
+    }
+    m_nmiWasHigh = line;
 }
 
 std::uint8_t Cpu::rd(std::uint16_t addr)
 {
-    tickHalf();
+    tickHalf(false);
     const std::uint8_t value = m_bus.read(addr);
-    tickHalf();
+    if ((addr & 0x3FFF) == 0x2002 && m_ppu != nullptr) {
+        // A $2002 read in the suppression window cancels the frame's NMI.
+        if (m_ppu->consumeNmiKill()) {
+            m_nmiPending = false;
+        }
+    }
+    sampleNmi();
+    tickHalf(false);
     return value;
 }
 
 void Cpu::wr(std::uint16_t addr, std::uint8_t value)
 {
-    tickHalf();
+    tickHalf(false);
     m_bus.write(addr, value);
-    tickHalf();
+    sampleNmi();
+    tickHalf(false);
 }
 
 void Cpu::push(std::uint8_t value)
@@ -1009,34 +1035,75 @@ void Cpu::step()
         m_a &= fetch();
         m_a = lsr(m_a);
         break;
-    case 0x6B: { // ARR
-        m_a &= fetch();
-        m_a = ror(m_a);
-        m_p = static_cast<std::uint8_t>(
-            (m_p & ~kV) | ((((m_a >> 6) ^ (m_a >> 5)) & 1) << 6));
+    case 0x6B: { // ARR: AND #imm then ROR, but C/V come from the AND result:
+        // C = bit 7 of (A & imm) [i.e. bit 6 of the final value];
+        // V = bit 6 ^ bit 5 of the final value (nesdev unofficial opcodes).
+        const std::uint8_t anded = static_cast<std::uint8_t>(
+            m_a & fetch());
+        const std::uint8_t carryIn = static_cast<std::uint8_t>(m_p & kC);
+        m_a = static_cast<std::uint8_t>((anded >> 1) | (carryIn << 7));
+        m_p = static_cast<std::uint8_t>((m_p & ~(kC | kV))
+            | ((anded >> 7) & 1)
+            | ((((m_a >> 6) ^ (m_a >> 5)) & 1) << 6));
+        setNZ(m_a);
         break;
     }
 
     // --- Unstable stores --------------------------------------------------------
-    case 0x93: case 0x9F: { // SHA
-        const std::uint16_t a = addrIzyWrite();
-        wr(a, static_cast<std::uint8_t>(m_a & m_x & ((a >> 8) + 1)));
+    case 0x93: case 0x9F: { // SHA: A&X&(H+1); cross: high byte AND A&X
+        const std::uint16_t a0 = op == 0x93 ? addrIzyWrite() : addrAbyWrite();
+        const std::uint8_t h1 = static_cast<std::uint8_t>((a0 >> 8) + 1);
+        const std::uint8_t ax = static_cast<std::uint8_t>(m_a & m_x);
+        const std::uint8_t value = static_cast<std::uint8_t>(ax & h1);
+        const bool crossed =
+            ((a0 ^ (a0 + (op == 0x93 ? m_y : 0))) & 0xFF00) != 0;
+        // addrIzyWrite/addrAbyWrite already resolved the full effective
+        // address; only the page-cross corruption differs from plain stores.
+        const std::uint16_t ea = crossed
+            ? static_cast<std::uint16_t>(
+                  (static_cast<std::uint16_t>(h1 & ax) << 8) | (a0 & 0xFF))
+            : a0;
+        wr(ea, value);
         break;
     }
-    case 0x9B: { // SHS
-        const std::uint16_t a = addrAbyWrite();
+    case 0x9B: { // SHS/TAS: S = A&X, then SHA-like store
+        const std::uint16_t a0 = addrAbyWrite();
         m_s = static_cast<std::uint8_t>(m_a & m_x);
-        wr(a, static_cast<std::uint8_t>(m_s & ((a >> 8) + 1)));
+        const std::uint8_t h1 = static_cast<std::uint8_t>((a0 >> 8) + 1);
+        wr(a0, static_cast<std::uint8_t>(m_s & h1));
         break;
     }
-    case 0x9C: { // SHY
-        const std::uint16_t a = addrAbxWrite();
-        wr(a, static_cast<std::uint8_t>(m_y & ((a >> 8) + 1)));
+    case 0x9C: { // SHY abs,X (nesdev: value always Y&(H+1); on cross the
+        // computed high byte is ANDed with Y)
+        const std::uint16_t lo = fetch();
+        const std::uint16_t hi = fetch();
+        const std::uint16_t base = static_cast<std::uint16_t>(lo | (hi << 8));
+        (void)rd(static_cast<std::uint16_t>(
+            (base & 0xFF00) | ((lo + m_x) & 0xFF)));
+        const std::uint8_t h1 = static_cast<std::uint8_t>((base >> 8) + 1);
+        const std::uint8_t value = static_cast<std::uint8_t>(m_y & h1);
+        const std::uint16_t ea = (((base ^ (base + m_x)) & 0xFF00) != 0)
+            ? static_cast<std::uint16_t>(
+                  (static_cast<std::uint16_t>(h1 & m_y) << 8)
+                  | ((lo + m_x) & 0xFF))
+            : static_cast<std::uint16_t>(base + m_x);
+        wr(ea, value);
         break;
     }
-    case 0x9E: { // SHX
-        const std::uint16_t a = addrAbyWrite();
-        wr(a, static_cast<std::uint8_t>(m_x & ((a >> 8) + 1)));
+    case 0x9E: { // SHX abs,Y: mirror of SHY with X/Y swapped
+        const std::uint16_t lo = fetch();
+        const std::uint16_t hi = fetch();
+        const std::uint16_t base = static_cast<std::uint16_t>(lo | (hi << 8));
+        (void)rd(static_cast<std::uint16_t>(
+            (base & 0xFF00) | ((lo + m_y) & 0xFF)));
+        const std::uint8_t h1 = static_cast<std::uint8_t>((base >> 8) + 1);
+        const std::uint8_t value = static_cast<std::uint8_t>(m_x & h1);
+        const std::uint16_t ea = (((base ^ (base + m_y)) & 0xFF00) != 0)
+            ? static_cast<std::uint16_t>(
+                  (static_cast<std::uint16_t>(h1 & m_x) << 8)
+                  | ((lo + m_y) & 0xFF))
+            : static_cast<std::uint16_t>(base + m_y);
+        wr(ea, value);
         break;
     }
     case 0xBB: { // LAS

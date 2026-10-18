@@ -26,7 +26,6 @@ void Machine::Impl::buildComponents(Region region)
     cpu = std::make_unique<Cpu>(bus, scheduler, ppu.get(), apu.get());
 
     ppu->setVideoOutput(framebuffer.data());
-    ppu->setNmiCallback([this] { cpu->assertNmi(); });
     apu->setOutputRate(config.audioSampleRate);
 
     io = ApuIoBridge{};

@@ -41,7 +41,6 @@ Ppu::Ppu(const RegionProfile& profile, Scheduler& scheduler)
 }
 
 void Ppu::attachCartridge(Cartridge* cartridge) { m_cart = cartridge; }
-void Ppu::setNmiCallback(std::function<void()> callback) { m_nmi = std::move(callback); }
 void Ppu::setVideoOutput(std::uint32_t* framebuffer) { m_frame = framebuffer; }
 
 bool Ppu::renderingEnabled() const
@@ -65,7 +64,8 @@ void Ppu::reset(bool /*cold*/)
     m_scanline = 0;
     m_dot = 0;
     m_oddFrame = false;
-    m_vblankFired = false;
+    m_suppressSet = false;
+    m_nmiKilled = false;
     // Writes to $2000/$2001/$2005/$2006 are ignored for ~29658 CPU cycles
     // after reset (research.md D4).
     m_ignoreWritesUntil =
@@ -81,6 +81,20 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
     case 0x2002:
         // Open-bus low 5 bits decay into the returned status byte.
         value = static_cast<std::uint8_t>((m_status & 0xE0) | (m_decay & 0x1F));
+        // Race: reading at (or within a CPU clock of) the set dot returns
+        // the flag clear and suppresses it for the rest of the frame
+        // (nesdev PPU_registers; exercised by 02-vbl_set_time).
+        if (m_scanline == kVblankLine && m_dot <= 2) {
+            // Reading at the set dot: the flag reads clear; the phi2 sample
+            // after this read sees the line low, so this cycle is covered.
+            value &= static_cast<std::uint8_t>(~0x80);
+        }
+        if (m_scanline == kVblankLine && m_dot >= 1 && m_dot <= 4) {
+            // Read within ~2 PPU clocks of the set: cancel this frame's NMI
+            // even if a phi2 sample already latched the edge (rows 5-6).
+            m_nmiKilled = true;
+            m_status &= static_cast<std::uint8_t>(~0x80);
+        }
         m_status &= static_cast<std::uint8_t>(~0x80); // reading clears VBlank
         m_w = 0;
         break;
@@ -515,17 +529,13 @@ void Ppu::stepDot()
         m_frameComplete = true; // final visible pixel emitted (239,255)
     }
     if (m_scanline == kVblankLine && m_dot == 1) {
-        m_status |= 0x80;
-        if ((m_ctrl & 0x80) != 0 && !m_vblankFired) {
-            m_vblankFired = true;
-            if (m_nmi) {
-                m_nmi(); // edge: exactly one NMI per frame
-            }
-        }
+        m_status |= 0x80; // NMI line rises; the CPU samples at phi2
     }
     if (m_scanline == kPreRenderLine && m_dot == 1) {
         m_status &= static_cast<std::uint8_t>(~0xE0); // clear V/S0/O
-        m_vblankFired = false;
+        m_suppressSet = false;
+    m_nmiKilled = false;
+        m_nmiKilled = false;
         m_oddFrame = !m_oddFrame;
     }
 

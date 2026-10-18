@@ -23,8 +23,25 @@ public:
     Ppu(const RegionProfile& profile, Scheduler& scheduler);
 
     void attachCartridge(Cartridge* cartridge);
-    void setNmiCallback(std::function<void()> callback);
     void setVideoOutput(std::uint32_t* framebuffer);
+
+    // NMI line: vblank flag AND enable (the CPU samples and edge-detects).
+    bool consumeNmiKill() override
+    {
+        if (m_nmiKilled) {
+            m_nmiKilled = false;
+            return true;
+        }
+        return false;
+    }
+
+    bool nmiLine() const override
+    {
+        const bool high =
+            (m_status & 0x80) != 0 && (m_ctrl & 0x80) != 0;
+        return high;
+    }
+
 
     // CpuBusDevice ($2000-$2007, pre-mirrored by the bus).
     std::uint8_t cpuRead(std::uint16_t addr) override;
@@ -75,7 +92,6 @@ private:
     const RegionProfile& m_profile;
     Scheduler& m_sched;
     Cartridge* m_cart = nullptr;
-    std::function<void()> m_nmi;
     std::uint32_t* m_frame = nullptr; // consumer-owned 256x240 buffer
 
     // Register file + scroll latches.
@@ -109,7 +125,8 @@ private:
     int m_scanline = 0; // 0-239 visible, 241-260 vblank, 261 pre-render
     int m_dot = 0;
     bool m_oddFrame = false;
-    bool m_vblankFired = false; // NMI edge per frame
+    bool m_suppressSet = false; // read 1 dot before the set
+    bool m_nmiKilled = false;   // $2002 read inside the NMI kill window
     bool m_frameComplete = false; // final visible pixel emitted
     std::uint64_t m_ignoreWritesUntil = 0; // master clock
 

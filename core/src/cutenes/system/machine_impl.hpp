@@ -41,9 +41,10 @@ struct ApuIoBridge final : CpuBusDevice {
     {
         if (addr == 0x4014) {
             oamDma(value);
-        } else if (addr == 0x4016 || addr == 0x4017) {
-            strobe = static_cast<std::uint8_t>(value & 1);
+        } else if (addr == 0x4016) {
+            strobe = static_cast<std::uint8_t>(value & 1); // shared strobe
         } else {
+            // $4000-$4013, $4015, and $4017 (frame counter) are APU.
             apu->registerWrite(addr, value);
         }
     }
