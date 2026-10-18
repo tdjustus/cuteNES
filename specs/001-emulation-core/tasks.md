@@ -106,7 +106,7 @@ independently testable increment. Paths follow plan.md's source tree.
 - [ ] T035 [US2] Implement the buggy sprite-overflow diagonal scan (n and m both increment on miss) + dot-exact sprite-0 hit with all exclusions (x=255, left clip, disabled layers, transparent pixels) in `core/src/cutenes/ppu/sprite_eval.cpp` — pass sprite_overflow_tests and sprite_hit_tests tier-2 checks (research D3)
 - [x] T036 [US2] Drive apu_test + apu_reset to pass in `core/src/cutenes/apu/{frame_counter.cpp, dmc.cpp}`: frame-counter steps/IRQ/inhibit + reset register state ($4015 cleared, $4011 &= 1)
 - [ ] T037 [US2] Implement DMA engines: OAM DMA 513/514 with get/put alignment in `core/src/cutenes/bus/oam_dma.cpp`; DMC DMA 3-4 cycle load/reload with get-priority over OAM DMA in `core/src/cutenes/apu/dmc_dma.cpp` — pass sprdma_and_dmc_dma (research D2/D8-A3)
-- [ ] T038 [US2] Make tier-1 green the CI merge gate: `.github/workflows/build.yml` fails the build on any `tier1` failure on any OS (constitution Principle III)
+- [x] T038 [US2] Make tier-1 green the CI merge gate: `.github/workflows/build.yml` fails the build on any `tier1` failure on any OS (constitution Principle III)
 
 **Checkpoint**: Accuracy is proven, not assumed — every merge runs the hardware-validated suite.
 
