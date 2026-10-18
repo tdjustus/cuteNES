@@ -11,6 +11,9 @@
 
 namespace cutenes {
 
+class StateReader;
+class StateWriter;
+
 struct Cartridge;
 
 // The 2C02 PPU: dot-stepped against the master clock (one dot per 4 master
@@ -52,6 +55,10 @@ public:
 
     // Cold boot vs reset button (register state, write-ignore window).
     void reset(bool cold);
+
+    // Save-state section "PPU " (task T049).
+    void saveState(StateWriter& w) const;
+    void loadState(StateReader& r);
 
     // OAM DMA target: 256 bytes pushed by the $4014 engine.
     void oamDmaWrite(std::uint8_t value);

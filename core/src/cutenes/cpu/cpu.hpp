@@ -10,6 +10,9 @@
 
 namespace cutenes {
 
+class StateReader;
+class StateWriter;
+
 // The 2A03 CPU core: instruction-level 6502 with exact per-access cycle
 // costs — every bus read/write is bracketed by half-cycle master-tick
 // advances with PPU/APU catch-up (research.md D1). No BCD: the 2A03 D flag
@@ -54,6 +57,10 @@ public:
     // Called at every instruction boundary (before the opcode fetch);
     // harness/debug surface, not part of the stable API.
     void setInstructionTrace(std::function<void(const CpuState&)> callback);
+
+    // Save-state section "CPU " (task T049).
+    void saveState(class StateWriter& w) const;
+    void loadState(class StateReader& r);
 
 private:
     std::uint8_t rd(std::uint16_t addr);

@@ -8,6 +8,8 @@
 
 #include "cutenes/ppu/ppu.hpp"
 
+#include "cutenes/serialize/save_state.hpp"
+
 #include "cutenes/cartridge/cart.hpp"
 
 namespace cutenes {
@@ -665,6 +667,109 @@ void Ppu::runTo(std::uint64_t masterClock)
         stepDot();
         ++m_dots;
     }
+}
+
+
+void Ppu::saveState(StateWriter& w) const
+{
+    w.begin("PPU ");
+    w.w(m_ctrl);
+    w.w(m_mask);
+    w.w(m_status);
+    w.w(m_v);
+    w.w(m_t);
+    w.w(m_fineX);
+    w.w(m_w);
+    w.w(m_readBuffer);
+    w.w(m_decay);
+    w.w(m_oamAddr);
+    w.wBytes(m_vram.data(), m_vram.size());
+    w.wBytes(m_palette.data(), m_palette.size());
+    w.wBytes(m_oam.data(), m_oam.size());
+    w.wBytes(m_oam2.data(), m_oam2.size());
+    w.w(m_shiftLo);
+    w.w(m_shiftHi);
+    w.w(m_shiftAttrLo);
+    w.w(m_shiftAttrHi);
+    w.w(m_latchNT);
+    w.w(m_latchAT);
+    w.w(m_latchLo);
+    w.w(m_latchHi);
+    for (const Unit& u : m_units) {
+        w.w(u.x);
+        w.w(u.attr);
+        w.w(u.lo);
+        w.w(u.hi);
+    }
+    w.w<std::uint64_t>(m_dots);
+    w.w<std::int32_t>(m_scanline);
+    w.w<std::int32_t>(m_dot);
+    w.w(m_oddFrame);
+    w.w(m_frameComplete);
+    w.w(m_suppressSet);
+    w.w(m_nmiKilled);
+    w.w(m_ignoreWritesUntil);
+    w.w(m_unitCount);
+    w.w(m_spriteZeroNext);
+    w.w(m_spriteZeroActive);
+    w.w(m_evalStep);
+    w.w(m_secCount);
+    w.w(m_secByte);
+    w.w(m_ovM);
+    w.w(m_evalOverflow);
+    w.w(m_secSecondaryRead);
+    w.w(m_evalRead);
+    w.end();
+}
+
+void Ppu::loadState(StateReader& r)
+{
+    m_ctrl = r.get<std::uint8_t>();
+    m_mask = r.get<std::uint8_t>();
+    m_status = r.get<std::uint8_t>();
+    m_v = r.get<std::uint16_t>();
+    m_t = r.get<std::uint16_t>();
+    m_fineX = r.get<std::uint8_t>();
+    m_w = r.get<std::uint8_t>();
+    m_readBuffer = r.get<std::uint8_t>();
+    m_decay = r.get<std::uint8_t>();
+    m_oamAddr = r.get<std::uint8_t>();
+    r.getBytes(m_vram.data(), m_vram.size());
+    r.getBytes(m_palette.data(), m_palette.size());
+    r.getBytes(m_oam.data(), m_oam.size());
+    r.getBytes(m_oam2.data(), m_oam2.size());
+    m_shiftLo = r.get<std::uint16_t>();
+    m_shiftHi = r.get<std::uint16_t>();
+    m_shiftAttrLo = r.get<std::uint16_t>();
+    m_shiftAttrHi = r.get<std::uint16_t>();
+    m_latchNT = r.get<std::uint8_t>();
+    m_latchAT = r.get<std::uint8_t>();
+    m_latchLo = r.get<std::uint8_t>();
+    m_latchHi = r.get<std::uint8_t>();
+    for (Unit& u : m_units) {
+        u.x = r.get<std::uint8_t>();
+        u.attr = r.get<std::uint8_t>();
+        u.lo = r.get<std::uint8_t>();
+        u.hi = r.get<std::uint8_t>();
+    }
+    m_dots = r.get<std::uint64_t>();
+    m_scanline = r.get<std::int32_t>();
+    m_dot = r.get<std::int32_t>();
+    m_oddFrame = r.get<std::uint8_t>() != 0;
+    m_frameComplete = r.get<std::uint8_t>() != 0;
+    m_suppressSet = r.get<std::uint8_t>() != 0;
+    m_nmiKilled = r.get<std::uint8_t>() != 0;
+    m_ignoreWritesUntil = r.get<std::uint64_t>();
+    m_unitCount = r.get<std::int32_t>();
+    m_spriteZeroNext = r.get<std::uint8_t>() != 0;
+    m_spriteZeroActive = r.get<std::uint8_t>() != 0;
+    m_evalStep = r.get<std::int32_t>();
+    m_secCount = r.get<std::int32_t>();
+    m_secByte = r.get<std::int32_t>();
+    m_ovM = r.get<std::int32_t>();
+    m_evalOverflow = r.get<std::uint8_t>() != 0;
+    m_secSecondaryRead = r.get<std::uint8_t>() != 0;
+    m_evalRead = r.get<std::uint8_t>();
 }
 
 bool Ppu::takeFrameReady()

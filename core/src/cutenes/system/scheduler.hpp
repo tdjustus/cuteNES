@@ -28,6 +28,13 @@ public:
     // emulation; the master clock must stay monotonic).
     void reset();
 
+    // Restore-only jump (save-state load, task T049).
+    void forceTo(std::uint64_t master, std::uint64_t frame)
+    {
+        m_master = master;
+        m_frame = frame;
+    }
+
 private:
     const RegionProfile* m_profile;
     std::uint64_t m_master = 0;

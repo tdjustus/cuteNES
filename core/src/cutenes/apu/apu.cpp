@@ -8,6 +8,8 @@
 
 #include "cutenes/apu/apu.hpp"
 
+#include "cutenes/serialize/save_state.hpp"
+
 #include <cmath>
 
 namespace cutenes {
@@ -109,6 +111,193 @@ Apu::Apu(const RegionProfile& profile, Scheduler& scheduler, Bus& bus)
     buildTables();
     m_outChunk.reserve(4096);
     setOutputRate(m_outRate); // arm the filter coefficients
+}
+
+void Apu::saveState(StateWriter& w) const
+{
+    w.begin("APU ");
+    const auto pulse = [&](const Pulse& p) {
+        w.w(p.enabled);
+        w.w(p.timerReload);
+        w.w(p.timer);
+        w.w(p.duty);
+        w.w(p.dutyIndex);
+        w.w(p.lengthEnabled);
+        w.w(p.length);
+        w.w(p.envStart);
+        w.w(p.envLoop);
+        w.w(p.envConstant);
+        w.w(p.envDiv);
+        w.w(p.envVol);
+        w.w(p.envDecay);
+        w.w(p.sweepEnabled);
+        w.w(p.sweepReload);
+        w.w(p.sweepNegate);
+        w.w(p.sweepPeriod);
+        w.w(p.sweepShift);
+        w.w(p.sweepDiv);
+    };
+    pulse(m_pulse1);
+    pulse(m_pulse2);
+    w.w(m_triangle.enabled);
+    w.w(m_triangle.control);
+    w.w(m_triangle.reloadFlag);
+    w.w(m_triangle.timerReload);
+    w.w(m_triangle.timer);
+    w.w(m_triangle.linearReload);
+    w.w(m_triangle.linear);
+    w.w(m_triangle.index);
+    w.w(m_triangle.lengthEnabled);
+    w.w(m_triangle.length);
+    w.w(m_noise.enabled);
+    w.w(m_noise.mode);
+    w.w(m_noise.timer);
+    w.w(m_noise.timerReload);
+    w.w(m_noise.periodIndex);
+    w.w(m_noise.lfsr);
+    w.w(m_noise.lengthEnabled);
+    w.w(m_noise.length);
+    w.w(m_noise.envStart);
+    w.w(m_noise.envLoop);
+    w.w(m_noise.envConstant);
+    w.w(m_noise.envDiv);
+    w.w(m_noise.envVol);
+    w.w(m_noise.envDecay);
+    w.w(m_dmc.enabled);
+    w.w(m_dmc.irqEnabled);
+    w.w(m_dmc.loop);
+    w.w(m_dmc.rateIndex);
+    w.w(m_dmc.timer);
+    w.w(m_dmc.addrReg);
+    w.w(m_dmc.lenReg);
+    w.w(m_dmc.currentAddr);
+    w.w(m_dmc.bytesRemaining);
+    w.w(m_dmc.bufferEmpty);
+    w.w(m_dmc.sampleBuffer);
+    w.w(m_dmc.shiftReg);
+    w.w(m_dmc.bitsRemaining);
+    w.w(m_dmc.silence);
+    w.w(m_dmc.deltaCounter);
+    w.w(m_frameMode5);
+    w.w(m_inhibitIrq);
+    w.w(m_dmcIrq);
+    w.w<std::uint64_t>(m_frameIrqAt);
+    w.w<std::uint64_t>(m_frameIrqAssertUntil);
+    w.w<std::uint64_t>(m_sequenceCycle);
+    w.w<std::uint32_t>(m_sequenceStep);
+    w.w<std::uint64_t>(m_apuCycles);
+    w.w<std::uint64_t>(m_nextOutNum);
+    w.w<std::uint64_t>(m_historyCount);
+    w.wBytes(reinterpret_cast<const std::uint8_t*>(m_history.data()),
+        m_history.size() * 2);
+    w.w<std::int64_t>(m_hpf1);
+    w.w<std::int64_t>(m_hpf1A);
+    w.w<std::int64_t>(m_hpf1B);
+    w.w<std::int64_t>(m_hpf2);
+    w.w<std::int64_t>(m_hpf2A);
+    w.w<std::int64_t>(m_hpf2B);
+    w.w<std::int64_t>(m_lpfA);
+    w.w<std::int64_t>(m_lpfB);
+    const std::uint32_t nativeCount =
+        static_cast<std::uint32_t>(m_native.size());
+    w.w(nativeCount);
+    w.wBytes(reinterpret_cast<const std::uint8_t*>(m_native.data()),
+        m_native.size() * 2);
+    w.end();
+}
+
+void Apu::loadState(StateReader& r)
+{
+    const auto pulse = [&](Pulse& p) {
+        p.enabled = r.get<std::uint8_t>() != 0;
+        p.timerReload = r.get<std::uint16_t>();
+        p.timer = r.get<std::uint16_t>();
+        p.duty = r.get<std::uint8_t>();
+        p.dutyIndex = r.get<std::uint8_t>();
+        p.lengthEnabled = r.get<std::uint8_t>() != 0;
+        p.length = r.get<std::uint8_t>();
+        p.envStart = r.get<std::uint8_t>() != 0;
+        p.envLoop = r.get<std::uint8_t>() != 0;
+        p.envConstant = r.get<std::uint8_t>() != 0;
+        p.envDiv = r.get<std::uint8_t>();
+        p.envVol = r.get<std::uint8_t>();
+        p.envDecay = r.get<std::uint8_t>();
+        p.sweepEnabled = r.get<std::uint8_t>() != 0;
+        p.sweepReload = r.get<std::uint8_t>() != 0;
+        p.sweepNegate = r.get<std::uint8_t>() != 0;
+        p.sweepPeriod = r.get<std::uint8_t>();
+        p.sweepShift = r.get<std::uint8_t>();
+        p.sweepDiv = r.get<std::uint8_t>();
+    };
+    pulse(m_pulse1);
+    pulse(m_pulse2);
+    m_triangle.enabled = r.get<std::uint8_t>() != 0;
+    m_triangle.control = r.get<std::uint8_t>() != 0;
+    m_triangle.reloadFlag = r.get<std::uint8_t>() != 0;
+    m_triangle.timerReload = r.get<std::uint16_t>();
+    m_triangle.timer = r.get<std::uint16_t>();
+    m_triangle.linearReload = r.get<std::uint8_t>();
+    m_triangle.linear = r.get<std::uint8_t>();
+    m_triangle.index = r.get<std::uint8_t>();
+    m_triangle.lengthEnabled = r.get<std::uint8_t>() != 0;
+    m_triangle.length = r.get<std::uint8_t>();
+    m_noise.enabled = r.get<std::uint8_t>() != 0;
+    m_noise.mode = r.get<std::uint8_t>() != 0;
+    m_noise.timer = r.get<std::uint16_t>();
+    m_noise.timerReload = r.get<std::uint16_t>();
+    m_noise.periodIndex = r.get<std::uint16_t>();
+    m_noise.lfsr = r.get<std::uint16_t>();
+    m_noise.lengthEnabled = r.get<std::uint8_t>() != 0;
+    m_noise.length = r.get<std::uint8_t>();
+    m_noise.envStart = r.get<std::uint8_t>() != 0;
+    m_noise.envLoop = r.get<std::uint8_t>() != 0;
+    m_noise.envConstant = r.get<std::uint8_t>() != 0;
+    m_noise.envDiv = r.get<std::uint8_t>();
+    m_noise.envVol = r.get<std::uint8_t>();
+    m_noise.envDecay = r.get<std::uint8_t>();
+    m_dmc.enabled = r.get<std::uint8_t>() != 0;
+    m_dmc.irqEnabled = r.get<std::uint8_t>() != 0;
+    m_dmc.loop = r.get<std::uint8_t>() != 0;
+    m_dmc.rateIndex = r.get<std::uint8_t>();
+    m_dmc.timer = r.get<std::uint16_t>();
+    m_dmc.addrReg = r.get<std::uint16_t>();
+    m_dmc.lenReg = r.get<std::uint16_t>();
+    m_dmc.currentAddr = r.get<std::uint16_t>();
+    m_dmc.bytesRemaining = r.get<std::uint16_t>();
+    m_dmc.bufferEmpty = r.get<std::uint8_t>() != 0;
+    m_dmc.sampleBuffer = r.get<std::uint8_t>();
+    m_dmc.shiftReg = r.get<std::uint8_t>();
+    m_dmc.bitsRemaining = r.get<std::uint8_t>();
+    m_dmc.silence = r.get<std::uint8_t>() != 0;
+    m_dmc.deltaCounter = r.get<std::uint8_t>();
+    m_frameMode5 = r.get<std::uint8_t>() != 0;
+    m_inhibitIrq = r.get<std::uint8_t>() != 0;
+    m_dmcIrq = r.get<std::uint8_t>() != 0;
+    m_frameIrqAt = r.get<std::uint64_t>();
+    m_frameIrqAssertUntil = r.get<std::uint64_t>();
+    m_sequenceCycle = r.get<std::uint64_t>();
+    m_sequenceStep = r.get<std::uint32_t>();
+    m_apuCycles = r.get<std::uint64_t>();
+    m_nextOutNum = r.get<std::uint64_t>();
+    m_historyCount = r.get<std::uint64_t>();
+    r.getBytes(reinterpret_cast<std::uint8_t*>(m_history.data()),
+        m_history.size() * 2);
+    m_hpf1 = r.get<std::int64_t>();
+    m_hpf1A = r.get<std::int64_t>();
+    m_hpf1B = r.get<std::int64_t>();
+    m_hpf2 = r.get<std::int64_t>();
+    m_hpf2A = r.get<std::int64_t>();
+    m_hpf2B = r.get<std::int64_t>();
+    m_lpfA = r.get<std::int64_t>();
+    m_lpfB = r.get<std::int64_t>();
+    const std::uint32_t nativeCount = r.get<std::uint32_t>();
+    m_native.resize(nativeCount);
+    if (nativeCount > 0) {
+        r.getBytes(reinterpret_cast<std::uint8_t*>(m_native.data()),
+            nativeCount * 2);
+    }
+    // Rebuild the mixer/resampler filter coefficients (config-derived).
+    setOutputRate(m_outRate);
 }
 
 void Apu::reset(bool cold)

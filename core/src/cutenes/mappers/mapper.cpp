@@ -1,5 +1,7 @@
 #include "cutenes/mappers/mapper.hpp"
 
+#include "cutenes/serialize/save_state.hpp"
+
 #include "cutenes/cartridge/cart.hpp"
 
 namespace cutenes {
@@ -23,6 +25,18 @@ void Mapper::chrWrite(std::uint16_t addr, std::uint8_t value)
     if (m_cart.chr.empty() && !m_cart.chrRam.empty()) {
         m_cart.chrRam[addr % m_cart.chrRam.size()] = value;
     }
+}
+
+void Mapper::saveState(StateWriter& w) const
+{
+    w.begin("MAP ");
+    w.w<std::uint16_t>(m_cart.info.mapperId);
+    w.end();
+}
+
+void Mapper::loadState(StateReader& r)
+{
+    (void)r.get<std::uint16_t>(); // mapperId validated at load time
 }
 
 Mirroring Mapper::mirroring() const { return m_cart.info.mirroring; }

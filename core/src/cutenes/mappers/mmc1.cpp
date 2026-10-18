@@ -9,6 +9,8 @@
 
 #include "cutenes/cartridge/cart.hpp"
 
+#include "cutenes/serialize/save_state.hpp"
+
 #include <cstring>
 
 namespace cutenes {
@@ -143,6 +145,29 @@ private:
     std::uint8_t m_control = 0x0C; // PRG mode 3, CHR 8K
     std::uint8_t m_chrBank0 = 0, m_chrBank1 = 0, m_prgBank = 0;
     std::uint8_t m_shift = 0x10;
+
+public:
+    void saveState(StateWriter& w) const override
+    {
+        w.begin("MAP ");
+        w.w<std::uint16_t>(m_cart.info.mapperId);
+        w.w(m_control);
+        w.w(m_chrBank0);
+        w.w(m_chrBank1);
+        w.w(m_prgBank);
+        w.w(m_shift);
+        w.end();
+    }
+
+    void loadState(StateReader& r) override
+    {
+        (void)r.get<std::uint16_t>(); // mapperId
+        m_control = r.get<std::uint8_t>();
+        m_chrBank0 = r.get<std::uint8_t>();
+        m_chrBank1 = r.get<std::uint8_t>();
+        m_prgBank = r.get<std::uint8_t>();
+        m_shift = r.get<std::uint8_t>();
+    }
 };
 
 } // namespace

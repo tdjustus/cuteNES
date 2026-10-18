@@ -8,6 +8,8 @@
 
 #include "cutenes/cpu/cpu.hpp"
 
+#include "cutenes/serialize/save_state.hpp"
+
 #include <array>
 #include <utility>
 
@@ -1190,6 +1192,55 @@ void Cpu::step()
     // (cpu_interrupts_v2 tests 3, 7, and 10).
     m_iPrev = (op == 0x58 || op == 0x78 || op == 0x28) ? m_iStart
         : ((m_p & kI) != 0);
+}
+
+
+void Cpu::saveState(StateWriter& w) const
+{
+    w.begin("CPU ");
+    w.w(m_a);
+    w.w(m_x);
+    w.w(m_y);
+    w.w(m_s);
+    w.w(m_p);
+    w.w(m_pc);
+    w.w(m_nmiPending);
+    w.w(m_irqLevel);
+    w.w(m_jammed);
+    w.w(m_nmiWasHigh);
+    w.w(m_nmiStale);
+    w.w(m_iPrev);
+    w.w(m_iStart);
+    w.w(m_branchSkipPoll);
+    w.w<std::int32_t>(m_cycles);
+    w.w<std::int32_t>(m_prevInstrCycles);
+    w.w<std::int32_t>(m_edgeCycle);
+    w.w<std::int32_t>(m_irqEdgeCycle);
+    w.w(m_irqWasHigh);
+    w.end();
+}
+
+void Cpu::loadState(StateReader& r)
+{
+    m_a = r.get<std::uint8_t>();
+    m_x = r.get<std::uint8_t>();
+    m_y = r.get<std::uint8_t>();
+    m_s = r.get<std::uint8_t>();
+    m_p = r.get<std::uint8_t>();
+    m_pc = r.get<std::uint16_t>();
+    m_nmiPending = r.get<std::uint8_t>() != 0;
+    m_irqLevel = r.get<std::uint8_t>() != 0;
+    m_jammed = r.get<std::uint8_t>() != 0;
+    m_nmiWasHigh = r.get<std::uint8_t>() != 0;
+    m_nmiStale = r.get<std::uint8_t>() != 0;
+    m_iPrev = r.get<std::uint8_t>() != 0;
+    m_iStart = r.get<std::uint8_t>() != 0;
+    m_branchSkipPoll = r.get<std::uint8_t>() != 0;
+    m_cycles = r.get<std::int32_t>();
+    m_prevInstrCycles = r.get<std::int32_t>();
+    m_edgeCycle = r.get<std::int32_t>();
+    m_irqEdgeCycle = r.get<std::int32_t>();
+    m_irqWasHigh = r.get<std::uint8_t>() != 0;
 }
 
 } // namespace cutenes

@@ -4,6 +4,9 @@
 
 #include "cutenes/system/machine_impl.hpp"
 
+#include "cutenes/serialize/save_state.hpp"
+
+#include <cstring>
 #include <cstring>
 #include <utility>
 
@@ -231,17 +234,129 @@ WriteError Machine::writeCpuRegister(std::uint16_t addr, std::uint8_t value)
     return WriteError::Ok;
 }
 
-SaveStateBlob Machine::captureState()
+std::uint16_t Machine::Impl::cartridgeId() const
 {
-    // Full serialization lands with tasks T048/T049 (US5).
-    return SaveStateBlob{};
+    // FNV-1a of (mapperId, prgSize, chrSize, mirroring) — the contract's
+    // WrongCartridge discriminator.
+    std::uint32_t h = 0x811C9DC5u;
+    const auto mix = [&h](std::uint32_t v) {
+        for (int i = 0; i < 4; ++i) {
+            h ^= (v >> (i * 8)) & 0xFF;
+            h *= 0x01000193u;
+        }
+    };
+    mix(cart.info.mapperId);
+    mix(static_cast<std::uint32_t>(cart.info.prgSize));
+    mix(static_cast<std::uint32_t>(cart.info.chrSize));
+    mix(static_cast<std::uint32_t>(cart.info.mirroring));
+    return static_cast<std::uint16_t>((h >> 16) ^ h);
 }
 
-LoadStateError Machine::loadState(const std::uint8_t* /*data*/,
+SaveStateBlob Machine::Impl::capture()
+{
+    stateBlob.clear();
+    StateWriter w(stateBlob);
+    cpu->saveState(w);
+    ppu->saveState(w);
+    apu->saveState(w);
+    bus.saveState(w);
+    if (cart.mapper) {
+        cart.mapper->saveState(w);
+    }
+    // INP: controller shift state.
+    w.begin("INP ");
+    w.w(io.strobe);
+    w.w(io.shiftPos[0]);
+    w.w(io.shiftPos[1]);
+    w.w<std::uint64_t>(controllers[0].to_ulong());
+    w.w<std::uint64_t>(controllers[1].to_ulong());
+    w.end();
+    // SCH: the sole time source.
+    w.begin("SCH ");
+    w.w<std::uint64_t>(scheduler.now());
+    w.w<std::uint64_t>(scheduler.frameIndex());
+    w.w<std::uint64_t>(frameCounter);
+    w.end();
+    // SRAM (flag bit 0).
+    if (!cart.prgRam.empty() && cart.info.battery) {
+        w.begin("SRAM");
+        w.wBytes(cart.prgRam.data(), cart.prgRam.size());
+        w.end();
+    }
+    const std::uint16_t flags =
+        cart.info.battery && !cart.prgRam.empty() ? 1 : 0;
+    w.finish(1, flags, coreVersion,
+        regionId == Region::Pal ? 1 : 0, cartridgeId());
+    return SaveStateBlob{stateBlob.data(), stateBlob.size()};
+}
+
+LoadStateError Machine::Impl::applyState(const std::uint8_t* data,
     std::size_t size)
 {
-    return size == 0 ? LoadStateError::BadMagic
-                     : LoadStateError::IncompatibleFormat;
+    if (size < StateReader::kHeaderSize
+        || std::memcmp(data, "CTNS", 4) != 0) {
+        return LoadStateError::BadMagic;
+    }
+    StateReader r(data, size);
+    if (r.formatVersion() != 1) {
+        return LoadStateError::IncompatibleFormat;
+    }
+    if (r.coreVersion() != coreVersion) {
+        return LoadStateError::IncompatibleCoreVersion;
+    }
+    if (r.cartridgeId() != cartridgeId()) {
+        return LoadStateError::WrongCartridge;
+    }
+    if (StateWriter::crc32(data + StateReader::kHeaderSize,
+            r.sectionsSize())
+        != r.checksum()) {
+        return LoadStateError::ChecksumMismatch;
+    }
+    // All header validation passed; sections parse structurally.
+    if (!r.seek("CPU ") || !r.seek("PPU ") || !r.seek("APU ")
+        || !r.seek("RAM ") || !r.seek("SCH ")) {
+        return LoadStateError::IncompatibleFormat;
+    }
+    // Apply.
+    r.seek("CPU ");
+    cpu->loadState(r);
+    r.seek("PPU ");
+    ppu->loadState(r);
+    r.seek("APU ");
+    apu->loadState(r);
+    r.seek("RAM ");
+    bus.loadState(r);
+    if (cart.mapper && r.seek("MAP ")) {
+        cart.mapper->loadState(r);
+    }
+    if (r.seek("INP ")) {
+        io.strobe = r.get<std::uint8_t>();
+        io.shiftPos[0] = r.get<std::uint8_t>();
+        io.shiftPos[1] = r.get<std::uint8_t>();
+        controllers[0] = ButtonSet{r.get<std::uint64_t>()};
+        controllers[1] = ButtonSet{r.get<std::uint64_t>()};
+    }
+    r.seek("SCH ");
+    const std::uint64_t master = r.get<std::uint64_t>();
+    const std::uint64_t frame = r.get<std::uint64_t>();
+    frameCounter = r.get<std::uint64_t>();
+    scheduler.forceTo(master, frame);
+    if (r.flags() & 1) {
+        r.seek("SRAM");
+        r.getBytes(cart.prgRam.data(), cart.prgRam.size());
+    }
+    runState = cart.info.prgSize > 0 ? RunState::Paused : RunState::NeedsRom;
+    return LoadStateError::Ok;
+}
+
+SaveStateBlob Machine::captureState()
+{
+    return m_impl->capture();
+}
+
+LoadStateError Machine::loadState(const std::uint8_t* data, std::size_t size)
+{
+    return m_impl->applyState(data, size);
 }
 
 SramRange Machine::sram() const

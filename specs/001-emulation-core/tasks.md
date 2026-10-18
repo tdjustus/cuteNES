@@ -154,15 +154,15 @@ independently testable increment. Paths follow plan.md's source tree.
 
 ### Tests for User Story 5 (write first, verify RED)
 
-- [ ] T047 [P] [US5] Write `tests/unit/test_save_state.cpp`: header round-trip ("CTNS" magic, 24-byte header, formatVersion, CRC-32), unknown-section skip within a version, every `LoadStateError` path, never-partially-apply property
+- [x] T047 [P] [US5] Write `tests/unit/test_save_state.cpp`: header round-trip ("CTNS" magic, 24-byte header, formatVersion, CRC-32), unknown-section skip within a version, every `LoadStateError` path, never-partially-apply property
 
 ### Implementation for User Story 5
 
-- [ ] T048 [US5] Implement blob codec in `core/src/cutenes/serialize/save_state.cpp`: little-endian fixed-width, per-component tagged sections ("CPU ", "PPU ", "APU ", "RAM ", "MAP ", "INP ", "SCH ", "SRAM") with length prefixes, rebuild-derived-tables-on-load (contracts/save-state-format.md)
-- [ ] T049 [US5] Implement component serializers in each component (`core/src/cutenes/{cpu,ppu,apu,bus,mappers,input,system}/`): PPU dot/scanline + shift registers + secondary OAM + evaluation phase; APU frame-counter step + "pending $4017 write latch"; DMC arbitration phase; MMC1/MMC3 latches (US6 mappers slot in via the same interface); master clock + pending events as absolute deltas (research D9)
-- [ ] T050 [US5] Implement SRAM API in `core/src/cutenes/cartridge/sram.cpp` + `core/include/cutenes/save_state.hpp`: `sram()`/`loadSram` raw byte ranges, size from header/mapper ("iNES flags-8 value 0 means 8 KiB for compatibility"; NES 2.0 logarithmic encoding) (research D10)
-- [ ] T051 [US5] Implement savestate scenario in `tests/harness/savestate.cpp`: capture@1000 → rerun-to-2000 comparison, repeated-restore stability, cross-cartridge rejection (SC-006)
-- [ ] T052 [US5] Verify version rejection: a blob from a different core build refused with `IncompatibleCoreVersion` (US5 edge case, quickstart scenario 5)
+- [x] T048 [US5] Implement blob codec in `core/src/cutenes/serialize/save_state.cpp`: little-endian fixed-width, per-component tagged sections ("CPU ", "PPU ", "APU ", "RAM ", "MAP ", "INP ", "SCH ", "SRAM") with length prefixes, rebuild-derived-tables-on-load (contracts/save-state-format.md)
+- [x] T049 [US5] Implement component serializers in each component (`core/src/cutenes/{cpu,ppu,apu,bus,mappers,input,system}/`): PPU dot/scanline + shift registers + secondary OAM + evaluation phase; APU frame-counter step + "pending $4017 write latch"; DMC arbitration phase; MMC1/MMC3 latches (US6 mappers slot in via the same interface); master clock + pending events as absolute deltas (research D9)
+- [x] T050 [US5] Implement SRAM API in `core/src/cutenes/cartridge/sram.cpp` + `core/include/cutenes/save_state.hpp`: `sram()`/`loadSram` raw byte ranges, size from header/mapper ("iNES flags-8 value 0 means 8 KiB for compatibility"; NES 2.0 logarithmic encoding) (research D10)
+- [x] T051 [US5] Implement savestate scenario in `tests/harness/savestate.cpp`: capture@1000 → rerun-to-2000 comparison, repeated-restore stability, cross-cartridge rejection (SC-006)
+- [x] T052 [US5] Verify version rejection: a blob from a different core build refused with `IncompatibleCoreVersion` (US5 edge case, quickstart scenario 5)
 
 **Checkpoint**: Deterministic branching — the enabler for rewind, TAS tooling, and AI experimentation.
 

@@ -5,6 +5,9 @@
 
 namespace cutenes {
 
+class StateReader;
+class StateWriter;
+
 // A device occupying a routed CPU-bus region: PPU ($2000-$3FFF, mirrored
 // every 8), APU/IO ($4000-$401F), cartridge ($4020-$FFFF). Devices decode
 // their own sub-ranges; the bus owns mirroring and open-bus behavior.
@@ -35,6 +38,10 @@ public:
     void write(std::uint16_t addr, std::uint8_t value);
 
     const std::array<std::uint8_t, 2048>& ram() const { return m_ram; }
+
+    // Save-state section "RAM " (task T049).
+    void saveState(class StateWriter& w) const;
+    void loadState(StateReader& r);
 
 private:
     std::uint8_t openBusRead();

@@ -1,6 +1,22 @@
 #include "cutenes/bus/bus.hpp"
 
+#include "cutenes/serialize/save_state.hpp"
+
 namespace cutenes {
+
+void Bus::saveState(StateWriter& w) const
+{
+    w.begin("RAM ");
+    w.wBytes(m_ram.data(), m_ram.size());
+    w.w(m_openBus);
+    w.end();
+}
+
+void Bus::loadState(StateReader& r)
+{
+    r.getBytes(m_ram.data(), m_ram.size());
+    m_openBus = r.get<std::uint8_t>();
+}
 
 void Bus::attachPpu(CpuBusDevice* device) { m_ppu = device; }
 void Bus::attachApuIo(CpuBusDevice* device) { m_apuIo = device; }

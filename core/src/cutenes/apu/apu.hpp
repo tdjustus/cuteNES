@@ -11,6 +11,9 @@
 
 namespace cutenes {
 
+class StateReader;
+class StateWriter;
+
 // The 2A03 APU: five channels stepped per APU cycle (CPU/2), integer LUT
 // mixing, and an in-core fixed-point polyphase resampler delivering int16
 // mono at the consumer-configured rate (research.md D8). Emulated state is
@@ -23,6 +26,10 @@ public:
     Apu(const RegionProfile& profile, Scheduler& scheduler, Bus& bus);
 
     void reset(bool cold);
+
+    // Save-state section "APU " (task T049).
+    void saveState(class StateWriter& w) const;
+    void loadState(StateReader& r);
 
     // $4000-$4017 (the machine's APU/IO bridge dispatches here).
     std::uint8_t registerRead(std::uint16_t addr);

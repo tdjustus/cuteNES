@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 #include <memory>
 
 namespace cutenes {
@@ -131,6 +132,11 @@ struct Machine::Impl {
 
     IVideoSink* videoSink = nullptr;
     std::array<std::uint32_t, 256 * 240> framebuffer{};
+    std::vector<std::uint8_t> stateBlob;
+
+    std::uint16_t cartridgeId() const;
+    SaveStateBlob capture();
+    LoadStateError applyState(const std::uint8_t* data, std::size_t size);
 
     RunState runState = RunState::NeedsRom;
     std::uint64_t frameCounter = 0;

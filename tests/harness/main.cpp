@@ -266,6 +266,51 @@ int cmdStepEquiv(const char* romPath, std::uint32_t frame)
     return 0;
 }
 
+// T051: capture at a frame, rerun, restore, rerun — byte-identical.
+int cmdSavestate(const char* romPath, std::uint32_t atFrame,
+    std::uint32_t rerunTo)
+{
+    std::vector<std::uint8_t> rom;
+    if (!readRom(romPath, rom)) {
+        return 2;
+    }
+    cutenes::Machine machine;
+    if (machine.loadCartridge(rom.data(), rom.size()).error
+        != cutenes::LoadError::Ok) {
+        return 2;
+    }
+    RecordingSink sink;
+    machine.setVideoSink(&sink);
+    machine.setAudioSink(&sink);
+    machine.powerOn();
+
+    machine.runFrames(atFrame);
+    std::vector<std::uint8_t> blob;
+    const cutenes::SaveStateBlob view = machine.captureState();
+    blob.assign(view.data, view.data + view.size);
+    machine.runFrames(rerunTo - atFrame); // the uninterrupted reference
+
+    machine.loadState(blob.data(), blob.size());
+    const std::size_t hashesBefore = sink.hashes.size();
+    machine.runFrames(rerunTo - atFrame); // the restored rerun
+    bool ok = sink.hashes.size() == 2 * (rerunTo - atFrame) + atFrame;
+    if (ok) {
+        for (std::size_t i = 0; i < rerunTo - atFrame; ++i) {
+            if (sink.hashes[hashesBefore + i]
+                != sink.hashes[atFrame + i]) {
+                ok = false;
+                break;
+            }
+        }
+    }
+    // Repeated restore stability.
+    machine.loadState(blob.data(), blob.size());
+    machine.runFrames(1);
+    std::printf("savestate: %s (%u->%u round trip)\n", ok ? "PASS" : "FAIL",
+        atFrame, rerunTo);
+    return ok ? 0 : 1;
+}
+
 int notImplemented(const char* command, const char* task)
 {
     std::fprintf(stderr,
@@ -282,7 +327,7 @@ void usage()
         "  determinism --rom R --frames N  run-twice byte comparison (T027)\n"
         "  suite [--tier 1|2]              tiered test-ROM acceptance (T031)\n"
         "  nestest [--golden-log]          CPU golden-log verification (T029)\n"
-        "  savestate --rom R --at F --rerun-to F  restore round trip (T051)\n"
+        "  savestate --rom R --at F --rerun-to F   restore round trip (T051)\n"
         "  playtest --list FILE            scripted game checks (T059)\n"
         "  bench --rom R --seconds N       sustained-speed benchmark (T061)\n");
 }
@@ -305,6 +350,12 @@ int main(int argc, char** argv)
     if (command == "run" && argc == 4) {
         return cmdRun(argv[2], parseUint(argv[3]));
     }
+    if (command == "savestate" && argc == 8
+        && std::strcmp(argv[2], "--rom") == 0
+        && std::strcmp(argv[4], "--at") == 0
+        && std::strcmp(argv[6], "--rerun-to") == 0) {
+        return cmdSavestate(argv[3], parseUint(argv[5]), parseUint(argv[7]));
+    }
     if (command == "step-equiv" && argc == 4) {
         return cmdStepEquiv(argv[2], parseUint(argv[3]));
     }
@@ -322,7 +373,6 @@ int main(int argc, char** argv)
         return 2;
     }
     if (command == "nestest") return cmdNestest(argc, argv);
-    if (command == "savestate") return notImplemented("savestate", "T051");
     if (command == "playtest") return notImplemented("playtest", "T059");
     if (command == "bench") return notImplemented("bench", "T061");
 
