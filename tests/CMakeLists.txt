@@ -27,7 +27,18 @@ gtest_discover_tests(cutenes-core-tests
 
 # Headless verification driver (quickstart.md scenarios).
 add_executable(rom_harness
-    harness/main.cpp)
+    harness/main.cpp
+    harness/nestest.cpp)
 
 target_link_libraries(rom_harness PRIVATE
     cutenes-core::cutenes-core cutenes-core-internal)
+
+# Tier-1 acceptance gate (constitution Principle III): nestest golden log.
+# Registered only when the test-ROM submodule is populated.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/other/nestest.nes")
+    add_test(NAME nestest-golden-log
+        COMMAND rom_harness nestest
+                --rom ${CMAKE_CURRENT_SOURCE_DIR}/roms/other/nestest.nes
+                --log ${CMAKE_CURRENT_SOURCE_DIR}/roms/other/nestest.log)
+    set_tests_properties(nestest-golden-log PROPERTIES LABELS "tier1")
+endif()

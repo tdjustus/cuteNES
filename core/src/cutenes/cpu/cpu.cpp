@@ -9,6 +9,7 @@
 #include "cutenes/cpu/cpu.hpp"
 
 #include <array>
+#include <utility>
 
 namespace cutenes {
 namespace {
@@ -46,7 +47,7 @@ constexpr std::array<Cpu::OpInfo, 256> kOps = {{
     {Abs, 4, 0},   // 0C NOP
     {Abs, 4, 0},   // 0D ORA
     {Abs, 6, 0},   // 0E ASL
-    {Abx, 7, 0},   // 0F SLO
+    {Abs, 6, 0},   // 0F SLO
     {Rel, 2, P1},  // 10 BPL
     {Izy, 5, P1},  // 11 ORA
     {Imp, 2, 0},   // 12 KIL
@@ -357,7 +358,8 @@ void Cpu::adc(std::uint8_t value)
     const unsigned r = m_a + value + (m_p & kC);
     const std::uint8_t result = static_cast<std::uint8_t>(r);
     const std::uint8_t overflow =
-        static_cast<std::uint8_t>((~(m_a ^ value) & (m_a ^ result)) & kN);
+        static_cast<std::uint8_t>(
+            ((~(m_a ^ value) & (m_a ^ result)) & kN) != 0 ? kV : 0);
     m_p = static_cast<std::uint8_t>((m_p & ~(kC | kV))
         | ((r > 0xFF) ? kC : 0) | overflow);
     setNZ(result);
@@ -405,6 +407,20 @@ std::uint16_t Cpu::readPair()
     return static_cast<std::uint16_t>(lo | (hi << 8));
 }
 
+std::uint16_t Cpu::zpxAddr()
+{
+    const std::uint16_t a = fetch();
+    tick(); // internal index-addition cycle (zpg,X/Y data ops are 4 cycles)
+    return static_cast<std::uint16_t>((a + m_x) & 0xFF);
+}
+
+std::uint16_t Cpu::zpyAddr()
+{
+    const std::uint16_t a = fetch();
+    tick();
+    return static_cast<std::uint16_t>((a + m_y) & 0xFF);
+}
+
 std::uint8_t Cpu::readAbx(bool penalty)
 {
     const std::uint16_t lo = fetch();
@@ -437,9 +453,10 @@ std::uint8_t Cpu::readIzx()
 {
     const std::uint8_t z = fetch();
     tick(); // index addition
-    const std::uint16_t ptr = static_cast<std::uint16_t>(z + m_x);
+    const std::uint16_t ptr = static_cast<std::uint16_t>((z + m_x) & 0xFF);
     const std::uint8_t lo = rd(ptr);
-    const std::uint8_t hi = rd(static_cast<std::uint16_t>(ptr + 1));
+    const std::uint8_t hi = rd(
+        static_cast<std::uint16_t>((ptr + 1) & 0xFF)); // zpg wrap
     return rd(static_cast<std::uint16_t>(lo | (hi << 8)));
 }
 
@@ -447,7 +464,8 @@ std::uint8_t Cpu::readIzy(bool penalty)
 {
     const std::uint8_t z = fetch();
     const std::uint8_t lo = rd(z);
-    const std::uint8_t hi = rd(static_cast<std::uint16_t>(z + 1));
+    const std::uint8_t hi = rd(
+        static_cast<std::uint16_t>((z + 1) & 0xFF)); // zpg wrap
     const std::uint16_t base = static_cast<std::uint16_t>(lo | (hi << 8));
     const std::uint16_t unfixed =
         static_cast<std::uint16_t>((base & 0xFF00) | ((lo + m_y) & 0xFF));
@@ -482,9 +500,10 @@ std::uint16_t Cpu::addrIzxWrite()
 {
     const std::uint8_t z = fetch();
     tick();
-    const std::uint16_t ptr = static_cast<std::uint16_t>(z + m_x);
+    const std::uint16_t ptr = static_cast<std::uint16_t>((z + m_x) & 0xFF);
     const std::uint8_t lo = rd(ptr);
-    const std::uint8_t hi = rd(static_cast<std::uint16_t>(ptr + 1));
+    const std::uint8_t hi = rd(
+        static_cast<std::uint16_t>((ptr + 1) & 0xFF)); // zpg wrap
     return static_cast<std::uint16_t>(lo | (hi << 8));
 }
 
@@ -492,7 +511,8 @@ std::uint16_t Cpu::addrIzyWrite()
 {
     const std::uint8_t z = fetch();
     const std::uint8_t lo = rd(z);
-    const std::uint8_t hi = rd(static_cast<std::uint16_t>(z + 1));
+    const std::uint8_t hi = rd(
+        static_cast<std::uint16_t>((z + 1) & 0xFF)); // zpg wrap
     const std::uint16_t base = static_cast<std::uint16_t>(lo | (hi << 8));
     (void)rd(static_cast<std::uint16_t>(
         (base & 0xFF00) | ((lo + m_y) & 0xFF)));
@@ -508,7 +528,7 @@ std::uint16_t Cpu::rmwAddr(std::uint8_t op)
     case 0x16: {
         const std::uint16_t a = fetch();
         tick();
-        return static_cast<std::uint16_t>(a + m_x);
+        return static_cast<std::uint16_t>(a + m_x) & 0xFF;
     }
     case 0x0E: return readPair();
     default: return addrAbxWrite(); // 0x1E
@@ -527,7 +547,7 @@ std::uint16_t Cpu::rmwComboAddr(std::uint8_t op)
     case 0x17: {
         const std::uint16_t a = fetch();
         tick();
-        return static_cast<std::uint16_t>(a + m_x);
+        return static_cast<std::uint16_t>((a + m_x) & 0xFF); // zpg wrap
     }
     case 0x1B: return addrAbyWrite();
     default: return addrAbxWrite(); // 0x1F
@@ -599,6 +619,11 @@ CpuState Cpu::state() const
 }
 
 void Cpu::setProgramCounter(std::uint16_t pc) { m_pc = pc; }
+
+void Cpu::setInstructionTrace(std::function<void(const CpuState&)> callback)
+{
+    m_trace = std::move(callback);
+}
 void Cpu::restartClockForTest() { m_sched.reset(); }
 
 void Cpu::compare(std::uint8_t reg, std::uint8_t value)
@@ -664,13 +689,17 @@ void Cpu::step()
         return;
     }
 
+    if (m_trace) {
+        m_trace(state());
+    }
+
     const std::uint8_t op = fetch();
 
     switch (op) {
     // --- Load/store -------------------------------------------------------
     case 0xA9: m_a = fetch(); setNZ(m_a); break;
     case 0xA5: m_a = rd(fetch()); setNZ(m_a); break;
-    case 0xB5: m_a = rd(static_cast<std::uint16_t>(fetch() + m_x)); setNZ(m_a); break;
+    case 0xB5: m_a = rd(zpxAddr()); setNZ(m_a); break;
     case 0xAD: m_a = rd(readPair()); setNZ(m_a); break;
     case 0xBD: m_a = readAbx(true); setNZ(m_a); break;
     case 0xB9: m_a = readAby(true); setNZ(m_a); break;
@@ -679,18 +708,18 @@ void Cpu::step()
 
     case 0xA2: m_x = fetch(); setNZ(m_x); break;
     case 0xA6: m_x = rd(fetch()); setNZ(m_x); break;
-    case 0xB6: m_x = rd(static_cast<std::uint16_t>(fetch() + m_y)); setNZ(m_x); break;
+    case 0xB6: m_x = rd(zpyAddr()); setNZ(m_x); break;
     case 0xAE: m_x = rd(readPair()); setNZ(m_x); break;
     case 0xBE: m_x = readAby(true); setNZ(m_x); break;
 
     case 0xA0: m_y = fetch(); setNZ(m_y); break;
     case 0xA4: m_y = rd(fetch()); setNZ(m_y); break;
-    case 0xB4: m_y = rd(static_cast<std::uint16_t>(fetch() + m_x)); setNZ(m_y); break;
+    case 0xB4: m_y = rd(zpxAddr()); setNZ(m_y); break;
     case 0xAC: m_y = rd(readPair()); setNZ(m_y); break;
     case 0xBC: m_y = readAbx(true); setNZ(m_y); break;
 
     case 0x85: wr(fetch(), m_a); break;
-    case 0x95: wr(static_cast<std::uint16_t>(fetch() + m_x), m_a); break;
+    case 0x95: wr(zpxAddr(), m_a); break;
     case 0x8D: wr(readPair(), m_a); break;
     case 0x9D: wr(addrAbxWrite(), m_a); break;
     case 0x99: wr(addrAbyWrite(), m_a); break;
@@ -698,17 +727,17 @@ void Cpu::step()
     case 0x91: wr(addrIzyWrite(), m_a); break;
 
     case 0x86: wr(fetch(), m_x); break;
-    case 0x96: wr(static_cast<std::uint16_t>(fetch() + m_y), m_x); break;
+    case 0x96: wr(zpyAddr(), m_x); break;
     case 0x8E: wr(readPair(), m_x); break;
 
     case 0x84: wr(fetch(), m_y); break;
-    case 0x94: wr(static_cast<std::uint16_t>(fetch() + m_x), m_y); break;
+    case 0x94: wr(zpxAddr(), m_y); break;
     case 0x8C: wr(readPair(), m_y); break;
 
     // --- Arithmetic / logic ------------------------------------------------
     case 0x69: adc(fetch()); break;
     case 0x65: adc(rd(fetch())); break;
-    case 0x75: adc(rd(static_cast<std::uint16_t>(fetch() + m_x))); break;
+    case 0x75: adc(rd(zpxAddr())); break;
     case 0x6D: adc(rd(readPair())); break;
     case 0x7D: adc(readAbx(true)); break;
     case 0x79: adc(readAby(true)); break;
@@ -717,7 +746,7 @@ void Cpu::step()
 
     case 0xE9: case 0xEB: adc(static_cast<std::uint8_t>(~fetch())); break;
     case 0xE5: adc(static_cast<std::uint8_t>(~rd(fetch()))); break;
-    case 0xF5: adc(static_cast<std::uint8_t>(~rd(static_cast<std::uint16_t>(fetch() + m_x)))); break;
+    case 0xF5: adc(static_cast<std::uint8_t>(~rd(zpxAddr()))); break;
     case 0xED: adc(static_cast<std::uint8_t>(~rd(readPair()))); break;
     case 0xFD: adc(static_cast<std::uint8_t>(~readAbx(true))); break;
     case 0xF9: adc(static_cast<std::uint8_t>(~readAby(true))); break;
@@ -726,7 +755,7 @@ void Cpu::step()
 
     case 0x29: m_a &= fetch(); setNZ(m_a); break;
     case 0x25: m_a &= rd(fetch()); setNZ(m_a); break;
-    case 0x35: m_a &= rd(static_cast<std::uint16_t>(fetch() + m_x)); setNZ(m_a); break;
+    case 0x35: m_a &= rd(zpxAddr()); setNZ(m_a); break;
     case 0x2D: m_a &= rd(readPair()); setNZ(m_a); break;
     case 0x3D: m_a &= readAbx(true); setNZ(m_a); break;
     case 0x39: m_a &= readAby(true); setNZ(m_a); break;
@@ -735,7 +764,7 @@ void Cpu::step()
 
     case 0x49: m_a ^= fetch(); setNZ(m_a); break;
     case 0x45: m_a ^= rd(fetch()); setNZ(m_a); break;
-    case 0x55: m_a ^= rd(static_cast<std::uint16_t>(fetch() + m_x)); setNZ(m_a); break;
+    case 0x55: m_a ^= rd(zpxAddr()); setNZ(m_a); break;
     case 0x4D: m_a ^= rd(readPair()); setNZ(m_a); break;
     case 0x5D: m_a ^= readAbx(true); setNZ(m_a); break;
     case 0x59: m_a ^= readAby(true); setNZ(m_a); break;
@@ -744,7 +773,7 @@ void Cpu::step()
 
     case 0x09: m_a |= fetch(); setNZ(m_a); break;
     case 0x05: m_a |= rd(fetch()); setNZ(m_a); break;
-    case 0x15: m_a |= rd(static_cast<std::uint16_t>(fetch() + m_x)); setNZ(m_a); break;
+    case 0x15: m_a |= rd(zpxAddr()); setNZ(m_a); break;
     case 0x0D: m_a |= rd(readPair()); setNZ(m_a); break;
     case 0x1D: m_a |= readAbx(true); setNZ(m_a); break;
     case 0x19: m_a |= readAby(true); setNZ(m_a); break;
@@ -753,7 +782,7 @@ void Cpu::step()
 
     case 0xC9: compare(m_a, fetch()); break;
     case 0xC5: compare(m_a, rd(fetch())); break;
-    case 0xD5: compare(m_a, rd(static_cast<std::uint16_t>(fetch() + m_x))); break;
+    case 0xD5: compare(m_a, rd(zpxAddr())); break;
     case 0xCD: compare(m_a, rd(readPair())); break;
     case 0xDD: compare(m_a, readAbx(true)); break;
     case 0xD9: compare(m_a, readAby(true)); break;
@@ -852,7 +881,11 @@ void Cpu::step()
     case 0x48: tick(); push(m_a); break;
     case 0x08: tick(); push(static_cast<std::uint8_t>(m_p | kU | kB)); break;
     case 0x68: tick(); tick(); m_a = pop(); setNZ(m_a); break;
-    case 0x28: tick(); tick(); m_p = static_cast<std::uint8_t>(pop() | kU); break;
+    case 0x28: // PLP: B does not exist in the register (research.md D4)
+        tick();
+        tick();
+        m_p = static_cast<std::uint8_t>((pop() | kU) & ~kB);
+        break;
 
     // --- Jumps/subroutines ----------------------------------------------------
     case 0x4C: m_pc = readPair(); break;
@@ -883,10 +916,10 @@ void Cpu::step()
         m_pc = static_cast<std::uint16_t>((lo | (hi << 8)) + 1);
         break;
     }
-    case 0x40: { // RTI
+    case 0x40: { // RTI: B stripped like PLP
         tick();
         tick();
-        m_p = static_cast<std::uint8_t>(pop() | kU);
+        m_p = static_cast<std::uint8_t>((pop() | kU) & ~kB);
         const std::uint8_t lo = pop();
         const std::uint8_t hi = pop();
         m_pc = static_cast<std::uint16_t>(lo | (hi << 8));
@@ -917,9 +950,8 @@ void Cpu::step()
     case 0x04: case 0x44: case 0x64:
         (void)rd(fetch());
         break;
-    case 0x14: case 0x34: case 0x54: case 0x74:
-        (void)rd(static_cast<std::uint16_t>(fetch() + m_x));
-        tick();
+    case 0x14: case 0x34: case 0x54: case 0x74: case 0xD4: case 0xF4:
+        (void)rd(zpxAddr()); // zpxAddr includes the internal index cycle
         break;
     case 0x0C:
         (void)rd(readPair());
@@ -934,7 +966,7 @@ void Cpu::step()
         std::uint8_t v = 0;
         switch (op) {
         case 0xA7: v = rd(fetch()); break;
-        case 0xB7: v = rd(static_cast<std::uint16_t>(fetch() + m_y)); break;
+        case 0xB7: v = rd(zpyAddr()); break;
         case 0xAF: v = rd(readPair()); break;
         case 0xBF: v = readAby(true); break;
         case 0xA3: v = readIzx(); break;
@@ -950,7 +982,7 @@ void Cpu::step()
         const std::uint8_t v = static_cast<std::uint8_t>(m_a & m_x);
         switch (op) {
         case 0x87: wr(fetch(), v); break;
-        case 0x97: wr(static_cast<std::uint16_t>(fetch() + m_y), v); break;
+        case 0x97: wr(zpyAddr(), v); break;
         case 0x8F: wr(readPair(), v); break;
         case 0x83: wr(addrIzxWrite(), v); break;
         }

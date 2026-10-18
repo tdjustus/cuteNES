@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 
 namespace cutenes {
@@ -74,6 +75,12 @@ public:
     LoadStateError loadState(const std::uint8_t* data, std::size_t size);
     SramRange sram() const;       // empty view when cartridge has no battery
     void loadSram(const std::uint8_t* data, std::size_t size); // pad/trim
+
+    // --- Harness/debug surface (not part of the stable API) ----------------
+    void setInstructionTrace(
+        std::function<void(const TracePoint&)> callback); // per instruction
+    void debugSetProgramCounter(std::uint16_t pc); // nestest entry $C000
+    std::uint8_t debugPeek(std::uint16_t addr) const; // side-effect-free
 
     // --- Region & counters -------------------------------------------------
     Region region() const;

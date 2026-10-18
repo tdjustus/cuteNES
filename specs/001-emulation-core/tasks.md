@@ -97,7 +97,7 @@ independently testable increment. Paths follow plan.md's source tree.
 
 ### Implementation for User Story 2
 
-- [ ] T029 [US2] Implement CPU trace/disassembly in `core/src/cutenes/cpu/trace.cpp` matching nestest.log line format exactly (`PC, A, X, Y, P, SP, opcode bytes + disassembly, CYC, SL`); wire `rom_harness nestest --golden-log` in `tests/harness/nestest.cpp` (automation mode PC=$C000, results at $02 official / $03 unofficial, first-divergent-line report)
+- [x] T029 [US2] Implement CPU trace/disassembly in `core/src/cutenes/cpu/trace.cpp` matching nestest.log line format exactly (`PC, A, X, Y, P, SP, opcode bytes + disassembly, CYC, SL`); wire `rom_harness nestest --golden-log` in `tests/harness/nestest.cpp` (automation mode PC=$C000, results at $02 official / $03 unofficial, first-divergent-line report)
 - [ ] T030 [US2] Implement blargg console protocol driver in `tests/harness/protocol.cpp`: signature `$DE $B0 $61` at $6001-$6003, status polling at $6000 ($80 running, $81 reset-request honored with >=100 ms emulated delay, $00-$7F result), $6004 zero-terminated text capture (research D11)
 - [ ] T031 [US2] Implement tier-1 suite runner in `tests/harness/suite.cpp`: drive each tier-1 ROM to a terminal status, register as ctest cases with `tier1` label; list per research D11 (instr_test-v5, instr_timing, cpu_interrupts_v2, cpu_reset, ppu_vbl_nmi, oam_read, oam_stress, ppu_open_bus, sprdma_and_dmc_dma, apu_test, apu_reset, mmc3_test, mmc3_test_2 — the last two execute in US6)
 - [ ] T032 [US2] Drive instr_test-v5 + instr_timing to pass: fix decoder defects surfaced by T029-T031 (dummy reads, unofficial-opcode edge cases) in `core/src/cutenes/cpu/decoder.cpp`

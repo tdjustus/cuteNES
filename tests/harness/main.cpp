@@ -13,6 +13,14 @@
 #include <string>
 #include <vector>
 
+namespace cutenes {
+class NestestRunner {
+public:
+    static int run(const char* romPath, const char* logPath, bool printLines);
+};
+} // namespace cutenes
+
+
 namespace {
 
 std::uint32_t fnv1a32(const std::uint8_t* data, std::size_t size)
@@ -125,6 +133,23 @@ int cmdDeterminism(const char* romPath, std::uint32_t frames)
     return 0;
 }
 
+int cmdNestest(int argc, char** argv)
+{
+    const char* rom = "tests/roms/other/nestest.nes";
+    const char* log = "tests/roms/other/nestest.log";
+    bool print = false;
+    for (int i = 2; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--print") == 0) {
+            print = true;
+        } else if (std::strcmp(argv[i], "--rom") == 0 && i + 1 < argc) {
+            rom = argv[++i];
+        } else if (std::strcmp(argv[i], "--log") == 0 && i + 1 < argc) {
+            log = argv[++i];
+        }
+    }
+    return cutenes::NestestRunner::run(rom, log, print);
+}
+
 int notImplemented(const char* command, const char* task)
 {
     std::fprintf(stderr,
@@ -170,7 +195,7 @@ int main(int argc, char** argv)
         return cmdDeterminism(argv[3], parseUint(argv[5]));
     }
     if (command == "suite") return notImplemented("suite", "T031");
-    if (command == "nestest") return notImplemented("nestest", "T029");
+    if (command == "nestest") return cmdNestest(argc, argv);
     if (command == "savestate") return notImplemented("savestate", "T051");
     if (command == "playtest") return notImplemented("playtest", "T059");
     if (command == "bench") return notImplemented("bench", "T061");

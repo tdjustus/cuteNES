@@ -21,4 +21,12 @@ enum class WriteError : std::uint8_t {
     InvalidAddress,
 };
 
+// One instruction boundary with PPU position — nestest-format tracing and
+// future MCP debug tooling. "PPU:%3u,%3u" is scanline,dot.
+struct TracePoint {
+    CpuState cpu;
+    std::uint32_t scanline = 0;
+    std::uint32_t dot = 0;
+};
+
 } // namespace cutenes

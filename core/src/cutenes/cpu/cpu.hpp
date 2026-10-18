@@ -6,6 +6,7 @@
 #include <cutenes/state_view.hpp>
 
 #include <cstdint>
+#include <functional>
 
 namespace cutenes {
 
@@ -50,6 +51,10 @@ public:
     void setProgramCounter(std::uint16_t pc);
     void restartClockForTest();
 
+    // Called at every instruction boundary (before the opcode fetch);
+    // harness/debug surface, not part of the stable API.
+    void setInstructionTrace(std::function<void(const CpuState&)> callback);
+
 private:
     std::uint8_t rd(std::uint16_t addr);
     void wr(std::uint16_t addr, std::uint8_t value);
@@ -76,6 +81,8 @@ private:
     void doInterrupt(std::uint16_t vector, bool brk);
 
     std::uint16_t readPair(); // fetch lo|hi<<8 (absolute address)
+    std::uint16_t zpxAddr();  // zpg fetch + internal index cycle + wrap
+    std::uint16_t zpyAddr();
     void compare(std::uint8_t reg, std::uint8_t value);
 
     // RMW addressing: (opcode & 0x1F) selects the mode within each family.
@@ -106,6 +113,7 @@ private:
     bool m_nmiPending = false;
     bool m_irqLine = false;
     bool m_jammed = false;
+    std::function<void(const CpuState&)> m_trace;
 };
 
 } // namespace cutenes

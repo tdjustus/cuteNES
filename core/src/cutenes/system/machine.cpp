@@ -118,12 +118,13 @@ const CartridgeInfo& Machine::cartridgeInfo() const
 void Machine::powerOn()
 {
     auto& impl = *m_impl;
-    // Cold boot: zero the sole time source, then reset every component
-    // (the CPU's reset consumes 7 cycles, matching nestest.log).
+    // Cold boot: zero the sole time source, reset the passive components,
+    // then the CPU last — its 7-cycle reset drives PPU/APU catch-up, so the
+    // machine ends at CYC:7 / PPU (0,21) exactly (nestest.log line 1).
     impl.scheduler.reset();
-    impl.cpu->reset(/*cold=*/true);
     impl.ppu->reset(/*cold=*/true);
     impl.apu->reset(/*cold=*/true);
+    impl.cpu->reset(/*cold=*/true);
     impl.frameCounter = 0;
     impl.runState =
         impl.cart.info.prgSize > 0 ? RunState::Paused : RunState::NeedsRom;
@@ -253,6 +254,27 @@ void Machine::loadSram(const std::uint8_t* data, std::size_t size)
     }
     const std::size_t n = size < ram.size() ? size : ram.size();
     std::memcpy(ram.data(), data, n);
+}
+
+void Machine::setInstructionTrace(
+    std::function<void(const TracePoint&)> callback)
+{
+    auto& impl = *m_impl;
+    Ppu* ppu = impl.ppu.get();
+    impl.cpu->setInstructionTrace(
+        [ppu, cb = std::move(callback)](const CpuState& cpu) {
+            cb(TracePoint{cpu, ppu->scanline(), ppu->dot()});
+        });
+}
+
+void Machine::debugSetProgramCounter(std::uint16_t pc)
+{
+    m_impl->cpu->setProgramCounter(pc);
+}
+
+std::uint8_t Machine::debugPeek(std::uint16_t addr) const
+{
+    return m_impl->bus.peek(addr);
 }
 
 Region Machine::region() const { return m_impl->regionId; }

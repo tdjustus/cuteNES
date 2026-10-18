@@ -38,6 +38,19 @@ std::uint8_t Bus::read(std::uint16_t addr)
     return value;
 }
 
+std::uint8_t Bus::peek(std::uint16_t addr) const
+{
+    if (addr < 0x2000) {
+        return m_ram[addr & 0x07FF];
+    }
+    if (addr >= 0x6000) {
+        return m_cartridge != nullptr ? m_cartridge->cpuRead(addr) : 0;
+    }
+    // Register regions: peeking must not disturb device state. The golden
+    // nestest trace previews this space with the bus-high value.
+    return addr >= 0x4000 ? 0xFF : 0;
+}
+
 void Bus::write(std::uint16_t addr, std::uint8_t value)
 {
     m_openBus = value;

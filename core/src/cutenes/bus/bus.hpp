@@ -28,6 +28,10 @@ public:
     void attachCartridge(CpuBusDevice* device);
 
     std::uint8_t read(std::uint16_t addr);
+
+    // Side-effect-free read for disassembly/tracing: no open-bus latch
+    // update, no register side effects (stateful regions return 0).
+    std::uint8_t peek(std::uint16_t addr) const;
     void write(std::uint16_t addr, std::uint8_t value);
 
     const std::array<std::uint8_t, 2048>& ram() const { return m_ram; }
