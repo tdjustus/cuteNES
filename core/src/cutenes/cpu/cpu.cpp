@@ -642,7 +642,7 @@ void Cpu::reset(bool cold)
 void Cpu::assertNmi()
 {
     m_nmiPending = true;
-    m_edgeCycle = 0; // externally-asserted edges predate this instruction
+    m_edgeCycle = -1; // externally-asserted edges predate everything
 }
 void Cpu::setIrq(bool level) { m_irqLine = level; }
 
@@ -715,7 +715,8 @@ void Cpu::step()
     // Interrupts are effectively polled at the second-to-last cycle of an
     // instruction: an edge latched ON the final cycle defers service past
     // this boundary (nesdev CPU_interrupts; 05-nmi_timing, 04-nmi_control).
-    if (m_nmiPending && (m_nmiStale || m_edgeCycle < m_prevInstrCycles)) {
+    if (m_nmiPending
+        && (m_nmiStale || m_edgeCycle < m_prevInstrCycles)) {
         m_nmiPending = false;
         m_nmiStale = false;
         doInterrupt(0xFFFA, false);
