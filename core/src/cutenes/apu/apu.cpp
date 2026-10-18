@@ -161,10 +161,12 @@ void Apu::setAudioSink(IAudioSink* sink) { m_sink = sink; }
 std::uint8_t Apu::statusRead()
 {
     std::uint8_t v = 0;
-    if (m_pulse1.length > 0 && m_pulse1.enabled) v |= 0x01;
-    if (m_pulse2.length > 0 && m_pulse2.enabled) v |= 0x02;
-    if (m_triangle.length > 0 && m_triangle.enabled) v |= 0x04;
-    if (m_noise.length > 0 && m_noise.enabled) v |= 0x08;
+    // Status bits reflect length>0 regardless of the enable bit (enable
+    // only gates output; $4015=0 clears the length separately).
+    if (m_pulse1.length > 0) v |= 0x01;
+    if (m_pulse2.length > 0) v |= 0x02;
+    if (m_triangle.length > 0) v |= 0x04;
+    if (m_noise.length > 0) v |= 0x08;
     if (m_dmc.bytesRemaining > 0) v |= 0x10;
     if (m_frameIrq) v |= 0x40;
     if (m_dmcIrq) v |= 0x80;
@@ -308,8 +310,14 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         if (m_inhibitIrq) {
             m_frameIrq = false;
         }
-        m_sequenceCycle = 0; // immediate reset (3-cycle delay is T036)
+        m_sequenceCycle = 0;
         m_sequenceStep = 0;
+        if (m_frameMode5) {
+            // 5-step mode: the reset clocks quarter+half after ~3 cycles;
+            // immediate is within the test tolerance (exact delay: T036).
+            quarterFrame();
+            halfFrame();
+        }
     }
 }
 
