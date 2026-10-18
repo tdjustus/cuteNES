@@ -120,11 +120,11 @@ independently testable increment. Paths follow plan.md's source tree.
 
 ### Implementation for User Story 3
 
-- [ ] T039 [P] [US3] Implement run-control state machine in `core/src/cutenes/system/machine.cpp`: `runFrames(n)`, `frameAdvance()`, `pause()`, `resume()`, `RunState` transitions (NeedsRom→Paused→Running) per data-model.md Machine entity
-- [ ] T040 [US3] Implement `stepInstruction()` in `core/src/cutenes/system/machine.cpp` + `core/src/cutenes/system/scheduler.cpp`: advance dependent components to the exact next instruction boundary
-- [ ] T041 [P] [US3] Implement authentic `reset()` vs `powerOn()` differences in `core/src/cutenes/system/machine.cpp`: reset keeps A/X/Y/flags (sets I=1), S -= 3, PC re-fetch from $FFFC, "$4015 cleared, $4011 &= 1, $4017 unchanged" (research D4)
-- [ ] T042 [P] [US3] Implement observation API in `core/src/cutenes/system/machine.cpp` + `core/include/cutenes/state_view.hpp`: `cpu()`, `readMemory` (register-read side effects included), `writeMemory`, `writeCpuRegister` (contracts/core-api.md)
-- [ ] T043 [US3] Add stepping-equivalence scenario to `tests/harness/main.cpp`: interleaved pause/step/resume sessions hash-identical to uninterrupted runs
+- [x] T039 [P] [US3] Implement run-control state machine in `core/src/cutenes/system/machine.cpp`: `runFrames(n)`, `frameAdvance()`, `pause()`, `resume()`, `RunState` transitions (NeedsRom→Paused→Running) per data-model.md Machine entity
+- [x] T040 [US3] Implement `stepInstruction()` in `core/src/cutenes/system/machine.cpp` + `core/src/cutenes/system/scheduler.cpp`: advance dependent components to the exact next instruction boundary
+- [x] T041 [P] [US3] Implement authentic `reset()` vs `powerOn()` differences in `core/src/cutenes/system/machine.cpp`: reset keeps A/X/Y/flags (sets I=1), S -= 3, PC re-fetch from $FFFC, "$4015 cleared, $4011 &= 1, $4017 unchanged" (research D4)
+- [x] T042 [P] [US3] Implement observation API in `core/src/cutenes/system/machine.cpp` + `core/include/cutenes/state_view.hpp`: `cpu()`, `readMemory` (register-read side effects included), `writeMemory`, `writeCpuRegister` (contracts/core-api.md)
+- [x] T043 [US3] Add stepping-equivalence scenario to `tests/harness/main.cpp`: interleaved pause/step/resume sessions hash-identical to uninterrupted runs
 
 **Checkpoint**: Automation clients can drive execution precisely (foundation for MCP feature 002).
 

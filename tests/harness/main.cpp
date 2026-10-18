@@ -226,6 +226,46 @@ int cmdSuite(const char* romPath)
     return pass ? 0 : 1;
 }
 
+// T043: a frame completed entirely by single-stepping must be
+// byte-identical to the same frame via runFrames (spec US3).
+int cmdStepEquiv(const char* romPath, std::uint32_t frame)
+{
+    std::vector<std::uint8_t> rom;
+    if (!readRom(romPath, rom)) {
+        return 2;
+    }
+    RecordingSink sinkA;
+    RecordingSink sinkB;
+    for (int pass = 0; pass < 2; ++pass) {
+        cutenes::Machine machine;
+        if (machine.loadCartridge(rom.data(), rom.size()).error
+            != cutenes::LoadError::Ok) {
+            return 2;
+        }
+        RecordingSink& sink = pass == 0 ? sinkA : sinkB;
+        machine.setVideoSink(&sink);
+        machine.setAudioSink(&sink);
+        machine.powerOn();
+        for (std::uint32_t f = 0; f < frame; ++f) {
+            if (pass == 0) {
+                machine.runFrames(1);
+            } else {
+                const std::size_t before = sink.hashes.size();
+                while (sink.hashes.size() == before) {
+                    machine.stepInstruction();
+                }
+            }
+        }
+    }
+    if (sinkA.hashes != sinkB.hashes) {
+        std::printf("step-equiv: FAIL (frame %u differs)\n", frame);
+        return 1;
+    }
+    std::printf("step-equiv: PASS (%u frames identical via stepping)\n",
+        frame);
+    return 0;
+}
+
 int notImplemented(const char* command, const char* task)
 {
     std::fprintf(stderr,
@@ -264,6 +304,9 @@ int main(int argc, char** argv)
 
     if (command == "run" && argc == 4) {
         return cmdRun(argv[2], parseUint(argv[3]));
+    }
+    if (command == "step-equiv" && argc == 4) {
+        return cmdStepEquiv(argv[2], parseUint(argv[3]));
     }
     if (command == "determinism" && argc == 6
         && std::strcmp(argv[2], "--rom") == 0

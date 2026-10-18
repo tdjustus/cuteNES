@@ -153,6 +153,12 @@ void Machine::stepInstruction()
     impl.cpu->step();
     impl.ppu->runTo(impl.scheduler.now());
     impl.apu->runTo(impl.scheduler.now());
+    // Frame delivery must not depend on which API surface advanced time.
+    if (impl.ppu->takeFrameReady()) {
+        impl.apu->flushToSink();
+        impl.deliverFrame();
+        ++impl.frameCounter;
+    }
 }
 
 void Machine::pause()
