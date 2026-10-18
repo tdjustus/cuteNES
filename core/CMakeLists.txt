@@ -11,6 +11,7 @@ add_library(cutenes-core
     src/cutenes/cartridge/cart.cpp
     src/cutenes/cpu/cpu.cpp
     src/cutenes/ppu/ppu.cpp
+    src/cutenes/apu/apu.cpp
     src/cutenes/mappers/mapper.cpp
     src/cutenes/mappers/nrom.cpp)
 

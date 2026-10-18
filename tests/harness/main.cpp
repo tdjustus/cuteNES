@@ -1,12 +1,8 @@
-// rom_harness — headless verification driver for the cutenes-core
+// rom_harness — headless verification driver for cutenes-core
 // (specs/001-emulation-core/quickstart.md scenarios).
 //
-// Phase-2 state: the `run` scenario exercises the machine skeleton (black
-// frames, silent audio, deterministic frame hashing). ROM-dependent
-// scenarios activate as their phases land:
-//   nestest      task T029    determinism  task T027
-//   suite        task T031    savestate    task T051
-//   playtest     task T059    bench        task T061
+// Implemented: run (T012 + integration), determinism (T027).
+// Pending: suite T031, nestest T029, savestate T051, playtest T059, bench T061.
 
 #include <cutenes/cutenes.hpp>
 
@@ -15,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -28,57 +25,103 @@ std::uint32_t fnv1a32(const std::uint8_t* data, std::size_t size)
     return hash;
 }
 
-class HashingVideoSink final : public cutenes::IVideoSink {
+bool readRom(const char* path, std::vector<std::uint8_t>& out)
+{
+    std::FILE* f = std::fopen(path, "rb");
+    if (f == nullptr) {
+        std::fprintf(stderr, "rom_harness: cannot open %s\n", path);
+        return false;
+    }
+    std::fseek(f, 0, SEEK_END);
+    const long size = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
+    out.resize(static_cast<std::size_t>(size));
+    const std::size_t got =
+        std::fread(out.data(), 1, out.size(), f);
+    std::fclose(f);
+    return got == out.size();
+}
+
+class RecordingSink final : public cutenes::IVideoSink,
+                            public cutenes::IAudioSink {
 public:
     void onFrame(const cutenes::VideoFrame& frame) override
     {
-        const auto* bytes =
-            reinterpret_cast<const std::uint8_t*>(frame.pixels);
-        const std::uint32_t hash =
-            fnv1a32(bytes, 256 * 240 * 4); // XRGB8888, 61440 bytes
-        std::printf("frame %llu hash %08x\n",
-            static_cast<unsigned long long>(frame.frameIndex), hash);
-        ++m_frames;
-        m_lastHash = hash;
+        const auto* bytes = reinterpret_cast<const std::uint8_t*>(frame.pixels);
+        hashes.push_back(fnv1a32(bytes, 256 * 240 * 4)); // 61440 bytes
     }
 
-    std::uint64_t frames() const { return m_frames; }
-    std::uint32_t lastHash() const { return m_lastHash; }
-
-private:
-    std::uint64_t m_frames = 0;
-    std::uint32_t m_lastHash = 0;
-};
-
-class CountingAudioSink final : public cutenes::IAudioSink {
-public:
-    void onSamples(const std::int16_t* /*pcm*/, std::size_t count,
-        std::uint64_t /*startMasterCycle*/) override
+    void onSamples(const std::int16_t* pcm, std::size_t count,
+        std::uint64_t) override
     {
-        m_samples += count;
+        audio.insert(audio.end(), pcm, pcm + count);
     }
 
-    std::uint64_t samples() const { return m_samples; }
-
-private:
-    std::uint64_t m_samples = 0;
+    std::vector<std::uint32_t> hashes;
+    std::vector<std::int16_t> audio;
 };
 
-int cmdRun(std::uint32_t frames)
+int cmdRun(const char* romPath, std::uint32_t frames)
 {
+    std::vector<std::uint8_t> rom;
+    if (!readRom(romPath, rom)) {
+        return 1;
+    }
     cutenes::Machine machine;
-    HashingVideoSink video;
-    CountingAudioSink audio;
-    machine.setVideoSink(&video);
-    machine.setAudioSink(&audio);
-
+    const auto result =
+        machine.loadCartridge(rom.data(), rom.size());
+    if (result.error != cutenes::LoadError::Ok) {
+        std::fprintf(stderr, "rom_harness: load error %d detail %u\n",
+            static_cast<int>(result.error), result.detail);
+        return 1;
+    }
+    RecordingSink sink;
+    machine.setVideoSink(&sink);
+    machine.setAudioSink(&sink);
     machine.powerOn();
     machine.runFrames(frames);
 
-    std::printf("frames=%llu audio_samples=%llu last_hash=%08x\n",
-        static_cast<unsigned long long>(video.frames()),
-        static_cast<unsigned long long>(audio.samples()),
-        video.lastHash());
+    std::printf("ran %llu frames; first %08x last %08x audio %llu samples\n",
+        static_cast<unsigned long long>(sink.hashes.size()),
+        sink.hashes.empty() ? 0 : sink.hashes.front(),
+        sink.hashes.empty() ? 0 : sink.hashes.back(),
+        static_cast<unsigned long long>(sink.audio.size()));
+    return 0;
+}
+
+int cmdDeterminism(const char* romPath, std::uint32_t frames)
+{
+    std::vector<std::uint8_t> rom;
+    if (!readRom(romPath, rom)) {
+        return 1;
+    }
+
+    RecordingSink first;
+    RecordingSink second;
+    for (int pass = 0; pass < 2; ++pass) {
+        cutenes::Machine machine;
+        const auto result =
+            machine.loadCartridge(rom.data(), rom.size());
+        if (result.error != cutenes::LoadError::Ok) {
+            std::fprintf(stderr, "rom_harness: load error %d\n",
+                static_cast<int>(result.error));
+            return 1;
+        }
+        RecordingSink& sink = pass == 0 ? first : second;
+        machine.setVideoSink(&sink);
+        machine.setAudioSink(&sink);
+        machine.powerOn();
+        machine.runFrames(frames);
+    }
+
+    if (first.hashes != second.hashes || first.audio != second.audio) {
+        std::printf("determinism: FAIL (frames %zu/%zu, audio %zu/%zu)\n",
+            first.hashes.size(), second.hashes.size(), first.audio.size(),
+            second.audio.size());
+        return 1;
+    }
+    std::printf("determinism: PASS (%zu frames byte-identical across runs)\n",
+        first.hashes.size());
     return 0;
 }
 
@@ -94,13 +137,18 @@ void usage()
 {
     std::fprintf(stderr,
         "usage: rom_harness <command> [args]\n"
-        "  run <frames>                 run the machine N frames and report hashes\n"
-        "  suite [--tier 1|2]           tiered test-ROM acceptance (T031)\n"
-        "  nestest [--golden-log]       CPU golden-log verification (T029)\n"
-        "  determinism --rom R --frames N  replay determinism (T027)\n"
+        "  run <rom> <frames>              run N frames, report frame hashes\n"
+        "  determinism --rom R --frames N  run-twice byte comparison (T027)\n"
+        "  suite [--tier 1|2]              tiered test-ROM acceptance (T031)\n"
+        "  nestest [--golden-log]          CPU golden-log verification (T029)\n"
         "  savestate --rom R --at F --rerun-to F  restore round trip (T051)\n"
-        "  playtest --list FILE         scripted commercial-game checks (T059)\n"
-        "  bench --rom R --seconds N    sustained-speed benchmark (T061)\n");
+        "  playtest --list FILE            scripted game checks (T059)\n"
+        "  bench --rom R --seconds N       sustained-speed benchmark (T061)\n");
+}
+
+std::uint32_t parseUint(const char* s)
+{
+    return static_cast<std::uint32_t>(std::strtoul(s, nullptr, 10));
 }
 
 } // namespace
@@ -113,13 +161,16 @@ int main(int argc, char** argv)
     }
     const std::string command = argv[1];
 
-    if (command == "run" && argc == 3) {
-        return cmdRun(static_cast<std::uint32_t>(std::strtoul(argv[2],
-            nullptr, 10)));
+    if (command == "run" && argc == 4) {
+        return cmdRun(argv[2], parseUint(argv[3]));
+    }
+    if (command == "determinism" && argc == 6
+        && std::strcmp(argv[2], "--rom") == 0
+        && std::strcmp(argv[4], "--frames") == 0) {
+        return cmdDeterminism(argv[3], parseUint(argv[5]));
     }
     if (command == "suite") return notImplemented("suite", "T031");
     if (command == "nestest") return notImplemented("nestest", "T029");
-    if (command == "determinism") return notImplemented("determinism", "T027");
     if (command == "savestate") return notImplemented("savestate", "T051");
     if (command == "playtest") return notImplemented("playtest", "T059");
     if (command == "bench") return notImplemented("bench", "T061");

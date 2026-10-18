@@ -1,55 +1,68 @@
+// Machine facade — wires CPU, PPU, APU, cartridge, and the run loop
+// (tasks T010/T011 skeleton superseded by this integration; tasks
+// T019-T026 components).
+
 #include "cutenes/system/machine_impl.hpp"
 
-#include <cutenes/cutenes.hpp>
-
-#include <array>
+#include <cstring>
 #include <utility>
 
 namespace cutenes {
 
-namespace {
-
-constexpr std::size_t kAudioChunkMax = 4096; // contracts/media-output.md bound
-
-} // namespace
-
 Machine::Impl::Impl(const MachineConfig& cfg)
     : config(cfg)
-    , regionId(Region::Ntsc)
-    , profile(regionProfile(regionId))
-    , scheduler(profile)
 {
+    buildComponents(Region::Ntsc);
+}
+
+void Machine::Impl::buildComponents(Region region)
+{
+    regionId = region;
+    profile = &regionProfile(region);
+    scheduler = Scheduler{*profile};
+
+    ppu = std::make_unique<Ppu>(*profile, scheduler);
+    apu = std::make_unique<Apu>(*profile, scheduler, bus);
+    cpu = std::make_unique<Cpu>(bus, scheduler, ppu.get(), apu.get());
+
+    ppu->setVideoOutput(framebuffer.data());
+    ppu->setNmiCallback([this] { cpu->assertNmi(); });
+    apu->setOutputRate(config.audioSampleRate);
+
+    io = ApuIoBridge{};
+    io.sched = &scheduler;
+    io.bus = &bus;
+    io.ppu = ppu.get();
+    io.apu = apu.get();
+
+    bus.attachPpu(ppu.get());
+    bus.attachApuIo(&io);
+    bus.attachCartridge(&cart);
 }
 
 void Machine::Impl::deliverFrame()
 {
-    if (videoSink == nullptr) {
-        return;
+    if (videoSink != nullptr) {
+        const VideoFrame frame{framebuffer.data(), frameCounter};
+        videoSink->onFrame(frame);
     }
-    // framebuffer stays zero-filled (black, bits 24-31 zero) until the PPU
-    // renders real output — task T021/T026.
-    const VideoFrame frame{framebuffer.data(), scheduler.frameIndex()};
-    videoSink->onFrame(frame);
 }
 
-void Machine::Impl::deliverAudioForTicks(std::uint64_t ticks)
+// Execute instructions until the PPU emits its final visible pixel, keeping
+// every component caught up to the master clock along the way.
+void Machine::Impl::runUntilFrameComplete()
 {
-    if (audioSink == nullptr) {
-        return;
-    }
-    // Deterministic fixed-point sample accounting: samples for an interval =
-    // sampleRate * ticks / masterRate, accumulated without loss
-    // (contracts/media-output.md; real samples come from the APU, task T024).
-    audioNumerator += static_cast<std::uint64_t>(config.audioSampleRate)
-        * ticks * profile.masterClockDen;
-    std::uint64_t pending = audioNumerator / profile.masterClockNum;
-    audioNumerator %= profile.masterClockNum;
-
-    while (pending > 0) {
-        const std::size_t count = static_cast<std::size_t>(
-            pending > kAudioChunkMax ? kAudioChunkMax : pending);
-        audioSink->onSamples(audioChunk.data(), count, scheduler.now());
-        pending -= count;
+    while (true) {
+        cpu->setIrq(apu->frameIrqPending() || apu->dmcIrqPending());
+        cpu->step();
+        ppu->runTo(scheduler.now());
+        if (ppu->takeFrameReady()) {
+            apu->runTo(scheduler.now());
+            apu->flushToSink();
+            deliverFrame();
+            ++frameCounter;
+            return;
+        }
     }
 }
 
@@ -63,74 +76,82 @@ Machine::~Machine() = default;
 Machine::Machine(Machine&&) noexcept = default;
 Machine& Machine::operator=(Machine&&) noexcept = default;
 
-LoadResult Machine::loadCartridge(const std::uint8_t* /*data*/,
-    std::size_t /*size*/)
+LoadResult Machine::loadCartridge(const std::uint8_t* data, std::size_t size)
 {
-    // iNES 1.0 / NES 2.0 parsing lands with task T018 (US1).
-    return LoadResult{LoadError::NotAnInesFile, 0, CartridgeInfo{}};
+    auto& impl = *m_impl;
+    const LoadResult result =
+        Cartridge::load(data, size, impl.cart);
+    if (result.error != LoadError::Ok) {
+        impl.runState = RunState::NeedsRom;
+        return result;
+    }
+
+    // Region resolves from the header (NES 2.0) with the NTSC default.
+    // A region change rebuilds every timing-dependent component.
+    const Region region =
+        result.info.region == Region::Pal ? Region::Pal : Region::Ntsc;
+    if (region != impl.regionId) {
+        const MachineConfig config = impl.config;
+        impl = Impl(config);
+        // Re-parse into the rebuilt implementation.
+        const LoadResult again = Cartridge::load(data, size, impl.cart);
+        (void)again;
+    }
+    impl.ppu->attachCartridge(&impl.cart);
+    impl.runState = RunState::Paused;
+    return result;
 }
 
 void Machine::ejectCartridge()
 {
-    m_impl->info = CartridgeInfo{};
-    m_impl->runState = RunState::NeedsRom;
+    auto& impl = *m_impl;
+    impl.cart = Cartridge{};
+    impl.ppu->attachCartridge(nullptr);
+    impl.runState = RunState::NeedsRom;
 }
 
-const CartridgeInfo& Machine::cartridgeInfo() const { return m_impl->info; }
+const CartridgeInfo& Machine::cartridgeInfo() const
+{
+    return m_impl->cart.info;
+}
 
 void Machine::powerOn()
 {
     auto& impl = *m_impl;
-    // Cold boot per research.md D4: A=X=Y=0, S=$FD, P=$24 (bit 5 reads 1, B
-    // flag never materialized). PC from the reset vector.
-    impl.cpu = CpuState{};
-    impl.cpu.pc = static_cast<std::uint16_t>(
-        impl.bus.read(0xFFFC) | (std::uint16_t{impl.bus.read(0xFFFD)} << 8));
-
-    // The reset sequence consumes 7 CPU cycles with the PPU ticking, so
-    // CYC:7 / PPU (0,21) matches nestest.log line 1 exactly (research.md D4).
-    // Real CPU/PPU execution arrives with tasks T019/T021.
-    impl.scheduler = Scheduler(impl.profile);
-    impl.scheduler.advanceMaster(7 * impl.profile.cpuDivisor);
-
+    // Cold boot: zero the sole time source, then reset every component
+    // (the CPU's reset consumes 7 cycles, matching nestest.log).
+    impl.scheduler.reset();
+    impl.cpu->reset(/*cold=*/true);
+    impl.ppu->reset(/*cold=*/true);
+    impl.apu->reset(/*cold=*/true);
+    impl.frameCounter = 0;
     impl.runState =
-        impl.info.prgSize > 0 ? RunState::Paused : RunState::NeedsRom;
+        impl.cart.info.prgSize > 0 ? RunState::Paused : RunState::NeedsRom;
 }
 
 void Machine::reset()
 {
-    auto& impl = *m_impl;
-    // Reset-button behavior (research.md D4): S -= 3, I flag set, registers
-    // otherwise preserved, PC re-fetched. $4015 clear / $4011 &= 1 are APU
-    // side effects applied when the APU attaches (task T036).
-    impl.cpu.s = static_cast<std::uint8_t>(impl.cpu.s - 3);
-    impl.cpu.p |= 0x04; // I flag
-    impl.cpu.pc = static_cast<std::uint16_t>(
-        impl.bus.read(0xFFFC) | (std::uint16_t{impl.bus.read(0xFFFD)} << 8));
-    impl.scheduler.advanceMaster(7 * impl.profile.cpuDivisor);
+    m_impl->cpu->reset(/*cold=*/false);
+    m_impl->ppu->reset(/*cold=*/false);
+    m_impl->apu->reset(/*cold=*/false);
 }
 
 void Machine::runFrames(std::uint32_t frames)
 {
-    auto& impl = *m_impl;
     for (std::uint32_t i = 0; i < frames; ++i) {
-        const std::uint64_t before = impl.scheduler.now();
-        impl.scheduler.endFrame(); // advance to the exact frame boundary
-        impl.deliverAudioForTicks(impl.scheduler.now() - before);
-        impl.deliverFrame();
+        m_impl->runUntilFrameComplete();
     }
 }
 
-void Machine::frameAdvance()
-{
-    runFrames(1);
-}
+void Machine::frameAdvance() { runFrames(1); }
 
 void Machine::stepInstruction()
 {
-    // Placeholder granularity (one CPU cycle) until the instruction-stepped
-    // CPU lands with tasks T019/T040.
-    m_impl->scheduler.advanceMaster(m_impl->profile.cpuDivisor);
+    auto& impl = *m_impl;
+    impl.cpu->setIrq(impl.apu->frameIrqPending() || impl.apu->dmcIrqPending());
+    impl.cpu->step();
+    impl.ppu->runTo(impl.scheduler.now());
+    impl.apu->runTo(impl.scheduler.now());
 }
 
 void Machine::pause()
@@ -151,11 +172,8 @@ RunState Machine::runState() const { return m_impl->runState; }
 
 void Machine::setController(Port port, ButtonSet buttons)
 {
-    // Serial polling behavior arrives with task T044; the machine stores the
-    // raw state now so the API is complete.
     const std::size_t index = port == Port::Two ? 1 : 0;
-    m_impl->controllers[index] =
-        buttons & ButtonSet{0xFF}; // full replace, 8 defined bits
+    m_impl->controllers[index] = buttons;
 }
 
 ButtonSet Machine::controller(Port port) const
@@ -165,11 +183,14 @@ ButtonSet Machine::controller(Port port) const
 }
 
 void Machine::setVideoSink(IVideoSink* sink) { m_impl->videoSink = sink; }
-void Machine::setAudioSink(IAudioSink* sink) { m_impl->audioSink = sink; }
+void Machine::setAudioSink(IAudioSink* sink)
+{
+    m_impl->apu->setAudioSink(sink);
+}
 
 CpuState Machine::cpu() const
 {
-    CpuState state = m_impl->cpu;
+    CpuState state = m_impl->cpu->state();
     state.masterCycle = m_impl->scheduler.now();
     return state;
 }
@@ -178,8 +199,6 @@ void Machine::readMemory(std::uint16_t addr, std::size_t len,
     std::uint8_t* dst) const
 {
     for (std::size_t i = 0; i < len; ++i) {
-        // Note: reads carry register side effects (e.g. $2002 clears VBlank)
-        // once those registers exist (tasks T021/T023).
         const std::uint16_t a = static_cast<std::uint16_t>(addr + i);
         dst[i] = const_cast<Bus&>(m_impl->bus).read(a);
     }
@@ -213,29 +232,32 @@ SaveStateBlob Machine::captureState()
 LoadStateError Machine::loadState(const std::uint8_t* /*data*/,
     std::size_t size)
 {
-    // Rejection matrix lands with tasks T047-T049 (US5); until then any
-    // request is refused rather than guessed at.
     return size == 0 ? LoadStateError::BadMagic
                      : LoadStateError::IncompatibleFormat;
 }
 
 SramRange Machine::sram() const
 {
-    // Battery SRAM surfaces when cartridges parse (tasks T018/T050).
-    return SramRange{};
+    const auto& ram = m_impl->cart.prgRam;
+    if (ram.empty()) {
+        return SramRange{};
+    }
+    return SramRange{ram.data(), ram.size()};
 }
 
-void Machine::loadSram(const std::uint8_t* /*data*/, std::size_t /*size*/)
+void Machine::loadSram(const std::uint8_t* data, std::size_t size)
 {
-    // Size resolution (header flags-8, NES 2.0 log encoding) is task T050.
+    auto& ram = m_impl->cart.prgRam;
+    if (ram.empty() || data == nullptr) {
+        return;
+    }
+    const std::size_t n = size < ram.size() ? size : ram.size();
+    std::memcpy(ram.data(), data, n);
 }
 
 Region Machine::region() const { return m_impl->regionId; }
 
-std::uint64_t Machine::frameCounter() const
-{
-    return m_impl->scheduler.frameIndex();
-}
+std::uint64_t Machine::frameCounter() const { return m_impl->frameCounter; }
 
 std::uint64_t Machine::masterCycle() const { return m_impl->scheduler.now(); }
 
