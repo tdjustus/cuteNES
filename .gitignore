@@ -1,0 +1,10 @@
+# Build output
+build/
+cmake-build-*/
+
+# Python (Spec Kit scripts)
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
