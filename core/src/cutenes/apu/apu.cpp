@@ -483,9 +483,15 @@ static void sequencePoint(std::uint32_t step, bool mode5,
 
 void Apu::dmcFetchByte()
 {
-    // Reads via the bus without CPU-stall accounting (task T037).
+    // Superseded by the CPU-serviced fetch (dmcFetchPending/dmcDeliver):
+    // the DMC halts the CPU for the memory read. Kept for direct paths.
     m_dmc.sampleBuffer = m_bus.read(m_dmc.currentAddr);
     m_dmc.bufferEmpty = false;
+    advanceDmcAddress();
+}
+
+void Apu::advanceDmcAddress()
+{
     m_dmc.currentAddr = static_cast<std::uint16_t>(
         m_dmc.currentAddr >= 0xFFFF ? 0x8000 : m_dmc.currentAddr + 1);
     --m_dmc.bytesRemaining;
@@ -529,9 +535,8 @@ void Apu::clockDmcTimer()
     } else {
         --m_dmc.timer;
     }
-    if (m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0) {
-        dmcFetchByte();
-    }
+    // DMC fetches are requested via dmcFetchPending() and serviced by the
+    // CPU (task T037): the DMA halts the processor for the memory read.
 }
 
 // --- Mixing ---------------------------------------------------------------------------

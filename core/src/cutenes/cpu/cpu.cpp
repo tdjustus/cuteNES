@@ -348,6 +348,17 @@ void Cpu::sampleNmi()
 std::uint8_t Cpu::rd(std::uint16_t addr)
 {
     ++m_cycles;
+    // A pending DMC fetch halts the CPU: ~3 stall cycles plus the clocked
+    // memory read itself (task T037). Get-cycles here also stall sprite DMA.
+    while (m_apu != nullptr && m_apu->dmcFetchPending()) {
+        tick();
+        tick();
+        tick();
+        const std::uint16_t dmcAddr = m_apu->dmcFetchAddress();
+        const std::uint8_t byte = rawRead(dmcAddr);
+        m_apu->dmcDeliver(byte);
+        break; // one fetch per halt
+    }
     tickHalf(false);
     const std::uint8_t value = m_bus.read(addr);
     if ((addr & 0x3FFF) == 0x2002 && m_ppu != nullptr) {
@@ -356,6 +367,15 @@ std::uint8_t Cpu::rd(std::uint16_t addr)
             m_nmiPending = false;
         }
     }
+    sampleNmi();
+    tickHalf(false);
+    return value;
+}
+
+std::uint8_t Cpu::rawRead(std::uint16_t addr)
+{
+    tickHalf(false);
+    const std::uint8_t value = m_bus.read(addr);
     sampleNmi();
     tickHalf(false);
     return value;

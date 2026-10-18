@@ -53,6 +53,23 @@ public:
     }
     bool dmcIrqPending() const { return m_dmcIrq; }
 
+    // CPU-serviced DMC memory fetch: the delta channel halts the processor
+    // for 4 cycles while it reads its next sample byte (task T037).
+    bool dmcFetchPending() const override
+    {
+        return m_dmc.enabled && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0;
+    }
+    std::uint16_t dmcFetchAddress() const override
+    {
+        return m_dmc.currentAddr;
+    }
+    void dmcDeliver(std::uint8_t byte) override
+    {
+        m_dmc.sampleBuffer = byte;
+        m_dmc.bufferEmpty = false;
+        advanceDmcAddress();
+    }
+
 private:
     struct Pulse {
         bool enabled = false;
@@ -111,6 +128,7 @@ private:
     void clockLength(std::uint8_t& length, bool enabled);
     void clockDmcTimer();
     void dmcFetchByte();
+    void advanceDmcAddress();
     void mixNativeSample();
     std::uint8_t statusRead();
 

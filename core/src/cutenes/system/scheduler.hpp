@@ -46,6 +46,10 @@ public:
     // True once (consumed) if a $2002 read landed in the suppression window
     // and this frame's NMI must be cancelled (06-suppression rows 5-6).
     virtual bool consumeNmiKill() { return false; }
+    // CPU-serviced DMC memory fetch (APU only; task T037).
+    virtual bool dmcFetchPending() const { return false; }
+    virtual std::uint16_t dmcFetchAddress() const { return 0; }
+    virtual void dmcDeliver(std::uint8_t) {}
 };
 
 } // namespace cutenes

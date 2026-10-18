@@ -49,17 +49,28 @@ struct ApuIoBridge final : CpuBusDevice {
         }
     }
 
-    // 513/514-cycle sprite DMA: 256 get/put pairs at 2 cycles each plus the
-    // halt/alignment cycles (exact parity accounting lands with task T037).
+    // Sprite DMA: 513 cycles (+1 alignment when starting on an odd CPU
+    // cycle) — halt, optional align, then 256 get/put pairs. Every cycle
+    // advances both PPU and APU catch-up (task T037).
+    void dmaCycle()
+    {
+        sched->advanceMaster(12);
+        ppu->runTo(sched->now());
+        apu->runTo(sched->now());
+    }
+
     void oamDma(std::uint8_t page)
     {
         const std::uint16_t base = static_cast<std::uint16_t>(page << 8);
-        sched->advanceMaster(24); // halt + alignment
+        dmaCycle();                              // halt cycle
+        if ((sched->now() / 12) % 2 == 1) {       // align to a get cycle
+            dmaCycle();
+        }
         for (int i = 0; i < 256; ++i) {
-            sched->advanceMaster(24); // get + put
+            dmaCycle();                           // get cycle setup
             const std::uint8_t byte = bus->read(
                 static_cast<std::uint16_t>(base + i));
-            ppu->runTo(sched->now());
+            dmaCycle();                           // put cycle
             ppu->oamDmaWrite(byte);
         }
     }

@@ -59,6 +59,7 @@ private:
     std::uint8_t rd(std::uint16_t addr);
     void wr(std::uint16_t addr, std::uint8_t value);
     void tickHalf(bool phi2);
+    std::uint8_t rawRead(std::uint16_t addr); // clocked read, no DMC re-entry
     void sampleNmi();
     void tick() { tickHalf(false); tickHalf(false); sampleNmi(); }
     std::uint8_t fetch() { return rd(m_pc++); }
