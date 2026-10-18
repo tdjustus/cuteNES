@@ -41,10 +41,15 @@ public:
     static std::int32_t mixerPulse(int sum);
     static std::int32_t mixerTnd(int index);
 
-    bool frameIrqPending() const
+    bool frameIrqPending() const // $4015 read visibility (fire + 2 cyc)
     {
-        return m_frameIrqAt != 0
-            && m_sched.now() + 12 >= m_frameIrqAt; // line: fire + 1 cycle
+        return m_frameIrqAt != 0 && m_sched.now() >= m_frameIrqAt;
+    }
+
+    // IRQ line level for the CPU poll: asserts AT the fire moment.
+    bool frameIrqLine() const
+    {
+        return m_frameIrqAt != 0 && m_sched.now() >= m_frameIrqAt;
     }
     bool dmcIrqPending() const { return m_dmcIrq; }
 

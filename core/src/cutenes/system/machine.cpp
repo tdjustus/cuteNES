@@ -52,7 +52,7 @@ void Machine::Impl::deliverFrame()
 void Machine::Impl::runUntilFrameComplete()
 {
     while (true) {
-        cpu->setIrq(apu->frameIrqPending() || apu->dmcIrqPending());
+        cpu->setIrq(apu->frameIrqLine() || apu->dmcIrqPending());
         cpu->step();
         ppu->runTo(scheduler.now());
         if (ppu->takeFrameReady()) {
@@ -148,7 +148,8 @@ void Machine::frameAdvance() { runFrames(1); }
 void Machine::stepInstruction()
 {
     auto& impl = *m_impl;
-    impl.cpu->setIrq(impl.apu->frameIrqPending() || impl.apu->dmcIrqPending());
+    impl.cpu->setIrq(impl.apu->frameIrqLine()
+        || impl.apu->dmcIrqPending());
     impl.cpu->step();
     impl.ppu->runTo(impl.scheduler.now());
     impl.apu->runTo(impl.scheduler.now());
