@@ -203,7 +203,6 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         default:
             m_pulse1.timerReload = static_cast<std::uint16_t>(
                 (m_pulse1.timerReload & 0x00FF) | ((value & 7) << 8));
-            m_pulse1.lengthEnabled = (value & 0x20) == 0;
             m_pulse1.length = kLengthTable[value >> 3];
             m_pulse1.envStart = true;
             m_pulse1.dutyIndex = 0;
@@ -231,7 +230,6 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         default:
             m_pulse2.timerReload = static_cast<std::uint16_t>(
                 (m_pulse2.timerReload & 0x00FF) | ((value & 7) << 8));
-            m_pulse2.lengthEnabled = (value & 0x20) == 0;
             m_pulse2.length = kLengthTable[value >> 3];
             m_pulse2.envStart = true;
             break;
@@ -249,7 +247,6 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         default:
             m_triangle.timerReload = static_cast<std::uint16_t>(
                 (m_triangle.timerReload & 0x00FF) | ((value & 7) << 8));
-            m_triangle.lengthEnabled = (value & 0x20) == 0;
             m_triangle.length = kLengthTable[value >> 3];
             m_triangle.reloadFlag = true;
             break;
@@ -266,7 +263,6 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
             m_noise.timerReload = kNoisePeriods[value & 0x0F] / 2; // APU cyc
             break;
         default:
-            m_noise.lengthEnabled = (value & 0x20) == 0;
             m_noise.length = kLengthTable[value >> 3];
             m_noise.envStart = true;
             break;
@@ -429,10 +425,12 @@ void Apu::quarterFrame()
 
 void Apu::halfFrame()
 {
-    clockLength(m_pulse1.length, m_pulse1.lengthEnabled);
-    clockLength(m_pulse2.length, m_pulse2.lengthEnabled);
-    clockLength(m_triangle.length, m_triangle.lengthEnabled);
-    clockLength(m_noise.length, m_noise.lengthEnabled);
+    // Length halt = envelope-loop bit ($4000/$4004/$400C bit5) for the
+    // squares/noise; $4008 bit7 (control) for the triangle.
+    clockLength(m_pulse1.length, !m_pulse1.envLoop);
+    clockLength(m_pulse2.length, !m_pulse2.envLoop);
+    clockLength(m_triangle.length, !m_triangle.control);
+    clockLength(m_noise.length, !m_noise.envLoop);
     clockSweep(m_pulse1, false);
     clockSweep(m_pulse2, true);
 }
@@ -575,7 +573,7 @@ void Apu::stepApuCycle()
     mixNativeSample();
 
     // Frame-counter sequence checkpoints (CPU cycles: 2 per APU cycle).
-    static const std::uint64_t k4[4] = {7457, 14913, 22371, 29829};
+    static const std::uint64_t k4[4] = {7457, 14913, 22371, 29831};
     static const std::uint64_t k5[5] = {7457, 14913, 22371, 29829, 37281};
     const std::uint64_t next = m_sequenceStep < 4
         ? (m_frameMode5 ? k5[m_sequenceStep] : k4[m_sequenceStep])
