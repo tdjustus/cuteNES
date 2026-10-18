@@ -14,7 +14,8 @@ add_library(cutenes-core
     src/cutenes/ppu/ppu.cpp
     src/cutenes/apu/apu.cpp
     src/cutenes/mappers/mapper.cpp
-    src/cutenes/mappers/nrom.cpp)
+    src/cutenes/mappers/nrom.cpp
+    src/cutenes/mappers/mmc1.cpp)
 
 add_library(cutenes-core::cutenes-core ALIAS cutenes-core)
 

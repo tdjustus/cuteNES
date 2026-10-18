@@ -3,6 +3,9 @@
 #include "cutenes/cartridge/cart.hpp"
 
 namespace cutenes {
+
+std::unique_ptr<Mapper> makeMmc1(Cartridge& cart);
+
 namespace {
 
 // NROM (mapper 0): fixed PRG (16K mirrored or 32K), fixed CHR, header
@@ -35,8 +38,10 @@ std::unique_ptr<Mapper> createMapper(std::uint16_t mapperId, Cartridge& cart)
     switch (mapperId) {
     case 0:
         return std::make_unique<NromMapper>(cart);
+    case 1:
+        return makeMmc1(cart);
     default:
-        // Mappers 1-4 are US6 scope (tasks T053-T056).
+        // Mappers 2-4 land with the remaining US6 tasks (T054-T056).
         return nullptr;
     }
 }

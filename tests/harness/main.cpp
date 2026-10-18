@@ -150,6 +150,82 @@ int cmdNestest(int argc, char** argv)
     return cutenes::NestestRunner::run(rom, log, print);
 }
 
+// blargg console-protocol driver (task T030): signature $DE $B0 $61 at
+// $6001-$6003, status at $6000 ($80 running, $81 reset-request, $00-$7F
+// terminal result), zero-terminated text at $6004 (research.md D11).
+int cmdSuite(const char* romPath)
+{
+    std::vector<std::uint8_t> rom;
+    if (!readRom(romPath, rom)) {
+        return 2;
+    }
+    cutenes::Machine machine;
+    const auto result = machine.loadCartridge(rom.data(), rom.size());
+    if (result.error != cutenes::LoadError::Ok) {
+        std::fprintf(stderr, "suite: load error %d detail %u\n",
+            static_cast<int>(result.error), result.detail);
+        return 2;
+    }
+    machine.powerOn();
+
+    const auto readStatus = [&machine]() {
+        std::uint8_t v = 0;
+        machine.readMemory(0x6000, 1, &v);
+        return v;
+    };
+    const auto signatureOk = [&machine]() {
+        std::uint8_t sig[3] = {0, 0, 0};
+        machine.readMemory(0x6001, 3, sig);
+        return sig[0] == 0xDE && sig[1] == 0xB0 && sig[2] == 0x61;
+    };
+    const auto readText = [&machine](char* out, std::size_t cap) {
+        std::size_t n = 0;
+        for (std::uint16_t a = 0x6004; a < 0x7000 && n + 1 < cap; ++a) {
+            std::uint8_t c = 0;
+            machine.readMemory(a, 1, &c);
+            if (c == 0) {
+                break;
+            }
+            out[n++] = static_cast<char>(c);
+        }
+        out[n] = 0;
+    };
+
+    // Wait for the signature (tests initialize it after boot).
+    bool signed_ = false;
+    for (int frame = 0; frame < 600 && !signed_; ++frame) {
+        machine.runFrames(1);
+        signed_ = signatureOk();
+    }
+    if (!signed_) {
+        std::printf("suite: %s: no $6000 protocol signature\n", romPath);
+        return 3;
+    }
+
+    int status = 0x80;
+    for (int frame = 0; frame < 3600; ++frame) { // ~60s emulated cap
+        status = readStatus();
+        if (status == 0x81) {
+            // Reset request: honor with >=100 ms emulated delay.
+            machine.runFrames(7);
+            machine.reset();
+            machine.runFrames(7);
+            continue;
+        }
+        if (status < 0x80) {
+            break; // terminal result code
+        }
+        machine.runFrames(1);
+    }
+
+    char text[512];
+    readText(text, sizeof text);
+    const bool pass = (status == 0);
+    std::printf("suite: %s: %s (code %02X) %s\n", romPath,
+        pass ? "PASS" : "FAIL", static_cast<unsigned>(status), text);
+    return pass ? 0 : 1;
+}
+
 int notImplemented(const char* command, const char* task)
 {
     std::fprintf(stderr,
@@ -194,7 +270,14 @@ int main(int argc, char** argv)
         && std::strcmp(argv[4], "--frames") == 0) {
         return cmdDeterminism(argv[3], parseUint(argv[5]));
     }
-    if (command == "suite") return notImplemented("suite", "T031");
+    if (command == "suite" && argc == 4
+        && std::strcmp(argv[2], "--rom") == 0) {
+        return cmdSuite(argv[3]);
+    }
+    if (command == "suite") {
+        std::fprintf(stderr, "usage: rom_harness suite --rom <path>\n");
+        return 2;
+    }
     if (command == "nestest") return cmdNestest(argc, argv);
     if (command == "savestate") return notImplemented("savestate", "T051");
     if (command == "playtest") return notImplemented("playtest", "T059");
