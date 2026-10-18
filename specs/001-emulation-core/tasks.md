@@ -104,7 +104,7 @@ independently testable increment. Paths follow plan.md's source tree.
 - [x] T033 [US2] Implement interrupt semantics in `core/src/cutenes/cpu/interrupts.cpp`: NMI/IRQ polling at final instruction cycle, CLI/SEI/PLP one-instruction delay, NMI hijacks BRK, NMI suppression when $2002 read at the set-dot — pass cpu_interrupts_v2 + ppu_vbl_nmi (research D2)
 - [x] T034 [US2] Complete PPU dot precision in `core/src/cutenes/ppu/ppu.cpp`: exact VBlank set/clear dots, $2002 read races at one-PPU-clock accuracy, odd-frame dot skip when rendering enabled — pass ppu_vbl_nmi all subtests (US2 scenario 2)
 - [ ] T035 [US2] Implement the buggy sprite-overflow diagonal scan (n and m both increment on miss) + dot-exact sprite-0 hit with all exclusions (x=255, left clip, disabled layers, transparent pixels) in `core/src/cutenes/ppu/sprite_eval.cpp` — pass sprite_overflow_tests and sprite_hit_tests tier-2 checks (research D3)
-- [ ] T036 [US2] Drive apu_test + apu_reset to pass in `core/src/cutenes/apu/{frame_counter.cpp, dmc.cpp}`: frame-counter steps/IRQ/inhibit + reset register state ($4015 cleared, $4011 &= 1)
+- [x] T036 [US2] Drive apu_test + apu_reset to pass in `core/src/cutenes/apu/{frame_counter.cpp, dmc.cpp}`: frame-counter steps/IRQ/inhibit + reset register state ($4015 cleared, $4011 &= 1)
 - [ ] T037 [US2] Implement DMA engines: OAM DMA 513/514 with get/put alignment in `core/src/cutenes/bus/oam_dma.cpp`; DMC DMA 3-4 cycle load/reload with get-priority over OAM DMA in `core/src/cutenes/apu/dmc_dma.cpp` — pass sprdma_and_dmc_dma (research D2/D8-A3)
 - [ ] T038 [US2] Make tier-1 green the CI merge gate: `.github/workflows/build.yml` fails the build on any `tier1` failure on any OS (constitution Principle III)
 
