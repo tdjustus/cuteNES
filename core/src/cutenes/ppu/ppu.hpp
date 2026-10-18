@@ -79,7 +79,7 @@ private:
     void copyHorizontal();
     void copyVertical();
     void renderPixel(std::uint32_t x);
-    void evaluateSprites();   // dot 65: select sprites for the next line
+    void evalDot(std::uint64_t dot); // per-dot evaluation (dots 65-256)
     void loadSpriteUnits();   // dots 257-320: fetch patterns
     void evaluateSpritesForLine0(); // pre-render: no evaluation (quirk)
     void setBackgroundShifters();
@@ -127,6 +127,17 @@ private:
     bool m_oddFrame = false;
     bool m_suppressSet = false; // read 1 dot before the set
     bool m_nmiKilled = false;   // $2002 read inside the NMI kill window
+
+    // Per-dot sprite evaluation state (research.md D3; task T035). OAMADDR
+    // itself is the evaluation pointer: evaluation starts at its dot-65
+    // value and increments it as it scans.
+    int m_evalStep = 0;         // copy substep 0-3
+    int m_secCount = 0;         // sprites found (0-8)
+    int m_secByte = 0;          // secondary OAM write index (0-31)
+    int m_ovM = 0;              // overflow-scan byte offset (the m of the bug)
+    bool m_evalOverflow = false;
+    bool m_secSecondaryRead = false;
+    std::uint8_t m_evalRead = 0; // odd-cycle OAM read buffer
     bool m_frameComplete = false; // final visible pixel emitted
     std::uint64_t m_ignoreWritesUntil = 0; // master clock
 

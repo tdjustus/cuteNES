@@ -100,6 +100,10 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
         break;
     case 0x2004:
         value = m_oam[m_oamAddr];
+        if (renderingEnabled() && m_scanline < kVisibleLines
+            && m_dot >= 1 && m_dot <= 64) {
+            value = 0xFF; // secondary-OAM clear phase reads $FF
+        }
         break;
     case 0x2007: {
         const std::uint16_t a = m_v & 0x3FFF;
@@ -349,42 +353,125 @@ void Ppu::fetchCycle(std::uint32_t dot)
 
 // --- Sprites -------------------------------------------------------------------
 
-void Ppu::evaluateSprites()
+void Ppu::evalDot(std::uint64_t dot)
 {
-    // Select up to 8 in-range sprites for the NEXT scanline. The buggy
-    // 9th-sprite diagonal scan (m-increment) is US2 scope (task T035).
+    // Per-dot sprite evaluation, visible scanlines, dots 1-256, rendering
+    // enabled — the literal PPU_sprite_evaluation algorithm (research.md
+    // D3, task T035). Odd dots read primary OAM at OAMADDR; even dots
+    // advance the machine. OAMADDR IS the evaluation pointer (byte offset
+    // 4n+m), so $2003 writes mid-scanline land in the scan's path.
     const int line = m_scanline + 1;
     const int height = (m_ctrl & 0x20) != 0 ? 16 : 8;
-    std::size_t out = 0;
-    bool zeroFound = false;
-    m_spriteZeroNext = false;
-    for (std::size_t i = 0; i < 64; ++i) {
-        const int y = m_oam[i * 4];
-        if (line >= y && line < y + height) {
-            if (i == 0) {
-                zeroFound = true;
-            }
-            if (out < 8) {
-                m_oam2[out * 4 + 0] = m_oam[i * 4 + 0];
-                m_oam2[out * 4 + 1] = m_oam[i * 4 + 1];
-                m_oam2[out * 4 + 2] = m_oam[i * 4 + 2];
-                m_oam2[out * 4 + 3] = m_oam[i * 4 + 3];
-                if (zeroFound && i == 0) {
-                    m_spriteZeroNext = true;
-                }
-                ++out;
-            } else {
-                m_status |= 0x20; // overflow (9th in-range sprite)
-                break;
-            }
+    const bool odd = (dot & 1) != 0;
+
+    if (dot <= 64) {
+        // Secondary-OAM clear: normal read/write cycles with reads forced
+        // to $FF; the OAM address still advances (one byte per 2 dots).
+        if (odd) {
+            m_evalRead = 0xFF;
+        } else {
+            m_oam2[static_cast<std::size_t>((dot / 2) - 1)] = 0xFF;
+            ++m_oamAddr;
+        }
+        return;
+    }
+
+    if (dot == 65 && (m_oamAddr & 0xF8) != 0) {
+        // 2C02G/H refresh bug: nonzero OAMADDR at evaluation start copies
+        // the 8 bytes at OAMADDR & $F8 over the first 8 bytes of OAM.
+        const std::uint8_t src = static_cast<std::uint8_t>(m_oamAddr & 0xF8);
+        for (int i = 0; i < 8; ++i) {
+            m_oam[static_cast<std::size_t>(i)] =
+                m_oam[static_cast<std::size_t>((src + i) & 0xFF)];
         }
     }
-    for (; out < 8; ++out) {
-        m_oam2[out * 4 + 0] = 0xFF;
-        m_oam2[out * 4 + 1] = 0xFF;
-        m_oam2[out * 4 + 2] = 0xFF;
-        m_oam2[out * 4 + 3] = 0xFF;
+
+    if (odd) {
+        m_evalRead = m_oam[m_oamAddr];
+        return;
     }
+
+    const auto inRange = [&](std::uint8_t y) {
+        return line >= y && line < y + height;
+    };
+
+    if (!m_evalOverflow) {
+        // Steps 1-2: find and copy up to 8 in-range sprites.
+        switch (m_evalStep) {
+        case 0:
+            if (inRange(m_evalRead)) {
+                if (m_secCount < 8 && m_secByte < 32) {
+                    m_oam2[static_cast<std::size_t>(m_secByte)] = m_evalRead;
+                    if (m_secByte == 0 && (m_oamAddr >> 2) == 0) {
+                        m_spriteZeroNext = true; // sprite 0 in range
+                    }
+                    ++m_secByte;
+                }
+                m_evalStep = 1; // copy OAM[n][1..3]
+            } else {
+                // Out of range: the slot does NOT advance (the next
+                // candidate's Y overwrites the same position).
+                m_oamAddr = static_cast<std::uint8_t>(m_oamAddr + 4); // n++
+            }
+            break;
+        case 1:
+        case 2:
+            if (m_secCount < 8 && m_secByte < 32) {
+                m_oam2[static_cast<std::size_t>(m_secByte)] = m_evalRead;
+                ++m_secByte;
+            }
+            ++m_oamAddr;
+            ++m_evalStep;
+            break;
+        default: // 3: last byte — sprite complete, n++ (address wraps to 4n)
+            if (m_secCount < 8 && m_secByte < 32) {
+                m_oam2[static_cast<std::size_t>(m_secByte)] = m_evalRead;
+                ++m_secByte;
+                ++m_secCount;
+                if (m_secCount == 8) {
+                    m_evalOverflow = true; // enter the step-3 scan
+                    m_ovM = 0;
+                    m_evalStep = 0;
+                    break;
+                }
+            }
+            ++m_oamAddr; // 4n+3 -> 4(n+1)
+            m_evalStep = 0;
+            break;
+        }
+        return;
+    }
+
+    // Steps 3-4: the buggy overflow scan. In the buggy state even-cycle
+    // writes become secondary reads returning the first sprite's Y — a
+    // value always in range — which can steer the increments (the bug).
+    switch (m_evalStep) {
+    case 0: { // comparing OAM[n][m] as a Y coordinate
+        const std::uint8_t y = m_secSecondaryRead ? m_oam2[0] : m_evalRead;
+        if (inRange(y)) {
+            m_status |= 0x20; // overflow flag
+            m_evalStep = 2;   // read the next 3 entries
+            m_ovM = 3;
+        } else {
+            m_oamAddr = static_cast<std::uint8_t>(m_oamAddr + 5); // n++ AND m++
+            // n overflow -> step 4 handled by the m_ovM == 4 sentinel below
+            if (m_oamAddr < 5) {
+                m_evalStep = 3; // wrapped: spin +4 until hblank
+            }
+        }
+        break;
+    }
+    case 2: // consuming the 3 entries after a hit
+        ++m_oamAddr;
+        if (--m_ovM == 0) {
+            m_evalStep = 3; // step 4: spin
+        }
+        break;
+    default: // 3: step 4 — failed copies, n++ each even dot
+        m_oamAddr = static_cast<std::uint8_t>(m_oamAddr + 4);
+        break;
+    }
+    m_secSecondaryRead = true; // writes disabled once 8 found
 }
 
 void Ppu::loadSpriteUnits()
@@ -505,6 +592,20 @@ void Ppu::stepDot()
             renderPixel(static_cast<std::uint32_t>(m_dot - 1));
         }
         fetchCycle(static_cast<std::uint32_t>(m_dot));
+        if (renderingEnabled()) {
+            if (m_dot >= 1 && m_dot <= 256) {
+                evalDot(static_cast<std::uint64_t>(m_dot));
+            }
+            if (m_dot == 0) {
+                // New scanline: evaluation restarts (secondary was cleared
+                // across dots 1-64; the machine state resets here).
+                m_evalStep = 0;
+                m_secCount = 0;
+                m_secByte = 0;
+                m_ovM = 0;
+                m_evalOverflow = false;
+            }
+        }
         if (m_dot == 256) {
             incrementY();
         } else if (m_dot == 257) {
@@ -513,8 +614,6 @@ void Ppu::stepDot()
             if (renderingEnabled()) {
                 m_oamAddr = 0; // OAMADDR resets during sprite fetches
             }
-        } else if (m_dot == 65) {
-            evaluateSprites();
         }
     } else if (m_scanline == kPreRenderLine) {
         fetchCycle(static_cast<std::uint32_t>(m_dot));
@@ -522,7 +621,6 @@ void Ppu::stepDot()
             incrementY();
         } else if (m_dot == 257) {
             copyHorizontal();
-            evaluateSpritesForLine0();
         } else if (m_dot >= 280 && m_dot <= 304) {
             copyVertical();
         }
