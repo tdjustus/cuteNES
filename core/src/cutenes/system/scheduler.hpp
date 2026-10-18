@@ -24,10 +24,23 @@ public:
     // Advance to the exact end of the current frame and begin the next.
     std::uint64_t endFrame();
 
+    // Zero the counters (test/debug realignment only — never during
+    // emulation; the master clock must stay monotonic).
+    void reset();
+
 private:
     const RegionProfile* m_profile;
     std::uint64_t m_master = 0;
     std::uint64_t m_frame = 0;
+};
+
+// A component the CPU catches up to the current master clock at every bus
+// access: the PPU (dot-accurate) and the APU (per CPU cycle) — research.md
+// D1. Both stay nullptr in CPU unit tests.
+class Tickable {
+public:
+    virtual ~Tickable() = default;
+    virtual void runTo(std::uint64_t masterClock) = 0;
 };
 
 } // namespace cutenes

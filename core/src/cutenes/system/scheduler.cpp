@@ -32,4 +32,10 @@ std::uint64_t Scheduler::endFrame()
     return m_master;
 }
 
+void Scheduler::reset()
+{
+    m_master = 0;
+    m_frame = 0;
+}
+
 } // namespace cutenes

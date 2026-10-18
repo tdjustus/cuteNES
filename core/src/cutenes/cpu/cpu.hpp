@@ -1,0 +1,111 @@
+#pragma once
+
+#include "cutenes/bus/bus.hpp"
+#include "cutenes/system/scheduler.hpp"
+
+#include <cutenes/state_view.hpp>
+
+#include <cstdint>
+
+namespace cutenes {
+
+// The 2A03 CPU core: instruction-level 6502 with exact per-access cycle
+// costs — every bus read/write is bracketed by half-cycle master-tick
+// advances with PPU/APU catch-up (research.md D1). No BCD: the 2A03 D flag
+// is ignored in ADC/SBC.
+class Cpu {
+public:
+    enum class Mode : std::uint8_t {
+        Imp, Acc, Imm, Zpg, Zpx, Zpy, Abs, Abx, Aby, Ind, Izx, Izy, Rel,
+    };
+
+    struct OpInfo {
+        Mode mode;
+        std::uint8_t cycles;
+        bool pagePenalty; // +1 cycle when an indexed read crosses a page
+    };
+
+    // ppu/apu may be null (unit tests / headless component bring-up).
+    Cpu(Bus& bus, Scheduler& scheduler, Tickable* ppu, Tickable* apu);
+
+    // Opcode metadata for the full 256-entry space (documented + unofficial).
+    static const OpInfo& opcodeInfo(std::uint8_t opcode);
+
+    // cold=true: power-on (A=X=Y=0, S=$FD, P=$24); false: reset button
+    // (S -= 3, I set, other registers preserved). Both re-fetch PC from
+    // $FFFC/$FFFD consuming 7 CPU cycles (research.md D4).
+    void reset(bool cold);
+
+    // Execute one instruction, or service a pending interrupt first.
+    void step();
+
+    // Interrupt lines, sampled at instruction boundaries. NMI is
+    // edge-triggered (the PPU calls assertNmi() exactly at the vblank dot).
+    void assertNmi();
+    void setIrq(bool level);
+
+    CpuState state() const;
+
+    // Harness/debug entry points (nestest automation enters at $C000).
+    void setProgramCounter(std::uint16_t pc);
+    void restartClockForTest();
+
+private:
+    std::uint8_t rd(std::uint16_t addr);
+    void wr(std::uint16_t addr, std::uint8_t value);
+    void tickHalf();
+    void tick() { tickHalf(); tickHalf(); }
+    std::uint8_t fetch() { return rd(m_pc++); }
+
+    void push(std::uint8_t value);
+    std::uint8_t pop();
+
+    // Value-returning indexed reads (the dummy read at the un-fixed address
+    // is the 4th cycle; the +1 fix-up read happens only on page cross for
+    // penalty ops). Address-returning write variants always take the dummy
+    // read, then the caller writes the effective address.
+    std::uint8_t readAbx(bool penalty);
+    std::uint8_t readAby(bool penalty);
+    std::uint8_t readIzx();
+    std::uint8_t readIzy(bool penalty);
+    std::uint16_t addrAbxWrite();
+    std::uint16_t addrAbyWrite();
+    std::uint16_t addrIzxWrite();
+    std::uint16_t addrIzyWrite();
+
+    void doInterrupt(std::uint16_t vector, bool brk);
+
+    std::uint16_t readPair(); // fetch lo|hi<<8 (absolute address)
+    void compare(std::uint8_t reg, std::uint8_t value);
+
+    // RMW addressing: (opcode & 0x1F) selects the mode within each family.
+    std::uint16_t rmwAddr(std::uint8_t op);      // zpg/zpx/abs/abx group
+    std::uint16_t rmwComboAddr(std::uint8_t op); // izx/zpg/abs/izy/zpx/aby/abx
+    void execRmwCombo(std::uint8_t op);          // SLO/RLA/SRE/RRA/DCP/ISB
+
+    void setNZ(std::uint8_t value);
+    void adc(std::uint8_t value);
+    std::uint8_t asl(std::uint8_t value);
+    std::uint8_t lsr(std::uint8_t value);
+    std::uint8_t rol(std::uint8_t value);
+    std::uint8_t ror(std::uint8_t value);
+    void branch(bool condition);
+
+    Bus& m_bus;
+    Scheduler& m_sched;
+    Tickable* m_ppu;
+    Tickable* m_apu;
+
+    std::uint8_t m_a = 0;
+    std::uint8_t m_x = 0;
+    std::uint8_t m_y = 0;
+    std::uint8_t m_s = 0xFD;
+    std::uint8_t m_p = 0x24;
+    std::uint16_t m_pc = 0;
+
+    bool m_nmiPending = false;
+    bool m_irqLine = false;
+    bool m_jammed = false;
+};
+
+} // namespace cutenes

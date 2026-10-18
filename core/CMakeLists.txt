@@ -6,7 +6,12 @@ add_library(cutenes-core
     src/cutenes/system/region.cpp
     src/cutenes/system/scheduler.cpp
     src/cutenes/system/machine.cpp
-    src/cutenes/bus/bus.cpp)
+    src/cutenes/bus/bus.cpp
+    src/cutenes/cartridge/ines.cpp
+    src/cutenes/cartridge/cart.cpp
+    src/cutenes/cpu/cpu.cpp
+    src/cutenes/mappers/mapper.cpp
+    src/cutenes/mappers/nrom.cpp)
 
 add_library(cutenes-core::cutenes-core ALIAS cutenes-core)
 

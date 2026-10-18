@@ -1,0 +1,1033 @@
+// 6502/2A03 instruction-level core (tasks T019/T020).
+//
+// Cycle model: every rd()/wr() below is one CPU cycle (two half-cycle master
+// ticks with PPU/APU catch-up); tick() is one internal cycle. Instruction
+// cycle counts therefore fall out of the access pattern itself — the tables
+// in kOps document them. Unofficial opcodes (LAX/SAX/DCP/ISB/SLO/RLA/SRE/
+// RRA/NOPs + stable imm combos) follow the documented 2A03 behavior.
+
+#include "cutenes/cpu/cpu.hpp"
+
+#include <array>
+
+namespace cutenes {
+namespace {
+
+constexpr auto Imp = Cpu::Mode::Imp;
+constexpr auto Acc = Cpu::Mode::Acc;
+constexpr auto Imm = Cpu::Mode::Imm;
+constexpr auto Zpg = Cpu::Mode::Zpg;
+constexpr auto Zpx = Cpu::Mode::Zpx;
+constexpr auto Zpy = Cpu::Mode::Zpy;
+constexpr auto Abs = Cpu::Mode::Abs;
+constexpr auto Abx = Cpu::Mode::Abx;
+constexpr auto Aby = Cpu::Mode::Aby;
+constexpr auto Ind = Cpu::Mode::Ind;
+constexpr auto Izx = Cpu::Mode::Izx;
+constexpr auto Izy = Cpu::Mode::Izy;
+constexpr auto Rel = Cpu::Mode::Rel;
+
+constexpr bool P1 = true; // page-cross penalty applies
+
+// 256-entry {mode, cycles, penalty} table (canonical 6502 timing).
+constexpr std::array<Cpu::OpInfo, 256> kOps = {{
+    {Imp, 7, 0},   // 00 BRK
+    {Izx, 6, 0},   // 01 ORA
+    {Imp, 2, 0},   // 02 KIL
+    {Izx, 8, 0},   // 03 SLO
+    {Zpg, 3, 0},   // 04 NOP
+    {Zpg, 3, 0},   // 05 ORA
+    {Zpg, 5, 0},   // 06 ASL
+    {Zpg, 5, 0},   // 07 SLO
+    {Imp, 3, 0},   // 08 PHP
+    {Imm, 2, 0},   // 09 ORA
+    {Acc, 2, 0},   // 0A ASL
+    {Imm, 2, 0},   // 0B ANC
+    {Abs, 4, 0},   // 0C NOP
+    {Abs, 4, 0},   // 0D ORA
+    {Abs, 6, 0},   // 0E ASL
+    {Abx, 7, 0},   // 0F SLO
+    {Rel, 2, P1},  // 10 BPL
+    {Izy, 5, P1},  // 11 ORA
+    {Imp, 2, 0},   // 12 KIL
+    {Izy, 8, 0},   // 13 SLO
+    {Zpx, 4, 0},   // 14 NOP
+    {Zpx, 4, 0},   // 15 ORA
+    {Zpx, 6, 0},   // 16 ASL
+    {Zpx, 6, 0},   // 17 SLO
+    {Imp, 2, 0},   // 18 CLC
+    {Aby, 4, P1},  // 19 ORA
+    {Imp, 2, 0},   // 1A NOP
+    {Aby, 7, 0},   // 1B SLO
+    {Abx, 4, P1},  // 1C NOP
+    {Abx, 4, P1},  // 1D ORA
+    {Abx, 7, 0},   // 1E ASL
+    {Abx, 7, 0},   // 1F SLO
+    {Abs, 6, 0},   // 20 JSR
+    {Izx, 6, 0},   // 21 AND
+    {Imp, 2, 0},   // 22 KIL
+    {Izx, 8, 0},   // 23 RLA
+    {Zpg, 3, 0},   // 24 BIT
+    {Zpg, 3, 0},   // 25 AND
+    {Zpg, 5, 0},   // 26 ROL
+    {Zpg, 5, 0},   // 27 RLA
+    {Imp, 4, 0},   // 28 PLP
+    {Imm, 2, 0},   // 29 AND
+    {Acc, 2, 0},   // 2A ROL
+    {Imm, 2, 0},   // 2B ANC
+    {Abs, 4, 0},   // 2C BIT
+    {Abs, 4, 0},   // 2D AND
+    {Abs, 6, 0},   // 2E ROL
+    {Abs, 6, 0},   // 2F RLA
+    {Rel, 2, P1},  // 30 BMI
+    {Izy, 5, P1},  // 31 AND
+    {Imp, 2, 0},   // 32 KIL
+    {Izy, 8, 0},   // 33 RLA
+    {Zpx, 4, 0},   // 34 NOP
+    {Zpx, 4, 0},   // 35 AND
+    {Zpx, 6, 0},   // 36 ROL
+    {Zpx, 6, 0},   // 37 RLA
+    {Imp, 2, 0},   // 38 SEC
+    {Aby, 4, P1},  // 39 AND
+    {Imp, 2, 0},   // 3A NOP
+    {Aby, 7, 0},   // 3B RLA
+    {Abx, 4, P1},  // 3C NOP
+    {Abx, 4, P1},  // 3D AND
+    {Abx, 7, 0},   // 3E ROL
+    {Abx, 7, 0},   // 3F RLA
+    {Imp, 6, 0},   // 40 RTI
+    {Izx, 6, 0},   // 41 EOR
+    {Imp, 2, 0},   // 42 KIL
+    {Izx, 8, 0},   // 43 SRE
+    {Zpg, 3, 0},   // 44 NOP
+    {Zpg, 3, 0},   // 45 EOR
+    {Zpg, 5, 0},   // 46 LSR
+    {Zpg, 5, 0},   // 47 SRE
+    {Imp, 3, 0},   // 48 PHA
+    {Imm, 2, 0},   // 49 EOR
+    {Acc, 2, 0},   // 4A LSR
+    {Imm, 2, 0},   // 4B ALR
+    {Abs, 3, 0},   // 4C JMP
+    {Abs, 4, 0},   // 4D EOR
+    {Abs, 6, 0},   // 4E LSR
+    {Abs, 6, 0},   // 4F SRE
+    {Rel, 2, P1},  // 50 BVC
+    {Izy, 5, P1},  // 51 EOR
+    {Imp, 2, 0},   // 52 KIL
+    {Izy, 8, 0},   // 53 SRE
+    {Zpx, 4, 0},   // 54 NOP
+    {Zpx, 4, 0},   // 55 EOR
+    {Zpx, 6, 0},   // 56 LSR
+    {Zpx, 6, 0},   // 57 SRE
+    {Imp, 2, 0},   // 58 CLI
+    {Aby, 4, P1},  // 59 EOR
+    {Imp, 2, 0},   // 5A NOP
+    {Aby, 7, 0},   // 5B SRE
+    {Abx, 4, P1},  // 5C NOP
+    {Abx, 4, P1},  // 5D EOR
+    {Abx, 7, 0},   // 5E LSR
+    {Abx, 7, 0},   // 5F SRE
+    {Imp, 6, 0},   // 60 RTS
+    {Izx, 6, 0},   // 61 ADC
+    {Imp, 2, 0},   // 62 KIL
+    {Izx, 8, 0},   // 63 RRA
+    {Zpg, 3, 0},   // 64 NOP
+    {Zpg, 3, 0},   // 65 ADC
+    {Zpg, 5, 0},   // 66 ROR
+    {Zpg, 5, 0},   // 67 RRA
+    {Imp, 4, 0},   // 68 PLA
+    {Imm, 2, 0},   // 69 ADC
+    {Acc, 2, 0},   // 6A ROR
+    {Imm, 2, 0},   // 6B ARR
+    {Ind, 5, 0},   // 6C JMP
+    {Abs, 4, 0},   // 6D ADC
+    {Abs, 6, 0},   // 6E ROR
+    {Abs, 6, 0},   // 6F RRA
+    {Rel, 2, P1},  // 70 BVS
+    {Izy, 5, P1},  // 71 ADC
+    {Imp, 2, 0},   // 72 KIL
+    {Izy, 8, 0},   // 73 RRA
+    {Zpx, 4, 0},   // 74 NOP
+    {Zpx, 4, 0},   // 75 ADC
+    {Zpx, 6, 0},   // 76 ROR
+    {Zpx, 6, 0},   // 77 RRA
+    {Imp, 2, 0},   // 78 SEI
+    {Aby, 4, P1},  // 79 ADC
+    {Imp, 2, 0},   // 7A NOP
+    {Aby, 7, 0},   // 7B RRA
+    {Abx, 4, P1},  // 7C NOP
+    {Abx, 4, P1},  // 7D ADC
+    {Abx, 7, 0},   // 7E ROR
+    {Abx, 7, 0},   // 7F RRA
+    {Imm, 2, 0},   // 80 NOP
+    {Izx, 6, 0},   // 81 STA
+    {Imm, 2, 0},   // 82 NOP
+    {Izx, 6, 0},   // 83 SAX
+    {Zpg, 3, 0},   // 84 STY
+    {Zpg, 3, 0},   // 85 STA
+    {Zpg, 3, 0},   // 86 STX
+    {Zpg, 5, 0},   // 87 SAX
+    {Imp, 2, 0},   // 88 DEY
+    {Imm, 2, 0},   // 89 NOP
+    {Imp, 2, 0},   // 8A TXA
+    {Imm, 2, 0},   // 8B XAA
+    {Abs, 4, 0},   // 8C STY
+    {Abs, 4, 0},   // 8D STA
+    {Abs, 4, 0},   // 8E STX
+    {Abs, 4, 0},   // 8F SAX
+    {Rel, 2, P1},  // 90 BCC
+    {Izy, 6, 0},   // 91 STA
+    {Imp, 2, 0},   // 92 KIL
+    {Izy, 6, 0},   // 93 SHA
+    {Zpx, 4, 0},   // 94 STY
+    {Zpx, 4, 0},   // 95 STA
+    {Zpy, 4, 0},   // 96 STX
+    {Zpy, 4, 0},   // 97 SAX
+    {Imp, 2, 0},   // 98 TYA
+    {Aby, 5, 0},   // 99 STA
+    {Imp, 2, 0},   // 9A TXS
+    {Abx, 5, 0},   // 9B SHS
+    {Abx, 5, 0},   // 9C SHY
+    {Abx, 5, 0},   // 9D STA
+    {Aby, 5, 0},   // 9E SHX
+    {Aby, 5, 0},   // 9F SHA
+    {Imm, 2, 0},   // A0 LDY
+    {Izx, 6, 0},   // A1 LDA
+    {Imm, 2, 0},   // A2 LDX
+    {Izx, 6, 0},   // A3 LAX
+    {Zpg, 3, 0},   // A4 LDY
+    {Zpg, 3, 0},   // A5 LDA
+    {Zpg, 3, 0},   // A6 LDX
+    {Zpg, 3, 0},   // A7 LAX
+    {Imp, 2, 0},   // A8 TAY
+    {Imm, 2, 0},   // A9 LDA
+    {Imp, 2, 0},   // AA TAX
+    {Imm, 2, 0},   // AB LAX
+    {Abs, 4, 0},   // AC LDY
+    {Abs, 4, 0},   // AD LDA
+    {Abs, 4, 0},   // AE LDX
+    {Abs, 4, 0},   // AF LAX
+    {Rel, 2, P1},  // B0 BCS
+    {Izy, 5, P1},  // B1 LDA
+    {Imp, 2, 0},   // B2 KIL
+    {Izy, 5, P1},  // B3 LAX
+    {Zpx, 4, 0},   // B4 LDY
+    {Zpx, 4, 0},   // B5 LDA
+    {Zpy, 4, 0},   // B6 LDX
+    {Zpy, 4, 0},   // B7 LAX
+    {Imp, 2, 0},   // B8 CLV
+    {Aby, 4, P1},  // B9 LDA
+    {Imp, 2, 0},   // BA TSX
+    {Aby, 4, P1},  // BB LAS
+    {Abx, 4, P1},  // BC LDY
+    {Abx, 4, P1},  // BD LDA
+    {Aby, 4, P1},  // BE LDX
+    {Aby, 4, P1},  // BF LAX
+    {Imm, 2, 0},   // C0 CPY
+    {Izx, 6, 0},   // C1 CMP
+    {Imm, 2, 0},   // C2 NOP
+    {Izx, 8, 0},   // C3 DCP
+    {Zpg, 3, 0},   // C4 CPY
+    {Zpg, 3, 0},   // C5 CMP
+    {Zpg, 5, 0},   // C6 DEC
+    {Zpg, 5, 0},   // C7 DCP
+    {Imp, 2, 0},   // C8 INY
+    {Imm, 2, 0},   // C9 CMP
+    {Imp, 2, 0},   // CA DEX
+    {Imm, 2, 0},   // CB SBX
+    {Abs, 4, 0},   // CC CPY
+    {Abs, 4, 0},   // CD CMP
+    {Abs, 6, 0},   // CE DEC
+    {Abs, 6, 0},   // CF DCP
+    {Rel, 2, P1},  // D0 BNE
+    {Izy, 5, P1},  // D1 CMP
+    {Imp, 2, 0},   // D2 KIL
+    {Izy, 8, 0},   // D3 DCP
+    {Zpx, 4, 0},   // D4 NOP
+    {Zpx, 4, 0},   // D5 CMP
+    {Zpx, 6, 0},   // D6 DEC
+    {Zpx, 6, 0},   // D7 DCP
+    {Imp, 2, 0},   // D8 CLD
+    {Aby, 4, P1},  // D9 CMP
+    {Imp, 2, 0},   // DA NOP
+    {Aby, 7, 0},   // DB DCP
+    {Abx, 4, P1},  // DC NOP
+    {Abx, 4, P1},  // DD CMP
+    {Abx, 7, 0},   // DE DEC
+    {Abx, 7, 0},   // DF DCP
+    {Imm, 2, 0},   // E0 CPX
+    {Izx, 6, 0},   // E1 SBC
+    {Imm, 2, 0},   // E2 NOP
+    {Izx, 8, 0},   // E3 ISB
+    {Zpg, 3, 0},   // E4 CPX
+    {Zpg, 3, 0},   // E5 SBC
+    {Zpg, 5, 0},   // E6 INC
+    {Zpg, 5, 0},   // E7 ISB
+    {Imp, 2, 0},   // E8 INX
+    {Imm, 2, 0},   // E9 SBC
+    {Imp, 2, 0},   // EA NOP
+    {Imm, 2, 0},   // EB SBC
+    {Abs, 4, 0},   // EC CPX
+    {Abs, 4, 0},   // ED SBC
+    {Abs, 6, 0},   // EE INC
+    {Abs, 6, 0},   // EF ISB
+    {Rel, 2, P1},  // F0 BEQ
+    {Izy, 5, P1},  // F1 SBC
+    {Imp, 2, 0},   // F2 KIL
+    {Izy, 8, 0},   // F3 ISB
+    {Zpx, 4, 0},   // F4 NOP
+    {Zpx, 4, 0},   // F5 SBC
+    {Zpx, 6, 0},   // F6 INC
+    {Zpx, 6, 0},   // F7 ISB
+    {Imp, 2, 0},   // F8 SED
+    {Aby, 4, P1},  // F9 SBC
+    {Imp, 2, 0},   // FA NOP
+    {Aby, 7, 0},   // FB ISB
+    {Abx, 4, P1},  // FC NOP
+    {Abx, 4, P1},  // FD SBC
+    {Abx, 7, 0},   // FE INC
+    {Abx, 7, 0},   // FF ISB
+}};
+
+constexpr std::uint8_t kC = 0x01, kZ = 0x02, kI = 0x04, kD = 0x08;
+constexpr std::uint8_t kB = 0x10, kU = 0x20, kV = 0x40, kN = 0x80;
+
+} // namespace
+
+const Cpu::OpInfo& Cpu::opcodeInfo(std::uint8_t opcode)
+{
+    return kOps[opcode];
+}
+
+Cpu::Cpu(Bus& bus, Scheduler& scheduler, Tickable* ppu, Tickable* apu)
+    : m_bus(bus)
+    , m_sched(scheduler)
+    , m_ppu(ppu)
+    , m_apu(apu)
+{
+}
+
+void Cpu::tickHalf()
+{
+    m_sched.advanceMaster(m_sched.cpuCycleToMaster(1) / 2);
+    const std::uint64_t now = m_sched.now();
+    if (m_ppu != nullptr) {
+        m_ppu->runTo(now);
+    }
+    if (m_apu != nullptr) {
+        m_apu->runTo(now);
+    }
+}
+
+std::uint8_t Cpu::rd(std::uint16_t addr)
+{
+    tickHalf();
+    const std::uint8_t value = m_bus.read(addr);
+    tickHalf();
+    return value;
+}
+
+void Cpu::wr(std::uint16_t addr, std::uint8_t value)
+{
+    tickHalf();
+    m_bus.write(addr, value);
+    tickHalf();
+}
+
+void Cpu::push(std::uint8_t value)
+{
+    wr(static_cast<std::uint16_t>(0x100 | m_s), value);
+    --m_s;
+}
+
+std::uint8_t Cpu::pop()
+{
+    ++m_s;
+    return rd(static_cast<std::uint16_t>(0x100 | m_s));
+}
+
+void Cpu::setNZ(std::uint8_t value)
+{
+    m_p = static_cast<std::uint8_t>(
+        (m_p & ~(kN | kZ)) | (value & kN) | ((value == 0) ? kZ : 0));
+}
+
+void Cpu::adc(std::uint8_t value)
+{
+    const unsigned r = m_a + value + (m_p & kC);
+    const std::uint8_t result = static_cast<std::uint8_t>(r);
+    const std::uint8_t overflow =
+        static_cast<std::uint8_t>((~(m_a ^ value) & (m_a ^ result)) & kN);
+    m_p = static_cast<std::uint8_t>((m_p & ~(kC | kV))
+        | ((r > 0xFF) ? kC : 0) | overflow);
+    setNZ(result);
+    m_a = result;
+}
+
+std::uint8_t Cpu::asl(std::uint8_t value)
+{
+    m_p = static_cast<std::uint8_t>((m_p & ~kC) | ((value >> 7) & 1));
+    value = static_cast<std::uint8_t>(value << 1);
+    setNZ(value);
+    return value;
+}
+
+std::uint8_t Cpu::lsr(std::uint8_t value)
+{
+    m_p = static_cast<std::uint8_t>((m_p & ~kC) | (value & 1));
+    value = static_cast<std::uint8_t>(value >> 1);
+    setNZ(value);
+    return value;
+}
+
+std::uint8_t Cpu::rol(std::uint8_t value)
+{
+    const std::uint8_t carryIn = static_cast<std::uint8_t>(m_p & kC);
+    m_p = static_cast<std::uint8_t>((m_p & ~kC) | ((value >> 7) & 1));
+    value = static_cast<std::uint8_t>((value << 1) | carryIn);
+    setNZ(value);
+    return value;
+}
+
+std::uint8_t Cpu::ror(std::uint8_t value)
+{
+    const std::uint8_t carryIn = static_cast<std::uint8_t>(m_p & kC);
+    m_p = static_cast<std::uint8_t>((m_p & ~kC) | (value & 1));
+    value = static_cast<std::uint8_t>((value >> 1) | (carryIn << 7));
+    setNZ(value);
+    return value;
+}
+
+std::uint16_t Cpu::readPair()
+{
+    const std::uint16_t lo = fetch();
+    const std::uint16_t hi = fetch();
+    return static_cast<std::uint16_t>(lo | (hi << 8));
+}
+
+std::uint8_t Cpu::readAbx(bool penalty)
+{
+    const std::uint16_t lo = fetch();
+    const std::uint16_t hi = fetch();
+    const std::uint16_t base = static_cast<std::uint16_t>(lo | (hi << 8));
+    const std::uint16_t unfixed =
+        static_cast<std::uint16_t>((base & 0xFF00) | ((lo + m_x) & 0xFF));
+    const std::uint8_t value = rd(unfixed); // 4th cycle: un-fixed address
+    if (penalty && (((base ^ (base + m_x)) & 0xFF00) != 0)) {
+        return rd(static_cast<std::uint16_t>(base + m_x));
+    }
+    return value;
+}
+
+std::uint8_t Cpu::readAby(bool penalty)
+{
+    const std::uint16_t lo = fetch();
+    const std::uint16_t hi = fetch();
+    const std::uint16_t base = static_cast<std::uint16_t>(lo | (hi << 8));
+    const std::uint16_t unfixed =
+        static_cast<std::uint16_t>((base & 0xFF00) | ((lo + m_y) & 0xFF));
+    const std::uint8_t value = rd(unfixed);
+    if (penalty && (((base ^ (base + m_y)) & 0xFF00) != 0)) {
+        return rd(static_cast<std::uint16_t>(base + m_y));
+    }
+    return value;
+}
+
+std::uint8_t Cpu::readIzx()
+{
+    const std::uint8_t z = fetch();
+    tick(); // index addition
+    const std::uint16_t ptr = static_cast<std::uint16_t>(z + m_x);
+    const std::uint8_t lo = rd(ptr);
+    const std::uint8_t hi = rd(static_cast<std::uint16_t>(ptr + 1));
+    return rd(static_cast<std::uint16_t>(lo | (hi << 8)));
+}
+
+std::uint8_t Cpu::readIzy(bool penalty)
+{
+    const std::uint8_t z = fetch();
+    const std::uint8_t lo = rd(z);
+    const std::uint8_t hi = rd(static_cast<std::uint16_t>(z + 1));
+    const std::uint16_t base = static_cast<std::uint16_t>(lo | (hi << 8));
+    const std::uint16_t unfixed =
+        static_cast<std::uint16_t>((base & 0xFF00) | ((lo + m_y) & 0xFF));
+    const std::uint8_t value = rd(unfixed);
+    if (penalty && (((base ^ (base + m_y)) & 0xFF00) != 0)) {
+        return rd(static_cast<std::uint16_t>(base + m_y));
+    }
+    return value;
+}
+
+std::uint16_t Cpu::addrAbxWrite()
+{
+    const std::uint16_t lo = fetch();
+    const std::uint16_t hi = fetch();
+    const std::uint16_t base = static_cast<std::uint16_t>(lo | (hi << 8));
+    (void)rd(static_cast<std::uint16_t>(
+        (base & 0xFF00) | ((lo + m_x) & 0xFF))); // internal/dummy cycle
+    return static_cast<std::uint16_t>(base + m_x);
+}
+
+std::uint16_t Cpu::addrAbyWrite()
+{
+    const std::uint16_t lo = fetch();
+    const std::uint16_t hi = fetch();
+    const std::uint16_t base = static_cast<std::uint16_t>(lo | (hi << 8));
+    (void)rd(static_cast<std::uint16_t>(
+        (base & 0xFF00) | ((lo + m_y) & 0xFF)));
+    return static_cast<std::uint16_t>(base + m_y);
+}
+
+std::uint16_t Cpu::addrIzxWrite()
+{
+    const std::uint8_t z = fetch();
+    tick();
+    const std::uint16_t ptr = static_cast<std::uint16_t>(z + m_x);
+    const std::uint8_t lo = rd(ptr);
+    const std::uint8_t hi = rd(static_cast<std::uint16_t>(ptr + 1));
+    return static_cast<std::uint16_t>(lo | (hi << 8));
+}
+
+std::uint16_t Cpu::addrIzyWrite()
+{
+    const std::uint8_t z = fetch();
+    const std::uint8_t lo = rd(z);
+    const std::uint8_t hi = rd(static_cast<std::uint16_t>(z + 1));
+    const std::uint16_t base = static_cast<std::uint16_t>(lo | (hi << 8));
+    (void)rd(static_cast<std::uint16_t>(
+        (base & 0xFF00) | ((lo + m_y) & 0xFF)));
+    return static_cast<std::uint16_t>(base + m_y);
+}
+
+// Address for the standard zpg/zpx/abs/abx RMW group (ASL/LSR/ROL/ROR/
+// INC/DEC): (opcode & 0x1F) is 06 zpg, 16 zpx, 0E abs, 1E abx.
+std::uint16_t Cpu::rmwAddr(std::uint8_t op)
+{
+    switch (op & 0x1F) {
+    case 0x06: return fetch();
+    case 0x16: {
+        const std::uint16_t a = fetch();
+        tick();
+        return static_cast<std::uint16_t>(a + m_x);
+    }
+    case 0x0E: return readPair();
+    default: return addrAbxWrite(); // 0x1E
+    }
+}
+
+// Address for the unofficial RMW-combo group: (opcode & 0x1F) is 03 izx,
+// 07 zpg, 0F abs, 13 izy, 17 zpx, 1B aby, 1F abx.
+std::uint16_t Cpu::rmwComboAddr(std::uint8_t op)
+{
+    switch (op & 0x1F) {
+    case 0x03: return addrIzxWrite();
+    case 0x07: return fetch();
+    case 0x0F: return readPair();
+    case 0x13: return addrIzyWrite();
+    case 0x17: {
+        const std::uint16_t a = fetch();
+        tick();
+        return static_cast<std::uint16_t>(a + m_x);
+    }
+    case 0x1B: return addrAbyWrite();
+    default: return addrAbxWrite(); // 0x1F
+    }
+}
+
+void Cpu::branch(bool condition)
+{
+    const std::int8_t offset = static_cast<std::int8_t>(fetch());
+    if (!condition) {
+        return;
+    }
+    tick(); // taken: extra cycle
+    const std::uint16_t target = static_cast<std::uint16_t>(m_pc + offset);
+    if ((target & 0xFF00) != (m_pc & 0xFF00)) {
+        tick(); // page cross: one more
+    }
+    m_pc = target;
+}
+
+void Cpu::doInterrupt(std::uint16_t vector, bool brk)
+{
+    if (!brk) {
+        tick();
+        tick(); // two dummy cycles before the pushes
+    } else {
+        (void)fetch(); // BRK signature byte read; PC is now +2
+    }
+    push(static_cast<std::uint8_t>(m_pc >> 8));
+    push(static_cast<std::uint8_t>(m_pc & 0xFF));
+    push(static_cast<std::uint8_t>(m_p | kU | (brk ? kB : 0)));
+    m_p |= kI;
+    const std::uint8_t lo = rd(static_cast<std::uint16_t>(vector));
+    const std::uint8_t hi = rd(static_cast<std::uint16_t>(vector + 1));
+    m_pc = static_cast<std::uint16_t>(lo | (hi << 8));
+}
+
+void Cpu::reset(bool cold)
+{
+    if (cold) {
+        m_a = m_x = m_y = 0;
+        m_s = 0xFD;
+        m_p = kI | kU; // $24
+    } else {
+        m_s = static_cast<std::uint8_t>(m_s - 3);
+        m_p |= kI;
+    }
+    m_nmiPending = false;
+    m_jammed = false;
+
+    // 7-cycle reset sequence: five internal cycles then the vector fetch —
+    // CYC:7 / PPU (0,21) matches nestest.log (research.md D4).
+    tick();
+    tick();
+    tick();
+    tick();
+    tick();
+    const std::uint8_t lo = rd(0xFFFC);
+    const std::uint8_t hi = rd(0xFFFD);
+    m_pc = static_cast<std::uint16_t>(lo | (hi << 8));
+}
+
+void Cpu::assertNmi() { m_nmiPending = true; }
+void Cpu::setIrq(bool level) { m_irqLine = level; }
+
+CpuState Cpu::state() const
+{
+    return CpuState{m_a, m_x, m_y, m_s, m_p, m_pc, m_sched.now()};
+}
+
+void Cpu::setProgramCounter(std::uint16_t pc) { m_pc = pc; }
+void Cpu::restartClockForTest() { m_sched.reset(); }
+
+void Cpu::compare(std::uint8_t reg, std::uint8_t value)
+{
+    const unsigned r = reg - value;
+    m_p = static_cast<std::uint8_t>((m_p & ~kC) | ((reg >= value) ? kC : 0));
+    setNZ(static_cast<std::uint8_t>(r));
+}
+
+// SLO/RLA/SRE/RRA/DCP/ISB families: read-modify-write with a follow-up
+// accumulator operation. Family = opcode & 0xE0.
+void Cpu::execRmwCombo(std::uint8_t op)
+{
+    const std::uint16_t a = rmwComboAddr(op);
+    const std::uint8_t v = rd(a);
+    wr(a, v); // NMOS double write: old value first
+    std::uint8_t r = 0;
+    switch (op & 0xE0) {
+    case 0x00: // SLO: ASL memory, then ORA
+        r = asl(v);
+        m_a |= r;
+        setNZ(m_a);
+        break;
+    case 0x20: // RLA: ROL memory, then AND
+        r = rol(v);
+        m_a &= r;
+        setNZ(m_a);
+        break;
+    case 0x40: // SRE: LSR memory, then EOR
+        r = lsr(v);
+        m_a ^= r;
+        setNZ(m_a);
+        break;
+    case 0x60: // RRA: ROR memory, then ADC
+        r = ror(v);
+        adc(r);
+        break;
+    case 0xC0: // DCP: DEC memory, then CMP
+        r = static_cast<std::uint8_t>(v - 1);
+        compare(m_a, r);
+        break;
+    default: // 0xE0 ISB: INC memory, then SBC
+        r = static_cast<std::uint8_t>(v + 1);
+        adc(static_cast<std::uint8_t>(~r));
+        break;
+    }
+    wr(a, r);
+}
+
+void Cpu::step()
+{
+    if (m_jammed) {
+        tick();
+        return;
+    }
+    if (m_nmiPending) {
+        m_nmiPending = false;
+        doInterrupt(0xFFFA, false);
+        return;
+    }
+    if (m_irqLine && (m_p & kI) == 0) {
+        doInterrupt(0xFFFE, false);
+        return;
+    }
+
+    const std::uint8_t op = fetch();
+
+    switch (op) {
+    // --- Load/store -------------------------------------------------------
+    case 0xA9: m_a = fetch(); setNZ(m_a); break;
+    case 0xA5: m_a = rd(fetch()); setNZ(m_a); break;
+    case 0xB5: m_a = rd(static_cast<std::uint16_t>(fetch() + m_x)); setNZ(m_a); break;
+    case 0xAD: m_a = rd(readPair()); setNZ(m_a); break;
+    case 0xBD: m_a = readAbx(true); setNZ(m_a); break;
+    case 0xB9: m_a = readAby(true); setNZ(m_a); break;
+    case 0xA1: m_a = readIzx(); setNZ(m_a); break;
+    case 0xB1: m_a = readIzy(true); setNZ(m_a); break;
+
+    case 0xA2: m_x = fetch(); setNZ(m_x); break;
+    case 0xA6: m_x = rd(fetch()); setNZ(m_x); break;
+    case 0xB6: m_x = rd(static_cast<std::uint16_t>(fetch() + m_y)); setNZ(m_x); break;
+    case 0xAE: m_x = rd(readPair()); setNZ(m_x); break;
+    case 0xBE: m_x = readAby(true); setNZ(m_x); break;
+
+    case 0xA0: m_y = fetch(); setNZ(m_y); break;
+    case 0xA4: m_y = rd(fetch()); setNZ(m_y); break;
+    case 0xB4: m_y = rd(static_cast<std::uint16_t>(fetch() + m_x)); setNZ(m_y); break;
+    case 0xAC: m_y = rd(readPair()); setNZ(m_y); break;
+    case 0xBC: m_y = readAbx(true); setNZ(m_y); break;
+
+    case 0x85: wr(fetch(), m_a); break;
+    case 0x95: wr(static_cast<std::uint16_t>(fetch() + m_x), m_a); break;
+    case 0x8D: wr(readPair(), m_a); break;
+    case 0x9D: wr(addrAbxWrite(), m_a); break;
+    case 0x99: wr(addrAbyWrite(), m_a); break;
+    case 0x81: wr(addrIzxWrite(), m_a); break;
+    case 0x91: wr(addrIzyWrite(), m_a); break;
+
+    case 0x86: wr(fetch(), m_x); break;
+    case 0x96: wr(static_cast<std::uint16_t>(fetch() + m_y), m_x); break;
+    case 0x8E: wr(readPair(), m_x); break;
+
+    case 0x84: wr(fetch(), m_y); break;
+    case 0x94: wr(static_cast<std::uint16_t>(fetch() + m_x), m_y); break;
+    case 0x8C: wr(readPair(), m_y); break;
+
+    // --- Arithmetic / logic ------------------------------------------------
+    case 0x69: adc(fetch()); break;
+    case 0x65: adc(rd(fetch())); break;
+    case 0x75: adc(rd(static_cast<std::uint16_t>(fetch() + m_x))); break;
+    case 0x6D: adc(rd(readPair())); break;
+    case 0x7D: adc(readAbx(true)); break;
+    case 0x79: adc(readAby(true)); break;
+    case 0x61: adc(readIzx()); break;
+    case 0x71: adc(readIzy(true)); break;
+
+    case 0xE9: case 0xEB: adc(static_cast<std::uint8_t>(~fetch())); break;
+    case 0xE5: adc(static_cast<std::uint8_t>(~rd(fetch()))); break;
+    case 0xF5: adc(static_cast<std::uint8_t>(~rd(static_cast<std::uint16_t>(fetch() + m_x)))); break;
+    case 0xED: adc(static_cast<std::uint8_t>(~rd(readPair()))); break;
+    case 0xFD: adc(static_cast<std::uint8_t>(~readAbx(true))); break;
+    case 0xF9: adc(static_cast<std::uint8_t>(~readAby(true))); break;
+    case 0xE1: adc(static_cast<std::uint8_t>(~readIzx())); break;
+    case 0xF1: adc(static_cast<std::uint8_t>(~readIzy(true))); break;
+
+    case 0x29: m_a &= fetch(); setNZ(m_a); break;
+    case 0x25: m_a &= rd(fetch()); setNZ(m_a); break;
+    case 0x35: m_a &= rd(static_cast<std::uint16_t>(fetch() + m_x)); setNZ(m_a); break;
+    case 0x2D: m_a &= rd(readPair()); setNZ(m_a); break;
+    case 0x3D: m_a &= readAbx(true); setNZ(m_a); break;
+    case 0x39: m_a &= readAby(true); setNZ(m_a); break;
+    case 0x21: m_a &= readIzx(); setNZ(m_a); break;
+    case 0x31: m_a &= readIzy(true); setNZ(m_a); break;
+
+    case 0x49: m_a ^= fetch(); setNZ(m_a); break;
+    case 0x45: m_a ^= rd(fetch()); setNZ(m_a); break;
+    case 0x55: m_a ^= rd(static_cast<std::uint16_t>(fetch() + m_x)); setNZ(m_a); break;
+    case 0x4D: m_a ^= rd(readPair()); setNZ(m_a); break;
+    case 0x5D: m_a ^= readAbx(true); setNZ(m_a); break;
+    case 0x59: m_a ^= readAby(true); setNZ(m_a); break;
+    case 0x41: m_a ^= readIzx(); setNZ(m_a); break;
+    case 0x51: m_a ^= readIzy(true); setNZ(m_a); break;
+
+    case 0x09: m_a |= fetch(); setNZ(m_a); break;
+    case 0x05: m_a |= rd(fetch()); setNZ(m_a); break;
+    case 0x15: m_a |= rd(static_cast<std::uint16_t>(fetch() + m_x)); setNZ(m_a); break;
+    case 0x0D: m_a |= rd(readPair()); setNZ(m_a); break;
+    case 0x1D: m_a |= readAbx(true); setNZ(m_a); break;
+    case 0x19: m_a |= readAby(true); setNZ(m_a); break;
+    case 0x01: m_a |= readIzx(); setNZ(m_a); break;
+    case 0x11: m_a |= readIzy(true); setNZ(m_a); break;
+
+    case 0xC9: compare(m_a, fetch()); break;
+    case 0xC5: compare(m_a, rd(fetch())); break;
+    case 0xD5: compare(m_a, rd(static_cast<std::uint16_t>(fetch() + m_x))); break;
+    case 0xCD: compare(m_a, rd(readPair())); break;
+    case 0xDD: compare(m_a, readAbx(true)); break;
+    case 0xD9: compare(m_a, readAby(true)); break;
+    case 0xC1: compare(m_a, readIzx()); break;
+    case 0xD1: compare(m_a, readIzy(true)); break;
+    case 0xE0: compare(m_x, fetch()); break;
+    case 0xE4: compare(m_x, rd(fetch())); break;
+    case 0xEC: compare(m_x, rd(readPair())); break;
+    case 0xC0: compare(m_y, fetch()); break;
+    case 0xC4: compare(m_y, rd(fetch())); break;
+    case 0xCC: compare(m_y, rd(readPair())); break;
+
+    case 0x24: case 0x2C: {
+        const std::uint8_t m =
+            (op == 0x24) ? rd(fetch()) : rd(readPair());
+        m_p = static_cast<std::uint8_t>((m_p & ~(kZ | kN | kV))
+            | (m & (kN | kV))
+            | (((m_a & m) == 0) ? kZ : 0));
+        break;
+    }
+
+    // --- Shifts/rotates (accumulator) --------------------------------------
+    case 0x0A: tick(); m_a = asl(m_a); break;
+    case 0x4A: tick(); m_a = lsr(m_a); break;
+    case 0x2A: tick(); m_a = rol(m_a); break;
+    case 0x6A: tick(); m_a = ror(m_a); break;
+
+    // --- Shifts/rotates/INC/DEC (memory RMW, double write) ------------------
+    case 0x06: case 0x16: case 0x0E: case 0x1E: {
+        const std::uint16_t a = rmwAddr(op);
+        const std::uint8_t v = rd(a);
+        wr(a, v);
+        wr(a, asl(v));
+        break;
+    }
+    case 0x46: case 0x56: case 0x4E: case 0x5E: {
+        const std::uint16_t a = rmwAddr(op);
+        const std::uint8_t v = rd(a);
+        wr(a, v);
+        wr(a, lsr(v));
+        break;
+    }
+    case 0x26: case 0x36: case 0x2E: case 0x3E: {
+        const std::uint16_t a = rmwAddr(op);
+        const std::uint8_t v = rd(a);
+        wr(a, v);
+        wr(a, rol(v));
+        break;
+    }
+    case 0x66: case 0x76: case 0x6E: case 0x7E: {
+        const std::uint16_t a = rmwAddr(op);
+        const std::uint8_t v = rd(a);
+        wr(a, v);
+        wr(a, ror(v));
+        break;
+    }
+    case 0xE6: case 0xF6: case 0xEE: case 0xFE: {
+        const std::uint16_t a = rmwAddr(op);
+        const std::uint8_t v = rd(a);
+        wr(a, v);
+        const std::uint8_t r = static_cast<std::uint8_t>(v + 1);
+        wr(a, r);
+        setNZ(r);
+        break;
+    }
+    case 0xC6: case 0xD6: case 0xCE: case 0xDE: {
+        const std::uint16_t a = rmwAddr(op);
+        const std::uint8_t v = rd(a);
+        wr(a, v);
+        const std::uint8_t r = static_cast<std::uint8_t>(v - 1);
+        wr(a, r);
+        setNZ(r);
+        break;
+    }
+
+    // --- Registers/flags ----------------------------------------------------
+    case 0xAA: tick(); m_x = m_a; setNZ(m_x); break;
+    case 0xA8: tick(); m_y = m_a; setNZ(m_y); break;
+    case 0x8A: tick(); m_a = m_x; setNZ(m_a); break;
+    case 0x98: tick(); m_a = m_y; setNZ(m_a); break;
+    case 0xBA: tick(); m_x = m_s; setNZ(m_x); break;
+    case 0x9A: tick(); m_s = m_x; break;
+    case 0xE8: tick(); ++m_x; setNZ(m_x); break;
+    case 0xC8: tick(); ++m_y; setNZ(m_y); break;
+    case 0xCA: tick(); --m_x; setNZ(m_x); break;
+    case 0x88: tick(); --m_y; setNZ(m_y); break;
+    case 0x18: tick(); m_p &= static_cast<std::uint8_t>(~kC); break;
+    case 0x38: tick(); m_p |= kC; break;
+    case 0x58: tick(); m_p &= static_cast<std::uint8_t>(~kI); break;
+    case 0x78: tick(); m_p |= kI; break;
+    case 0xB8: tick(); m_p &= static_cast<std::uint8_t>(~kV); break;
+    case 0xD8: tick(); m_p &= static_cast<std::uint8_t>(~kD); break;
+    case 0xF8: tick(); m_p |= kD; break;
+
+    // --- Stack ---------------------------------------------------------------
+    case 0x48: tick(); push(m_a); break;
+    case 0x08: tick(); push(static_cast<std::uint8_t>(m_p | kU | kB)); break;
+    case 0x68: tick(); tick(); m_a = pop(); setNZ(m_a); break;
+    case 0x28: tick(); tick(); m_p = static_cast<std::uint8_t>(pop() | kU); break;
+
+    // --- Jumps/subroutines ----------------------------------------------------
+    case 0x4C: m_pc = readPair(); break;
+    case 0x6C: {
+        const std::uint16_t ptr = readPair();
+        // NMOS page-wrap bug: the high byte comes from ptr & 0xFF00.
+        const std::uint8_t lo = rd(ptr);
+        const std::uint8_t hi = rd(static_cast<std::uint16_t>(
+            (ptr & 0xFF00) | ((ptr + 1) & 0xFF)));
+        m_pc = static_cast<std::uint16_t>(lo | (hi << 8));
+        break;
+    }
+    case 0x20: { // JSR
+        const std::uint8_t lo = fetch();
+        tick();
+        push(static_cast<std::uint8_t>(m_pc >> 8));
+        push(static_cast<std::uint8_t>(m_pc & 0xFF));
+        const std::uint8_t hi = fetch();
+        m_pc = static_cast<std::uint16_t>(lo | (hi << 8));
+        break;
+    }
+    case 0x60: { // RTS
+        tick();
+        tick();
+        const std::uint8_t lo = pop();
+        const std::uint8_t hi = pop();
+        tick();
+        m_pc = static_cast<std::uint16_t>((lo | (hi << 8)) + 1);
+        break;
+    }
+    case 0x40: { // RTI
+        tick();
+        tick();
+        m_p = static_cast<std::uint8_t>(pop() | kU);
+        const std::uint8_t lo = pop();
+        const std::uint8_t hi = pop();
+        m_pc = static_cast<std::uint16_t>(lo | (hi << 8));
+        break;
+    }
+    case 0x00: // BRK (pushes PC+2 via the signature fetch)
+        doInterrupt(0xFFFE, true);
+        break;
+
+    // --- Branches --------------------------------------------------------------
+    case 0x10: branch((m_p & kN) == 0); break;
+    case 0x30: branch((m_p & kN) != 0); break;
+    case 0x50: branch((m_p & kV) == 0); break;
+    case 0x70: branch((m_p & kV) != 0); break;
+    case 0x90: branch((m_p & kC) == 0); break;
+    case 0xB0: branch((m_p & kC) != 0); break;
+    case 0xD0: branch((m_p & kZ) == 0); break;
+    case 0xF0: branch((m_p & kZ) != 0); break;
+
+    // --- NOPs (documented + unofficial) ------------------------------------------
+    case 0xEA: case 0x1A: case 0x3A: case 0x5A: case 0x7A: case 0xDA:
+    case 0xFA:
+        tick();
+        break;
+    case 0x80: case 0x82: case 0x89: case 0xC2: case 0xE2:
+        (void)fetch();
+        break;
+    case 0x04: case 0x44: case 0x64:
+        (void)rd(fetch());
+        break;
+    case 0x14: case 0x34: case 0x54: case 0x74:
+        (void)rd(static_cast<std::uint16_t>(fetch() + m_x));
+        tick();
+        break;
+    case 0x0C:
+        (void)rd(readPair());
+        break;
+    case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xDC: case 0xFC:
+        (void)readAbx(true);
+        break;
+
+    // --- Unofficial: LAX / SAX / SBX / XAA / ANC / ALR / ARR ------------------
+    case 0xA7: case 0xB7: case 0xAF: case 0xBF: case 0xA3: case 0xB3:
+    case 0xAB: {
+        std::uint8_t v = 0;
+        switch (op) {
+        case 0xA7: v = rd(fetch()); break;
+        case 0xB7: v = rd(static_cast<std::uint16_t>(fetch() + m_y)); break;
+        case 0xAF: v = rd(readPair()); break;
+        case 0xBF: v = readAby(true); break;
+        case 0xA3: v = readIzx(); break;
+        case 0xB3: v = readIzy(true); break;
+        case 0xAB: v = fetch(); break;
+        }
+        m_a = v;
+        m_x = v;
+        setNZ(v);
+        break;
+    }
+    case 0x87: case 0x97: case 0x8F: case 0x83: {
+        const std::uint8_t v = static_cast<std::uint8_t>(m_a & m_x);
+        switch (op) {
+        case 0x87: wr(fetch(), v); break;
+        case 0x97: wr(static_cast<std::uint16_t>(fetch() + m_y), v); break;
+        case 0x8F: wr(readPair(), v); break;
+        case 0x83: wr(addrIzxWrite(), v); break;
+        }
+        break;
+    }
+    case 0xCB: { // SBX: X = (A & X) - imm
+        const std::uint8_t imm = fetch();
+        const std::uint8_t t = static_cast<std::uint8_t>(m_a & m_x);
+        m_p = static_cast<std::uint8_t>((m_p & ~kC) | ((t >= imm) ? kC : 0));
+        m_x = static_cast<std::uint8_t>(t - imm);
+        setNZ(m_x);
+        break;
+    }
+    case 0x8B: // XAA (unstable): A = X & imm
+        m_a = static_cast<std::uint8_t>(m_x & fetch());
+        setNZ(m_a);
+        break;
+    case 0x0B: case 0x2B: // ANC
+        m_a &= fetch();
+        setNZ(m_a);
+        m_p = static_cast<std::uint8_t>((m_p & ~kC) | ((m_a >> 7) & 1));
+        break;
+    case 0x4B: // ALR
+        m_a &= fetch();
+        m_a = lsr(m_a);
+        break;
+    case 0x6B: { // ARR
+        m_a &= fetch();
+        m_a = ror(m_a);
+        m_p = static_cast<std::uint8_t>(
+            (m_p & ~kV) | ((((m_a >> 6) ^ (m_a >> 5)) & 1) << 6));
+        break;
+    }
+
+    // --- Unstable stores --------------------------------------------------------
+    case 0x93: case 0x9F: { // SHA
+        const std::uint16_t a = addrIzyWrite();
+        wr(a, static_cast<std::uint8_t>(m_a & m_x & ((a >> 8) + 1)));
+        break;
+    }
+    case 0x9B: { // SHS
+        const std::uint16_t a = addrAbyWrite();
+        m_s = static_cast<std::uint8_t>(m_a & m_x);
+        wr(a, static_cast<std::uint8_t>(m_s & ((a >> 8) + 1)));
+        break;
+    }
+    case 0x9C: { // SHY
+        const std::uint16_t a = addrAbxWrite();
+        wr(a, static_cast<std::uint8_t>(m_y & ((a >> 8) + 1)));
+        break;
+    }
+    case 0x9E: { // SHX
+        const std::uint16_t a = addrAbyWrite();
+        wr(a, static_cast<std::uint8_t>(m_x & ((a >> 8) + 1)));
+        break;
+    }
+    case 0xBB: { // LAS
+        const std::uint8_t v = readAby(true);
+        m_a = m_x = m_s = static_cast<std::uint8_t>(m_s & v);
+        setNZ(m_a);
+        break;
+    }
+
+    case 0x02: case 0x12: case 0x22: case 0x32: case 0x42: case 0x52:
+    case 0x62: case 0x72: case 0x92: case 0xB2: case 0xD2: case 0xF2:
+        // KIL/JAM: the CPU halts. Keep the clock alive so the machine stays
+        // inspectable; PC stays on the jam opcode.
+        tick();
+        m_jammed = true;
+        break;
+
+    default:
+        // Everything remaining is an RMW combo (SLO/RLA/SRE/RRA/DCP/ISB)
+        // in one of the seven addressing modes.
+        execRmwCombo(op);
+        break;
+    }
+}
+
+} // namespace cutenes

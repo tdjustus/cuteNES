@@ -11,7 +11,9 @@ FetchContent_MakeAvailable(googletest)
 add_executable(cutenes-core-tests
     unit/test_version.cpp
     unit/test_scheduler.cpp
-    unit/test_bus.cpp)
+    unit/test_bus.cpp
+    unit/test_ines.cpp
+    unit/test_cpu.cpp)
 
 target_link_libraries(cutenes-core-tests PRIVATE
     cutenes-core::cutenes-core cutenes-core-internal gtest_main)

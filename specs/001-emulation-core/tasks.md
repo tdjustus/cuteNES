@@ -66,21 +66,21 @@ independently testable increment. Paths follow plan.md's source tree.
 
 ### Tests for User Story 1 (write first, verify RED)
 
-- [ ] T014 [P] [US1] Write `tests/unit/test_ines.cpp`: valid iNES/NES 2.0 headers, each `LoadError` case (NotAnInesFile, TruncatedFile, InvalidHeader, InvalidBankCounts, Nes2FieldInvalid, UnsupportedMapper naming the id), trainer parsing, flags (mirroring, battery, PRG-RAM)
-- [ ] T015 [P] [US1] Write `tests/unit/test_cpu.cpp`: opcode decode + cycle-count table for documented and unofficial opcodes (data-driven over the full 256-entry space), page-cross penalties, dummy-read expectations
+- [x] T014 [P] [US1] Write `tests/unit/test_ines.cpp`: valid iNES/NES 2.0 headers, each `LoadError` case (NotAnInesFile, TruncatedFile, InvalidHeader, InvalidBankCounts, Nes2FieldInvalid, UnsupportedMapper naming the id), trainer parsing, flags (mirroring, battery, PRG-RAM)
+- [x] T015 [P] [US1] Write `tests/unit/test_cpu.cpp`: opcode decode + cycle-count table for documented and unofficial opcodes (data-driven over the full 256-entry space), page-cross penalties, dummy-read expectations
 - [ ] T016 [P] [US1] Write `tests/unit/test_ppu.cpp`: nametable mirroring decode, fine/coarse scroll math, sprite attribute decode, palette RAM behavior
 - [ ] T017 [P] [US1] Write `tests/unit/test_apu.cpp`: per-channel timer/frequency math, length counters, envelope steps, frame-counter step sequence NTSC/PAL, mixer LUT spot values vs the nesdev formulas (test oracle = exact formula, research D8)
 
 ### Implementation for User Story 1
 
-- [ ] T018 [US1] Implement iNES 1.0 + NES 2.0 parser in `core/src/cutenes/cartridge/ines.cpp` filling `CartridgeInfo` exactly per contracts/core-api.md (LoadError + detail code on every rejection path)
-- [ ] T019 [US1] Implement 6502 documented instruction set in `core/src/cutenes/cpu/decoder.cpp` + `core/src/cutenes/cpu/cpu.cpp`: all addressing modes, exact cycle counts, dummy reads on RMW/indexed reads, page-cross penalties; every bus access bracketed by half-cycle clock advance + PPU catch-up (research D1)
-- [ ] T020 [US1] Implement unofficial opcodes (LAX, SAX, DCP, ISB, SLO, RLA, SRE, RRA, multi-byte NOPs) in `core/src/cutenes/cpu/decoder.cpp` with documented cycle counts
+- [x] T018 [US1] Implement iNES 1.0 + NES 2.0 parser in `core/src/cutenes/cartridge/ines.cpp` filling `CartridgeInfo` exactly per contracts/core-api.md (LoadError + detail code on every rejection path)
+- [x] T019 [US1] Implement 6502 documented instruction set in `core/src/cutenes/cpu/decoder.cpp` + `core/src/cutenes/cpu/cpu.cpp`: all addressing modes, exact cycle counts, dummy reads on RMW/indexed reads, page-cross penalties; every bus access bracketed by half-cycle clock advance + PPU catch-up (research D1)
+- [x] T020 [US1] Implement unofficial opcodes (LAX, SAX, DCP, ISB, SLO, RLA, SRE, RRA, multi-byte NOPs) in `core/src/cutenes/cpu/decoder.cpp` with documented cycle counts
 - [ ] T021 [US1] Implement PPU background pipeline in `core/src/cutenes/ppu/ppu.cpp` + `core/src/cutenes/ppu/rendering.cpp`: dot/scanline counters, fetch cycles (nametable/attribute/pattern low/high), shift registers, fine-X, scrolling, mirroring, rendering-disabled behavior, emphasis/grayscale bits
 - [ ] T022 [US1] Implement sprite rendering in `core/src/cutenes/ppu/sprite_eval.cpp`: 8-per-scanline limit, priority, horizontal/vertical flip, 8x16 mode, left-clip masks (dot-exact evaluation bug handling deferred to US2 T035)
 - [ ] T023 [US1] Implement VBlank flag + NMI in `core/src/cutenes/ppu/ppu.cpp`: set (241,1), clear (261,1) + on $2002 read, NMI enable edge, basic frame-IRQ plumbing
 - [ ] T024 [US1] Implement APU in `core/src/cutenes/apu/{apu.cpp, channels.cpp, frame_counter.cpp, mixer.cpp, downsampler.cpp}`: pulse x2/triangle/noise/DMC, integer 31-entry pulse + 203-entry TND LUTs (double math at init only), int32 mix + clamp, fixed-point one-pole HPF 90 Hz / HPF 440 Hz / LPF 14 kHz, fixed-point band-limited downsampler to configured rate (44100/48000/96000), mono int16 output (research D8)
-- [ ] T025 [US1] Implement mapper registry + NROM in `core/src/cutenes/mappers/{mapper.cpp, nrom.cpp, registry.cpp}`: interface for CPU/PPU bus hooks (research D1 component design)
+- [x] T025 [US1] Implement mapper registry + NROM in `core/src/cutenes/mappers/{mapper.cpp, nrom.cpp, registry.cpp}`: interface for CPU/PPU bus hooks (research D1 component design)
 - [ ] T026 [US1] Implement frame delivery in `core/src/cutenes/system/machine.cpp`: palette-index-to-XRGB8888 with the frozen default palette, frame emitted when "the final visible pixel (scanline 239, dot 255) is emitted", exactly once per frame
 - [ ] T027 [US1] Implement determinism scenario in `tests/harness/determinism.cpp`: run-twice hash comparison over N frames + audio bytes; zero-diff report (SC-002)
 - [ ] T028 [US1] Integration checkpoint: run a commercial NROM title 60 frames headless in CI (no display/audio) and record golden hashes as the regression baseline (US1 scenarios 1-2)
