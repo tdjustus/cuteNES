@@ -327,16 +327,22 @@ void Cpu::sampleNmi()
     if (m_ppu == nullptr) {
         return;
     }
-    // The pin is sampled right after the bus access (during phi2), before
+    // The pins are sampled right after the bus access (during phi2), before
     // the cycle's second half advances time — a $2000 write that enables
     // NMI one cycle before the flag clear still raises the line in time
     // (07-nmi_on_timing rows 3-4).
-    const bool line = m_ppu->nmiLine();
-    if (line && !m_nmiWasHigh) {
-        m_nmiPending = true;
-        m_edgeCycle = m_cycles; // 1-based cycle index in this instruction
+    if (m_ppu != nullptr) {
+        const bool line = m_ppu->nmiLine();
+        if (line && !m_nmiWasHigh) {
+            m_nmiPending = true;
+            m_edgeCycle = m_cycles; // 1-based index within the instruction
+        }
+        m_nmiWasHigh = line;
     }
-    m_nmiWasHigh = line;
+    if (m_irqLevel && !m_irqWasHigh) {
+        m_irqEdgeCycle = m_cycles;
+    }
+    m_irqWasHigh = m_irqLevel != false;
 }
 
 std::uint8_t Cpu::rd(std::uint16_t addr)
@@ -648,7 +654,7 @@ void Cpu::assertNmi()
     m_nmiPending = true;
     m_edgeCycle = -1; // externally-asserted edges predate everything
 }
-void Cpu::setIrq(bool level) { m_irqLine = level; }
+void Cpu::setIrq(bool level) { m_irqLevel = level; }
 
 CpuState Cpu::state() const
 {
@@ -727,11 +733,18 @@ void Cpu::step()
             m_nmiStale = true; // edge landed on the last cycle: defer
         }
         // The flag-change delay: CLI/SEI/PLP take effect for the poll after
-        // the NEXT instruction (cpu_interrupts_v2 test 3).
-        if (m_irqLine && !m_iPrev) {
+        // the NEXT instruction (test 3). Like NMI, the IRQ edge obeys the
+        // second-to-last-cycle poll: an edge on the final cycle defers one
+        // boundary (test 5).
+        if (m_irqLevel && !m_iPrev
+            && (m_irqStale || m_irqEdgeCycle < m_prevInstrCycles)) {
             doInterrupt(0xFFFE, false);
+            m_irqStale = false;
             m_iPrev = true;
             return;
+        }
+        if (m_irqLevel) {
+            m_irqStale = true;
         }
     } else {
         m_branchSkipPoll = false; // taken branch ignored its last-clock poll

@@ -43,7 +43,8 @@ public:
 
     bool frameIrqPending() const
     {
-        return m_frameIrqAt != 0 && m_sched.now() >= m_frameIrqAt;
+        return m_frameIrqAt != 0
+            && m_sched.now() + 12 >= m_frameIrqAt; // line: fire + 1 cycle
     }
     bool dmcIrqPending() const { return m_dmcIrq; }
 

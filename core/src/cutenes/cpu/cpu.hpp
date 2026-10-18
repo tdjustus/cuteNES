@@ -112,7 +112,10 @@ private:
     std::uint16_t m_pc = 0;
 
     bool m_nmiPending = false;
-    bool m_irqLine = false;
+    bool m_irqLevel = false;
+    bool m_irqWasHigh = false;
+    bool m_irqStale = false;
+    int m_irqEdgeCycle = -1;
     bool m_jammed = false;
     bool m_nmiWasHigh = false;
     int m_cycles = 0;              // 1-based cycle index within instruction
