@@ -591,9 +591,13 @@ void Cpu::branch(bool condition)
     }
     tick(); // taken: extra cycle
     const std::uint16_t target = static_cast<std::uint16_t>(m_pc + offset);
-    if ((target & 0xFF00) != (m_pc & 0xFF00)) {
+    const bool crossed = (target & 0xFF00) != (m_pc & 0xFF00);
+    if (crossed) {
         tick(); // page cross: one more
     }
+    // A taken non-page-crossing branch ignores IRQ/NMI during its last
+    // clock, so the next instruction runs before service (test 5).
+    m_branchSkipPoll = !crossed;
     m_pc = target;
 }
 
@@ -708,31 +712,29 @@ void Cpu::execRmwCombo(std::uint8_t op)
 
 void Cpu::step()
 {
-    if (m_jammed) {
-        tick();
-        return;
-    }
-    // Interrupts are effectively polled at the second-to-last cycle of an
-    // instruction: an edge latched ON the final cycle defers service past
-    // this boundary (nesdev CPU_interrupts; 05-nmi_timing, 04-nmi_control).
-    if (m_nmiPending
-        && (m_nmiStale || m_edgeCycle < m_prevInstrCycles)) {
-        m_nmiPending = false;
-        m_nmiStale = false;
-        doInterrupt(0xFFFA, false);
-        m_iPrev = true;
-        return;
-    }
-    if (m_nmiPending) {
-        m_nmiStale = true; // edge landed on the last cycle: defer
-    }
-    // The flag-change delay: CLI/SEI/PLP take effect for the poll after
-    // the NEXT instruction (cpu_interrupts_v2: exactly one instruction
-    // executes after CLI before the IRQ is taken).
-    if (m_irqLine && !m_iPrev) {
-        doInterrupt(0xFFFE, false);
-        m_iPrev = true;
-        return;
+    if (!m_branchSkipPoll) {
+        // Interrupts are effectively polled at the second-to-last cycle of
+        // an instruction: an edge latched ON the final cycle defers service
+        // past this boundary (05-nmi_timing, 04-nmi_control).
+        if (m_nmiPending && (m_nmiStale || m_edgeCycle < m_prevInstrCycles)) {
+            m_nmiPending = false;
+            m_nmiStale = false;
+            doInterrupt(0xFFFA, false);
+            m_iPrev = true;
+            return;
+        }
+        if (m_nmiPending) {
+            m_nmiStale = true; // edge landed on the last cycle: defer
+        }
+        // The flag-change delay: CLI/SEI/PLP take effect for the poll after
+        // the NEXT instruction (cpu_interrupts_v2 test 3).
+        if (m_irqLine && !m_iPrev) {
+            doInterrupt(0xFFFE, false);
+            m_iPrev = true;
+            return;
+        }
+    } else {
+        m_branchSkipPoll = false; // taken branch ignored its last-clock poll
     }
 
     m_cycles = 0;

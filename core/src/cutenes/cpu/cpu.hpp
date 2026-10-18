@@ -120,7 +120,8 @@ private:
     int m_edgeCycle = 0;           // cycle the NMI edge latched on
     bool m_nmiStale = false;       // edge hit the last cycle: defer service
     bool m_iPrev = true;           // I flag at the previous instruction start
-    bool m_iStart = true;          // I flag at this instruction's start
+    bool m_iStart = true;
+    bool m_branchSkipPoll = false; // taken branch: skip one boundary poll          // I flag at this instruction's start
     std::function<void(const CpuState&)> m_trace;
 };
 

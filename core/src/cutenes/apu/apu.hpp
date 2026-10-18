@@ -41,7 +41,10 @@ public:
     static std::int32_t mixerPulse(int sum);
     static std::int32_t mixerTnd(int index);
 
-    bool frameIrqPending() const { return m_frameIrq; }
+    bool frameIrqPending() const
+    {
+        return m_frameIrqAt != 0 && m_sched.now() >= m_frameIrqAt;
+    }
     bool dmcIrqPending() const { return m_dmcIrq; }
 
 private:
@@ -117,7 +120,11 @@ private:
 
     // Frame counter.
     bool m_frameMode5 = false, m_inhibitIrq = false;
-    bool m_frameIrq = false, m_dmcIrq = false;
+    bool m_dmcIrq = false;
+    // Frame IRQ as master-clock timestamps (0 = none): visible-from and
+    // condition-active-until (half-cycle parity + read re-assert).
+    std::uint64_t m_frameIrqAt = 0;
+    std::uint64_t m_frameIrqAssertUntil = 0;
     std::uint64_t m_sequenceCycle = 0; // CPU cycles since sequence start
     std::uint32_t m_sequenceStep = 0;
 

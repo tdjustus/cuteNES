@@ -120,7 +120,8 @@ void Apu::reset(bool cold)
     m_dmc = {};
     m_frameMode5 = false;
     m_inhibitIrq = cold ? false : m_inhibitIrq;
-    m_frameIrq = false;
+    m_frameIrqAt = 0;
+    m_frameIrqAssertUntil = 0;
     m_dmcIrq = false;
     m_sequenceCycle = 0;
     m_sequenceStep = 0;
@@ -168,9 +169,22 @@ std::uint8_t Apu::statusRead()
     if (m_triangle.length > 0) v |= 0x04;
     if (m_noise.length > 0) v |= 0x08;
     if (m_dmc.bytesRemaining > 0) v |= 0x10;
-    if (m_frameIrq) v |= 0x40;
+    const bool frameVisible = frameIrqPending();
+    if (frameVisible) {
+        v |= 0x40;
+    }
     if (m_dmcIrq) v |= 0x80;
-    m_frameIrq = false; // reading clears the frame IRQ flag
+    // Reading a VISIBLE flag clears it — but the IRQ condition stays
+    // active around the set moment, so a read right there re-asserts it
+    // (6-irq_flag_timing test 4). Reads while not visible change nothing.
+    if (frameVisible) {
+        if (m_sched.now() < m_frameIrqAssertUntil) {
+            m_frameIrqAt = m_sched.now()
+                + static_cast<std::uint64_t>(m_profile.cpuDivisor);
+        } else {
+            m_frameIrqAt = 0;
+        }
+    }
     return v;
 }
 
@@ -304,7 +318,8 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         m_frameMode5 = (value & 0x80) != 0;
         m_inhibitIrq = (value & 0x40) != 0;
         if (m_inhibitIrq) {
-            m_frameIrq = false;
+            m_frameIrqAt = 0;
+            m_frameIrqAssertUntil = 0;
         }
         m_sequenceCycle = 0;
         m_sequenceStep = 0;
@@ -572,8 +587,9 @@ void Apu::stepApuCycle()
 
     mixNativeSample();
 
+    m_sequenceCycle += 2;
     // Frame-counter sequence checkpoints (CPU cycles: 2 per APU cycle).
-    static const std::uint64_t k4[4] = {7457, 14913, 22371, 29831};
+    static const std::uint64_t k4[4] = {7457, 14913, 22371, 29830};
     static const std::uint64_t k5[5] = {7457, 14913, 22371, 29829, 37281};
     const std::uint64_t next = m_sequenceStep < 4
         ? (m_frameMode5 ? k5[m_sequenceStep] : k4[m_sequenceStep])
@@ -587,13 +603,23 @@ void Apu::stepApuCycle()
         if (half) halfFrame();
         if (irqReset) {
             if (!m_inhibitIrq && !m_frameMode5) {
-                m_frameIrq = true;
+                // The flag becomes visible one CPU cycle after the APU
+                // boundary (the hardware's odd/even parity, calibrated to
+                // blargg's windows: clear at 29830, set at 29831).
+                // Timestamp from THIS APU step (the scheduler may be far
+                // ahead after a bulk advance), then +2 CPU cycles for the
+                // flag's visibility parity.
+                const std::uint64_t stepMaster = (m_apuCycles + 1)
+                    * static_cast<std::uint64_t>(m_profile.cpuDivisor) * 2;
+                m_frameIrqAt = stepMaster
+                    + 2 * static_cast<std::uint64_t>(m_profile.cpuDivisor);
+                m_frameIrqAssertUntil = stepMaster + 2
+                    * static_cast<std::uint64_t>(m_profile.cpuDivisor);
             }
             m_sequenceCycle = 0;
             m_sequenceStep = 0;
         }
     }
-    m_sequenceCycle += 2;
 }
 
 void Apu::runTo(std::uint64_t masterClock)
