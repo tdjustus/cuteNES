@@ -74,7 +74,7 @@ TEST(Apu, EnabledPulseProducesSound)
 {
     ApuHarness h;
     h.apu.registerWrite(0x4015, 0x01);          // pulse 1 on
-    h.apu.registerWrite(0x4000, 0xBF);          // duty 2, constant vol 15
+    h.apu.registerWrite(0x4000, 0x9F);          // duty 2, constant vol 15
     h.apu.registerWrite(0x4002, 0x00);          // timer lo
     h.apu.registerWrite(0x4003, 0x01);          // timer hi=1, length idx 0 (10)
     h.runFrames(1);
@@ -92,7 +92,7 @@ TEST(Apu, LengthCounterExpiresAndStatusReflectsIt)
 {
     ApuHarness h;
     h.apu.registerWrite(0x4015, 0x01);
-    h.apu.registerWrite(0x4000, 0xBF);
+    h.apu.registerWrite(0x4000, 0x9F);
     h.apu.registerWrite(0x4002, 0x00);
     h.apu.registerWrite(0x4003, 0x00); // length index 0 -> 10 ticks
     EXPECT_NE(h.apu.registerRead(0x4015) & 0x01, 0); // still counting
@@ -116,7 +116,7 @@ TEST(Apu, OutputRateRatioMatchesNativeRate)
 {
     ApuHarness h;
     h.apu.registerWrite(0x4015, 0x01);
-    h.apu.registerWrite(0x4000, 0xBF);
+    h.apu.registerWrite(0x4000, 0x9F);
     h.apu.registerWrite(0x4002, 0x00);
     h.apu.registerWrite(0x4003, 0x01);
     h.runFrames(60); // ~1 second of emulated time
@@ -133,7 +133,7 @@ TEST(Apu, DeterministicAcrossRuns)
     {
         ApuHarness h;
         h.apu.registerWrite(0x4015, 0x0F);
-        h.apu.registerWrite(0x4000, 0xBF);
+        h.apu.registerWrite(0x4000, 0x9F);
         h.apu.registerWrite(0x4002, 0x33);
         h.apu.registerWrite(0x4003, 0x01);
         h.apu.registerWrite(0x4008, 0x81);
@@ -147,7 +147,7 @@ TEST(Apu, DeterministicAcrossRuns)
     }
     ApuHarness h2;
     h2.apu.registerWrite(0x4015, 0x0F);
-    h2.apu.registerWrite(0x4000, 0xBF);
+    h2.apu.registerWrite(0x4000, 0x9F);
     h2.apu.registerWrite(0x4002, 0x33);
     h2.apu.registerWrite(0x4003, 0x01);
     h2.apu.registerWrite(0x4008, 0x81);
