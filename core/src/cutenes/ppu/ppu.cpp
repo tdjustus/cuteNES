@@ -510,6 +510,9 @@ void Ppu::stepDot()
         } else if (m_dot == 257) {
             copyHorizontal();
             loadSpriteUnits();
+            if (renderingEnabled()) {
+                m_oamAddr = 0; // OAMADDR resets during sprite fetches
+            }
         } else if (m_dot == 65) {
             evaluateSprites();
         }
