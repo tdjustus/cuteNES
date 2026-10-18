@@ -2,15 +2,32 @@
 # standalone, headless, zero runtime dependencies beyond the C++20 stdlib).
 
 add_library(cutenes-core
-    src/cutenes/version.cpp)
+    src/cutenes/version.cpp
+    src/cutenes/system/region.cpp
+    src/cutenes/system/scheduler.cpp
+    src/cutenes/system/machine.cpp
+    src/cutenes/bus/bus.cpp)
 
 add_library(cutenes-core::cutenes-core ALIAS cutenes-core)
 
 target_compile_features(cutenes-core PUBLIC cxx_std_20)
 
+# Included early: CMAKE_INSTALL_INCLUDEDIR must be defined when the
+# INSTALL_INTERFACE generator expression below is parsed.
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 target_include_directories(cutenes-core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+target_include_directories(cutenes-core PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# Dev-only INTERFACE target exposing internal headers (src/ tree) to the
+# test suite. Never installed, never linked by consumers.
+add_library(cutenes-core-internal INTERFACE)
+target_include_directories(cutenes-core-internal INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>)
 
 # Determinism safety net (research.md D7): integer-only emulation state is the
 # mechanism; these flags keep any stray FP strictly ordered/contraction-free.
@@ -23,9 +40,6 @@ endif()
 
 # Export packaging so the Qt frontend and MCP server can consume this target
 # via FetchContent or find_package with the identical name (plan.md D6).
-include(GNUInstallDirs)
-include(CMakePackageConfigHelpers)
-
 install(TARGETS cutenes-core EXPORT cutenes-core-targets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
