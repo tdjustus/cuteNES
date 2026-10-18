@@ -639,7 +639,11 @@ void Cpu::reset(bool cold)
     m_pc = static_cast<std::uint16_t>(lo | (hi << 8));
 }
 
-void Cpu::assertNmi() { m_nmiPending = true; }
+void Cpu::assertNmi()
+{
+    m_nmiPending = true;
+    m_edgeCycle = 0; // externally-asserted edges predate this instruction
+}
 void Cpu::setIrq(bool level) { m_irqLine = level; }
 
 CpuState Cpu::state() const
