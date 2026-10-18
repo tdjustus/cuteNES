@@ -179,8 +179,7 @@ std::uint8_t Apu::statusRead()
     // (6-irq_flag_timing test 4). Reads while not visible change nothing.
     if (frameVisible) {
         if (m_sched.now() < m_frameIrqAssertUntil) {
-            m_frameIrqAt = m_sched.now()
-                + static_cast<std::uint64_t>(m_profile.cpuDivisor);
+            m_frameIrqAt = m_sched.now() + 6;
         } else {
             m_frameIrqAt = 0;
         }
@@ -217,7 +216,8 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         default:
             m_pulse1.timerReload = static_cast<std::uint16_t>(
                 (m_pulse1.timerReload & 0x00FF) | ((value & 7) << 8));
-            m_pulse1.length = kLengthTable[value >> 3];
+            m_pulse1.length =
+                m_pulse1.enabled ? kLengthTable[value >> 3] : 0;
             m_pulse1.envStart = true;
             m_pulse1.dutyIndex = 0;
             break;
@@ -244,7 +244,8 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         default:
             m_pulse2.timerReload = static_cast<std::uint16_t>(
                 (m_pulse2.timerReload & 0x00FF) | ((value & 7) << 8));
-            m_pulse2.length = kLengthTable[value >> 3];
+            m_pulse2.length =
+                m_pulse2.enabled ? kLengthTable[value >> 3] : 0;
             m_pulse2.envStart = true;
             break;
         }
@@ -261,7 +262,8 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         default:
             m_triangle.timerReload = static_cast<std::uint16_t>(
                 (m_triangle.timerReload & 0x00FF) | ((value & 7) << 8));
-            m_triangle.length = kLengthTable[value >> 3];
+            m_triangle.length =
+                m_triangle.enabled ? kLengthTable[value >> 3] : 0;
             m_triangle.reloadFlag = true;
             break;
         }
@@ -277,7 +279,8 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
             m_noise.timerReload = kNoisePeriods[value & 0x0F] / 2; // APU cyc
             break;
         default:
-            m_noise.length = kLengthTable[value >> 3];
+            m_noise.length =
+                m_noise.enabled ? kLengthTable[value >> 3] : 0;
             m_noise.envStart = true;
             break;
         }
@@ -611,10 +614,12 @@ void Apu::stepApuCycle()
                 // flag's visibility parity.
                 const std::uint64_t stepMaster = (m_apuCycles + 1)
                     * static_cast<std::uint64_t>(m_profile.cpuDivisor) * 2;
-                m_frameIrqAt = stepMaster
-                    + 2 * static_cast<std::uint64_t>(m_profile.cpuDivisor);
-                m_frameIrqAssertUntil = stepMaster + 2
-                    * static_cast<std::uint64_t>(m_profile.cpuDivisor);
+                // Calibration (6-irq_flag_timing, mid-cycle read sampling):
+                // visible-from = fire + half a CPU cycle; condition active
+                // until fire + 2 CPU cycles; re-armed flag visible half a
+                // cycle after the clearing read.
+                m_frameIrqAt = stepMaster + 24;
+                m_frameIrqAssertUntil = m_frameIrqAt + 30;
             }
             m_sequenceCycle = 0;
             m_sequenceStep = 0;
