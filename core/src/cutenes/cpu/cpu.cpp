@@ -334,12 +334,14 @@ void Cpu::sampleNmi()
     const bool line = m_ppu->nmiLine();
     if (line && !m_nmiWasHigh) {
         m_nmiPending = true;
+        m_edgeCycle = m_cycles; // 1-based cycle index in this instruction
     }
     m_nmiWasHigh = line;
 }
 
 std::uint8_t Cpu::rd(std::uint16_t addr)
 {
+    ++m_cycles;
     tickHalf(false);
     const std::uint8_t value = m_bus.read(addr);
     if ((addr & 0x3FFF) == 0x2002 && m_ppu != nullptr) {
@@ -355,6 +357,7 @@ std::uint8_t Cpu::rd(std::uint16_t addr)
 
 void Cpu::wr(std::uint16_t addr, std::uint8_t value)
 {
+    ++m_cycles;
     tickHalf(false);
     m_bus.write(addr, value);
     sampleNmi();
@@ -705,16 +708,30 @@ void Cpu::step()
         tick();
         return;
     }
-    if (m_nmiPending) {
+    // Interrupts are effectively polled at the second-to-last cycle of an
+    // instruction: an edge latched ON the final cycle defers service past
+    // this boundary (nesdev CPU_interrupts; 05-nmi_timing, 04-nmi_control).
+    if (m_nmiPending && (m_nmiStale || m_edgeCycle < m_prevInstrCycles)) {
         m_nmiPending = false;
+        m_nmiStale = false;
         doInterrupt(0xFFFA, false);
+        m_iPrev = true;
         return;
     }
-    if (m_irqLine && (m_p & kI) == 0) {
+    if (m_nmiPending) {
+        m_nmiStale = true; // edge landed on the last cycle: defer
+    }
+    // The flag-change delay: CLI/SEI/PLP take effect for the poll after
+    // the NEXT instruction (cpu_interrupts_v2: exactly one instruction
+    // executes after CLI before the IRQ is taken).
+    if (m_irqLine && !m_iPrev) {
         doInterrupt(0xFFFE, false);
+        m_iPrev = true;
         return;
     }
 
+    m_cycles = 0;
+    m_iStart = (m_p & kI) != 0;
     if (m_trace) {
         m_trace(state());
     }
@@ -1127,6 +1144,12 @@ void Cpu::step()
         execRmwCombo(op);
         break;
     }
+    m_prevInstrCycles = m_cycles;
+    // CLI/SEI/PLP take effect on the final cycle, so the poll sees the OLD
+    // value; RTI pulls P early enough that the poll sees the NEW one
+    // (cpu_interrupts_v2 tests 3, 7, and 10).
+    m_iPrev = (op == 0x58 || op == 0x78 || op == 0x28) ? m_iStart
+        : ((m_p & kI) != 0);
 }
 
 } // namespace cutenes

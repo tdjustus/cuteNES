@@ -115,6 +115,12 @@ private:
     bool m_irqLine = false;
     bool m_jammed = false;
     bool m_nmiWasHigh = false;
+    int m_cycles = 0;              // 1-based cycle index within instruction
+    int m_prevInstrCycles = 0;     // length of the last executed instruction
+    int m_edgeCycle = 0;           // cycle the NMI edge latched on
+    bool m_nmiStale = false;       // edge hit the last cycle: defer service
+    bool m_iPrev = true;           // I flag at the previous instruction start
+    bool m_iStart = true;          // I flag at this instruction's start
     std::function<void(const CpuState&)> m_trace;
 };
 
