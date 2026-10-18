@@ -31,6 +31,7 @@ void Machine::Impl::buildComponents(Region region)
     io = ApuIoBridge{};
     io.sched = &scheduler;
     io.bus = &bus;
+    io.controllers = controllers;
     io.ppu = ppu.get();
     io.apu = apu.get();
 

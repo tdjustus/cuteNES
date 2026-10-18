@@ -17,14 +17,16 @@
 
 namespace cutenes {
 
-// $4000-$401F bridge: APU registers, OAM DMA ($4014), controller ports
-// (polling behavior arrives with task T044).
+// $4000-$401F bridge: APU registers, OAM DMA ($4014), and the two
+// controller ports with authentic serial polling (task T044).
 struct ApuIoBridge final : CpuBusDevice {
     Scheduler* sched = nullptr;
     Bus* bus = nullptr;
     Ppu* ppu = nullptr;
     Apu* apu = nullptr;
+    ButtonSet* controllers = nullptr; // machine-held button state [2]
     std::uint8_t strobe = 0;
+    std::uint8_t shiftPos[2] = {0, 0};
 
     std::uint8_t cpuRead(std::uint16_t addr) override
     {
@@ -32,7 +34,30 @@ struct ApuIoBridge final : CpuBusDevice {
             return apu->registerRead(addr);
         }
         if (addr == 0x4016 || addr == 0x4017) {
-            return static_cast<std::uint8_t>(0x40); // open-bus high bits
+            // Serial controller read: bit 0 carries the current button in
+            // read order A,B,Select,Start,Up,Down,Left,Right; high bits are
+            // open bus (0x40 typical).
+            const int port = addr == 0x4017 ? 1 : 0;
+            std::uint8_t bit = 0;
+            if (controllers != nullptr) {
+                const ButtonSet& set = controllers[port];
+                // Read order (first to last); Button enum stores the same
+                // bits right-to-left.
+                static constexpr Button kOrder[8] = {
+                    Button::A, Button::B, Button::Select, Button::Start,
+                    Button::Up, Button::Down, Button::Left, Button::Right,
+                };
+                const std::uint8_t pos = shiftPos[port];
+                if (strobe != 0) {
+                    bit = static_cast<std::uint8_t>(
+                        set[static_cast<std::size_t>(Button::A)]);
+                } else if (pos < 8) {
+                    bit = static_cast<std::uint8_t>(
+                        set[static_cast<std::size_t>(kOrder[pos])]);
+                    shiftPos[port] = static_cast<std::uint8_t>(pos + 1);
+                } // after 8 reads: 0 (open bus low)
+            }
+            return static_cast<std::uint8_t>(0x40 | bit);
         }
         return 0;
     }
@@ -42,7 +67,13 @@ struct ApuIoBridge final : CpuBusDevice {
         if (addr == 0x4014) {
             oamDma(value);
         } else if (addr == 0x4016) {
-            strobe = static_cast<std::uint8_t>(value & 1); // shared strobe
+            const std::uint8_t next = static_cast<std::uint8_t>(value & 1);
+            if (strobe != 0 && next == 0) {
+                // Falling edge: latch state, restart the shift.
+                shiftPos[0] = 0;
+                shiftPos[1] = 0;
+            }
+            strobe = next;
         } else {
             // $4000-$4013, $4015, and $4017 (frame counter) are APU.
             apu->registerWrite(addr, value);

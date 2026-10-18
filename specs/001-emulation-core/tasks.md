@@ -138,8 +138,8 @@ independently testable increment. Paths follow plan.md's source tree.
 
 ### Implementation for User Story 4
 
-- [ ] T044 [P] [US4] Write `tests/unit/test_controllers.cpp` (serial shift order Right,Left,Down,Up,Start,Select,B,A; strobe behavior; open-bus bits on $4016/$4017 reads), then implement in `core/src/cutenes/input/controllers.cpp`: authentic serial polling, strobe latch, DMC-corruption of controller reads suppressed correctly
-- [ ] T045 [P] [US4] Implement `setController`/`controller` full-replace API in `core/src/cutenes/system/machine.cpp` + `core/include/cutenes/controller.hpp` (Port One/Two isolation, US4 scenario 2)
+- [x] T044 [P] [US4] Write `tests/unit/test_controllers.cpp` (serial shift order Right,Left,Down,Up,Start,Select,B,A; strobe behavior; open-bus bits on $4016/$4017 reads), then implement in `core/src/cutenes/input/controllers.cpp`: authentic serial polling, strobe latch, DMC-corruption of controller reads suppressed correctly
+- [x] T045 [P] [US4] Implement `setController`/`controller` full-replace API in `core/src/cutenes/system/machine.cpp` + `core/include/cutenes/controller.hpp` (Port One/Two isolation, US4 scenario 2)
 - [ ] T046 [US4] Add input-injection playtest scenario in `tests/harness/playtest.cpp`: per-frame button scripts reach gameplay on a known menu-driven title
 
 **Checkpoint**: AI/automation can play, not just watch.
