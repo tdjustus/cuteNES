@@ -70,6 +70,24 @@ RunState Machine::runState() const;    // NeedsRom | Paused | Running
 `stepInstruction` leaves the machine inspectable at an instruction boundary
 (FR-016); `runFrames`/`frameAdvance` sink the frames they produce.
 
+**Pause semantics**: `pause`/`resume` govern *autonomous* pacing (the GUI's
+real-time loop). The explicit advance commands — `runFrames`,
+`frameAdvance`, `stepInstruction` — execute regardless of `runState`;
+they are commands, not a request to unpause.
+
+**Scripted input** (002 FR-019):
+
+```cpp
+struct InputScript {              // per-frame controller plan
+    const ButtonSet* frames;      // frames[i] applies before frame i
+    std::size_t        count;     // past the end: hold the last entry
+};
+void Machine::runFrames(std::uint32_t n, const InputScript* script);
+```
+
+Scripted runs MUST be byte-identical to equivalent per-frame
+`setController` + `runFrames(1)` calls.
+
 ## Input (FR-007)
 
 ```cpp
@@ -124,6 +142,45 @@ WriteError              Machine::writeCpuRegister(std::uint16_t addr,
 `readMemory` observes CPU-bus view incl. register side effects of *reads*
 (e.g., $2002 clears VBlank). Writes through `writeMemory` are the automation
 surface (cheats/trainer logic); bounded per call — large accesses chunk.
+
+### CPU state write (002 FR-002: full control)
+
+```cpp
+struct CpuWrite {                    // all fields optional via mask
+    std::uint8_t  a, x, y, s, p;     // p bit 5 ignored (always reads 1)
+    std::uint16_t pc;
+    std::uint8_t  mask;              // bit i set ⇒ field written
+};                                    // bits: 0=a 1=x 2=y 3=s 4=p 5=pc
+
+void Machine::writeCpu(const CpuWrite& w);
+```
+
+Applies immediately (components caught up to the current clock); interrupt
+recognition is re-evaluated at the next instruction boundary. Determinism
+is preserved: identical write + operation sequences produce identical
+output.
+
+### Side-effect-free debug access (002 FR-015)
+
+```cpp
+void Machine::readPpuRegisters(std::uint8_t dst[8]) const; // no latch side effects
+void Machine::readVram(std::uint16_t addr, std::size_t len,
+                       std::uint8_t* dst) const;   // PPU-bus view, mirroring resolved
+void Machine::writeVram(std::uint16_t addr, const std::uint8_t* src,
+                        std::size_t len);
+void Machine::readOam(std::uint8_t dst[256]) const;
+void Machine::writeOam(const std::uint8_t src[256]);
+void Machine::readPalette(std::uint8_t dst[32]) const;    // $3F00-$3F1F, aliases resolved
+void Machine::writePalette(const std::uint8_t src[32]);
+
+std::uint8_t Machine::peek(std::uint16_t addr) const;     // side-effect-free CPU-bus read
+std::string  Machine::disassemble(std::uint16_t pc) const; // next instruction, no execution
+```
+
+These exist so debugger-grade clients can inspect and repair video state
+without the destructive `$2006/$2007` register dance, and so disassembly
+never perturbs the machine. `peek`/`disassemble` promote the existing
+harness surface to the stable API (002 FR-002).
 
 ## Save states (FR-011) and SRAM (FR-006 battery)
 
@@ -180,3 +237,8 @@ table is therefore part of the contract:
 | Audio (FR-010) | `IAudioSink::onSamples` |
 | Region detect (FR-014) | `region()` |
 | SRAM persistence (FR-006) | `sram()` / `loadSram` |
+| CPU state write (002 FR-002) | `writeCpu` |
+| PPU debug access (002 FR-015) | `readPpuRegisters` `readVram` `writeVram` `readOam` `writeOam` `readPalette` `writePalette` |
+| Side-effect-free peek (002 FR-002) | `peek` / `disassemble` |
+| Scripted input runs (002 FR-019) | `runFrames(n, InputScript*)` |
+| Status/info (002 FR-018) | `cartridgeInfo` `region` `frameCounter` `masterCycle` `runState` + `coreVersionString` |

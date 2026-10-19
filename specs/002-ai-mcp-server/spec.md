@@ -139,14 +139,21 @@ verify neither surface ever observes a torn or inconsistent machine state.
 
 **Acceptance Scenarios**:
 
-1. **Given** a locally running emulator, **When** no MCP client is connected
-   and the server is disabled, **Then** the emulator behaves exactly as if
-   the feature did not exist.
-2. **Given** simultaneous use of the graphical frontend and a connected MCP
+1. **Given** a freshly installed emulator, **When** it starts, **Then** both
+   the API server and the MCP server are disabled, nothing listens, and the
+   emulator behaves exactly as if the features did not exist.
+2. **Given** the application GUI, **When** the operator opens the server
+   settings, **Then** both servers show as off with independent manual
+   toggles, and the MCP toggle cannot be turned on (or the MCP server
+   installed) unless the API server is enabled first.
+3. **Given** simultaneous use of the graphical frontend and a connected MCP
    client, **When** either surface changes state (load, reset, save, input),
    **Then** both surfaces reflect the same consistent machine state
    afterward.
-3. **Given** the default configuration, **When** a connection attempt arrives
+4. **Given** a connected MCP client, **When** the operator disables the API
+   server in the GUI, **Then** the client receives a structured shutdown
+   and the session ends without affecting emulation.
+5. **Given** the default configuration, **When** a connection attempt arrives
    from outside the local machine, **Then** it is refused unless the operator
    has explicitly enabled network exposure.
 
@@ -170,6 +177,28 @@ verify neither surface ever observes a torn or inconsistent machine state.
   (Defined overwrite/rejection behavior with explicit errors.)
 - What happens when network exposure is enabled — who may connect? (Explicit
   opt-in only; treated as a trusted context; see Assumptions.)
+- What happens when a ROM path contains `..` or an absolute path? (Rejected
+  with a structured error; loads stay inside the configured library.)
+- What happens when a chunked upload stalls or the client disconnects
+  mid-upload? (Partial upload is discarded after a timeout; no partial ROM
+  is ever loadable.)
+- What happens when an input script is shorter or longer than the requested
+  run? (Final entry held past the script's end; extra entries ignored.)
+- What happens when a CPU-state write lands mid-frame? (Registers apply
+  immediately; interrupt recognition is re-evaluated at the next instruction
+  boundary.)
+- What happens when an imported raw state blob targets a different cartridge
+  or core version? (Rejected with the same structured errors as slot loads.)
+- What happens when the operator disables the API while MCP clients are
+  connected? (Structured shutdown to each client; emulation unaffected;
+  MCP endpoint closes with it — FR-020.)
+- What happens on a fresh install with no GUI interaction? (Both servers
+  stay disabled; nothing listens; installing or registering the MCP server
+  anywhere requires enabling the API first.)
+- What happens when the GUI is not yet available (feature 003 pending)?
+  (A documented config-file mechanism is the interim enable path for
+  development and testing; the GUI becomes the canonical surface when it
+  ships.)
 
 ## Requirements *(mandatory)*
 
@@ -178,14 +207,20 @@ verify neither surface ever observes a torn or inconsistent machine state.
 - **FR-001**: The system MUST provide an MCP server conforming to the
   published Model Context Protocol specification, discoverable and drivable
   by mainstream MCP clients without client-side customization.
-- **FR-002**: The server MUST expose the complete automation surface: load and
-  eject ROMs; run control (run for N frames, pause, resume, reset, frame
-  advance, single-step one CPU instruction); controller input injection for
-  both controllers; save/load/list/delete named save-state slots; memory read
-  and write; CPU state read; and screen capture.
+- **FR-002**: The server MUST expose the complete automation surface: load
+  and eject ROMs (by library path or chunked byte upload — FR-014); run
+  control (run for N frames, run to a target frame, pause, resume, reset,
+  power cycle, frame advance, single-step one CPU instruction); controller
+  input injection for both ports (immediate and per-frame scripted —
+  FR-019); save/load/list/delete named save-state slots plus raw state
+  blob export/import (FR-017); memory read and write; CPU state read AND
+  write; side-effect-free PPU debug access (registers, VRAM, OAM,
+  palette — FR-015); battery SRAM read/write; audio buffer capture
+  (FR-016); screen capture; and a status report tool (FR-018).
 - **FR-003**: Every capability of the emulation core MUST be exposed through
   the MCP surface; no core capability may be available only through another
-  consumer (automation parity).
+  consumer (automation parity). The audit table in the core contract
+  (`specs/001-emulation-core/contracts/core-api.md`) is the checklist.
 - **FR-004**: Each exposed capability MUST be described by a machine-readable
   schema (inputs, outputs, errors) delivered through the protocol's discovery
   mechanism.
@@ -201,8 +236,17 @@ verify neither surface ever observes a torn or inconsistent machine state.
 - **FR-008**: The server MUST accept local connections by default and MUST
   refuse non-local connections until the operator explicitly enables network
   exposure.
-- **FR-009**: The operator MUST be able to enable and disable the MCP server,
-  and a disabled server MUST have no observable effect on the emulator.
+- **FR-009**: The application MUST ship with both the API server and the
+  MCP server **disabled by default**. Enabling or disabling either is a
+  manual action performed in the application GUI, and the setting persists
+  across restarts. Disabled servers MUST have no observable effect on the
+  emulator (no listeners, no sockets, no background work).
+- **FR-020**: The MCP server MUST depend on the API server: the MCP
+  endpoint cannot be enabled, installed, or registered with a client while
+  the API server is disabled — the GUI MUST present this dependency and
+  offer to enable the API as part of MCP setup. Disabling the API while
+  MCP clients are connected MUST terminate those sessions gracefully
+  (structured shutdown messages; emulation continues unaffected).
 - **FR-010**: The tool surface MUST carry an explicit version identifier, and
   incompatible changes to any tool schema MUST increment that version, per the
   constitution's versioned-API requirement.
@@ -212,6 +256,30 @@ verify neither surface ever observes a torn or inconsistent machine state.
   chunking large accesses rather than producing unbounded payloads.
 - **FR-013**: The server MUST survive client connect/disconnect cycles at any
   time without altering or interrupting emulation state.
+- **FR-014**: ROM loading MUST support both (a) a path relative to the
+  operator-configured ROM library — rejecting any path that escapes that
+  directory — and (b) chunked byte upload for clients without filesystem
+  access, with bounded chunk sizes and an explicit commit/abort that
+  discards partial uploads.
+- **FR-015**: The server MUST expose side-effect-free reads of PPU state —
+  registers, VRAM (with mirroring resolved), OAM, and palette — plus
+  corresponding writes, so clients can build debugger views and repair
+  video state without perturbing emulation via the $2006/$2007 dance.
+- **FR-016**: The server MUST expose audio capture: samples buffered since
+  a client-supplied marker (frame index or master cycle), delivered in
+  bounded chunks, closing the parity loop with the core's audio capability.
+- **FR-017**: Raw save-state blobs MUST be exportable (server → client) and
+  importable (client → server, subject to the same validation and rejection
+  rules as slot loads), so clients can manage, diff, and archive states
+  externally.
+- **FR-018**: A status tool MUST report cartridge info (format, mapper,
+  sizes, battery, region), run state, frame and master-cycle counters, and
+  the core and tool-surface versions.
+- **FR-019**: The run tools MUST accept an optional per-frame input script
+  for the run's duration: each frame's controller states apply before that
+  frame executes; beyond the script's length the final entry is held;
+  extra entries are ignored. Scripted runs MUST be deterministic and
+  byte-identical to equivalent per-frame tool calls.
 
 ### Key Entities
 
@@ -225,8 +293,11 @@ verify neither surface ever observes a torn or inconsistent machine state.
   share; the subject of every tool operation.
 - **Save-State Slot**: A named, addressable snapshot within the emulation
   session; listable, loadable, deletable.
-- **Server Configuration**: Operator-controlled settings — enabled/disabled,
-  transport/exposure scope, port or endpoint — persisted across restarts.
+- **Server Configuration**: Operator-controlled settings persisted across
+  restarts — two independent manual toggles (API server, MCP server), both
+  defaulting to disabled, with MCP gated on the API being enabled
+  (FR-009/FR-020); plus transport/exposure scope and port or endpoint. The
+  application GUI is the canonical control surface.
 
 ## Success Criteria *(mandatory)*
 
@@ -252,6 +323,11 @@ verify neither surface ever observes a torn or inconsistent machine state.
 
 ## Assumptions
 
+- **Two-layer server model**: the application exposes an API server (the
+  transport/control layer) and the MCP server as the protocol surface on
+  top of it. Both are disabled by default, enabled manually in the GUI,
+  and MCP requires the API (FR-009/FR-020). Until the GUI (feature 003)
+  exists, a config-file mechanism is the documented interim enable path.
 - This feature depends on the emulation core (`specs/001-emulation-core`) for
   every capability it exposes; the core's public surface is its contract.
 - The targeted MCP specification revision is the current published standard at

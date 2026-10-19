@@ -264,3 +264,15 @@ Then integrate: T026 frame delivery -> T027 determinism -> T028 golden baseline.
 - Constitution Principle III: test tasks are written FIRST and verified failing (RED) before their implementation task
 - Commit after each task or logical group; checkpoints are natural validation/commit points
 - Every accuracy-sensitive task cites its research.md decision — keep the citations beside the code
+
+---
+
+## Addendum: full-control API surface (feature 002 gap review, 2026-10-18)
+
+The 002 spec review found the core contract insufficient for total MCP
+control. These tasks implement the amended contract
+(contracts/core-api.md "CPU state write", "Side-effect-free debug access",
+"Scripted input", and the pause-semantics clarification).
+
+- [ ] T066 Implement full-control API surface in `core/src/cutenes/system/machine.cpp` + `core/include/cutenes/machine.hpp`: `writeCpu(CpuWrite)` (masked fields, bit-5-of-P normalized), `readPpuRegisters`/`readVram`/`writeVram` (mirroring-resolved, no $2006/$2007 side effects), `readOam`/`writeOam`, `readPalette`/`writePalette` (alias-resolved), promote `debugPeek` to public `peek`, add `disassemble` (reuses cpu/trace.cpp machinery, side-effect-free), and the `runFrames(n, InputScript*)` overload (per-frame apply, hold-last past end, byte-identical to per-frame calls)
+- [ ] T067 Unit tests in `tests/unit/test_full_control.cpp`: CPU write round-trip + mask selectivity; VRAM debug read equals $2006/$2007-mediated read on the same state without mutating v; OAM/palette read-write round-trip; peek has no latch side effects ($2002 read via peek leaves VBlank set); scripted runFrames == per-frame setController+runFrames(1) hashes; disassemble at known PC matches expected mnemonic text
