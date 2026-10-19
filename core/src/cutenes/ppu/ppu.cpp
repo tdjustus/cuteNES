@@ -116,8 +116,7 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
             value = m_readBuffer;
             m_readBuffer = ppuBusRead(a);
         }
-        m_v = static_cast<std::uint16_t>(
-            m_v + ((m_ctrl & 0x04) != 0 ? 32 : 1));
+        clockIfA12Rose();
         break;
     }
     default:
@@ -186,12 +185,23 @@ void Ppu::cpuWrite(std::uint16_t addr, std::uint8_t value)
         } else {
             ppuBusWrite(a, value);
         }
-        m_v = static_cast<std::uint16_t>(
-            m_v + ((m_ctrl & 0x04) != 0 ? 32 : 1));
+        clockIfA12Rose();
         break;
     }
     default:
         break;
+    }
+}
+
+void Ppu::clockIfA12Rose()
+{
+    const std::uint16_t next = static_cast<std::uint16_t>(
+        m_v + ((m_ctrl & 0x04) != 0 ? 32 : 1));
+    const bool wasHigh = (m_v & 0x1000) != 0;
+    m_v = next;
+    if (!renderingEnabled() && !wasHigh && (m_v & 0x1000) != 0
+        && m_cart != nullptr) {
+        m_cart->clockIrq(); // A12 rise via the VRAM-address increment
     }
 }
 

@@ -76,6 +76,7 @@ public:
 
     // OAM DMA target: 256 bytes pushed by the $4014 engine.
     void oamDmaWrite(std::uint8_t value);
+    void clockIfA12Rose(); // $2007 access: v++ and A12-rise IRQ
 
     // Frame completion flag: set once the final visible pixel is emitted
     // (scanline 239, dot 255); the machine consumes and clears it.
