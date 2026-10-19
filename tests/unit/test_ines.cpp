@@ -21,14 +21,16 @@ std::vector<std::uint8_t> makeNrom(std::uint8_t prgBanks, std::uint8_t chrBanks)
 
 std::vector<std::uint8_t> makeNes2(std::uint8_t prgBanks,
     std::uint8_t chrBanks, std::uint16_t mapper, std::uint8_t flags6 = 0,
-    std::uint8_t prgRamShift = 0, std::uint8_t tv = 0)
+    std::uint8_t prgRamShift = 0, std::uint8_t tv = 0,
+    std::uint8_t chrRamShift = 0)
 {
+    // Byte 11 = CHR-RAM shift, byte 12 = TV system (nesdev NES 2.0).
     std::vector<std::uint8_t> rom{
         'N', 'E', 'S', 0x1A, prgBanks, chrBanks,
         static_cast<std::uint8_t>(flags6 | ((mapper & 0x0F) << 4)),
         static_cast<std::uint8_t>(0x08 | ((mapper & 0xF0))),
-        static_cast<std::uint8_t>(mapper >> 8), 0x00, prgRamShift, tv,
-        0x00, 0x00, 0x00, 0x00};
+        static_cast<std::uint8_t>(mapper >> 8), 0x00, prgRamShift,
+        chrRamShift, tv, 0x00, 0x00, 0x00};
     rom.resize(16 + 16384u * prgBanks + 8192u * chrBanks, 0x5A);
     return rom;
 }
@@ -161,4 +163,18 @@ TEST(Nes2, ParsesRegionAndPrgRamShift)
         cutenes::LoadError::Ok);
     EXPECT_EQ(cart.info.region, cutenes::Region::Pal);
     EXPECT_EQ(cart.info.prgRamSize, 8192u);
+}
+
+TEST(Nes2, ChrRamShiftSizing)
+{
+    auto rom = makeNes2(1, 0, 0, 0, 0, 0, 9); // 64 << 9 = 32K CHR-RAM
+    cutenes::Cartridge cart;
+    ASSERT_EQ(cutenes::Cartridge::load(rom.data(), rom.size(), cart).error,
+        cutenes::LoadError::Ok);
+    // Externally visible via writability; size checked via wrap behavior:
+    // writes at $0000 and $2000 alias in 8K, distinct in 32K.
+    cart.chrWrite(0x0000, 0x11);
+    cart.chrWrite(0x2000, 0x22);
+    EXPECT_EQ(cart.chrRead(0x0000), 0x11);
+    EXPECT_EQ(cart.chrRead(0x2000), 0x22); // distinct banks => 32K
 }

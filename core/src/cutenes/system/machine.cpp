@@ -96,15 +96,18 @@ LoadResult Machine::loadCartridge(const std::uint8_t* data, std::size_t size)
     // A region change rebuilds every timing-dependent component.
     const Region region =
         result.info.region == Region::Pal ? Region::Pal : Region::Ntsc;
-    if (region != impl.regionId) {
-        const MachineConfig config = impl.config;
-        impl = Impl(config);
-        // Re-parse into the rebuilt implementation.
-        const LoadResult again = Cartridge::load(data, size, impl.cart);
+    if (region != m_impl->regionId) {
+        // Region change: swap the owning pointer (never move-assign over
+        // the live Impl — components hold references into it). The local
+        // `impl` reference dies with the old object.
+        const MachineConfig config = m_impl->config;
+        m_impl = std::make_unique<Impl>(config);
+        const LoadResult again =
+            Cartridge::load(data, size, m_impl->cart);
         (void)again;
     }
-    impl.ppu->attachCartridge(&impl.cart);
-    impl.runState = RunState::Paused;
+    m_impl->ppu->attachCartridge(&m_impl->cart);
+    m_impl->runState = RunState::Paused;
     return result;
 }
 

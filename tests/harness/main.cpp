@@ -348,6 +348,45 @@ int cmdBench(const char* romPath, std::uint32_t seconds)
     }
 }
 
+// T058 tier-2: run until the frame hash settles (a static result
+// screen), reporting the settled hash — the baseline for golden capture.
+int cmdSettle(const char* romPath, std::uint32_t maxFrames)
+{
+    std::vector<std::uint8_t> rom;
+    if (!readRom(romPath, rom)) {
+        return 2;
+    }
+    cutenes::Machine machine;
+    if (machine.loadCartridge(rom.data(), rom.size()).error
+        != cutenes::LoadError::Ok) {
+        return 2;
+    }
+    RecordingSink sink;
+    machine.setVideoSink(&sink);
+    machine.setAudioSink(&sink);
+    machine.powerOn();
+
+    constexpr std::uint32_t kStableRun = 30; // ~half a second of stillness
+    std::uint32_t stable = 0;
+    std::uint32_t frame = 0;
+    for (; frame < maxFrames; ++frame) {
+        machine.runFrames(1);
+        if (sink.hashes.size() >= 2
+            && sink.hashes.back() == sink.hashes[sink.hashes.size() - 2]) {
+            if (++stable >= kStableRun) {
+                break;
+            }
+        } else {
+            stable = 0;
+        }
+    }
+    const bool settled = stable >= kStableRun;
+    std::printf("settle: %s at frame %u hash %08x\n",
+        settled ? "SETTLED" : "TIMEOUT", frame,
+        sink.hashes.empty() ? 0 : sink.hashes.back());
+    return settled ? 0 : 1;
+}
+
 int notImplemented(const char* command, const char* task)
 {
     std::fprintf(stderr,
@@ -392,6 +431,9 @@ int main(int argc, char** argv)
         && std::strcmp(argv[4], "--at") == 0
         && std::strcmp(argv[6], "--rerun-to") == 0) {
         return cmdSavestate(argv[3], parseUint(argv[5]), parseUint(argv[7]));
+    }
+    if (command == "settle" && argc == 3) {
+        return cmdSettle(argv[2], 1800); // ~30s emulated cap
     }
     if (command == "bench" && argc == 4
         && std::strcmp(argv[2], "--rom") == 0) {

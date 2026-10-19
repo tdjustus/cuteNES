@@ -52,6 +52,7 @@ LoadResult Cartridge::load(const std::uint8_t* data, std::size_t size,
     // PRG/CHR sizes. NES 2.0 extends both to 24 bits across bytes 4/5/9.
     std::uint32_t prgBanks = h[4];
     std::uint32_t chrBanks = h[5];
+    std::size_t chrRamSize = 0; // NES 2.0 byte 11 (0 => default 8K)
     if (nes2) {
         prgBanks |= static_cast<std::uint32_t>((h[9] & 0x0F) << 8);
         chrBanks |= static_cast<std::uint32_t>((h[9] & 0xF0) << 4);
@@ -79,8 +80,13 @@ LoadResult Cartridge::load(const std::uint8_t* data, std::size_t size,
         info.prgRamSize = (h[10] & 0x0F) < 15
             ? (std::size_t{64} << (h[10] & 0x0F))
             : 0;
-        // Byte 11 bits 0-1: 0 = NTSC, 1 = PAL, else multi-region.
-        switch (h[11] & 0x03) {
+        // Byte 11: CHR-RAM size shift (64 << n; 0x9 => 32K); byte 12
+        // bits 0-1 are the TV system (0 NTSC, 1 PAL).
+        const std::uint8_t chrShift = h[11] & 0x0F;
+        if (chrShift != 0 && chrShift < 15) {
+            chrRamSize = std::size_t{64} << chrShift;
+        }
+        switch (h[12] & 0x03) {
         case 0: info.region = Region::Ntsc; break;
         case 1: info.region = Region::Pal; break;
         default: info.region = Region::Unspecified; break;
@@ -111,7 +117,7 @@ LoadResult Cartridge::load(const std::uint8_t* data, std::size_t size,
     if (info.chrSize > 0) {
         out.chr.assign(body + info.prgSize, body + info.prgSize + info.chrSize);
     } else {
-        out.chrRam.assign(kChrBank, 0); // CHR-RAM default 8K
+        out.chrRam.assign(chrRamSize != 0 ? chrRamSize : kChrBank, 0);
     }
     out.prgRam.assign(info.prgRamSize, 0);
 

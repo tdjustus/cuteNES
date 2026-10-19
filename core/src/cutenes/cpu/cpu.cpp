@@ -361,6 +361,14 @@ std::uint8_t Cpu::rd(std::uint16_t addr)
         m_apu->dmcDeliver(byte);
         break; // one fetch per halt
     }
+    // Pre-access NMI sample: the silicon edge detector is continuous, so
+    // the line must be observed after catch-up but BEFORE a $2002 read
+    // clears the flag — a tight poll loop otherwise never latches the
+    // edge (the Holy Mapperel vsync hang). The kill window still cancels
+    // latched edges, preserving the suppression tests.
+    if ((addr & 0x3FFF) == 0x2002) {
+        sampleNmi();
+    }
     tickHalf(false);
     const std::uint8_t value = m_bus.read(addr);
     if ((addr & 0x3FFF) == 0x2002 && m_ppu != nullptr) {

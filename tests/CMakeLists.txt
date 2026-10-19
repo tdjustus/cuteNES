@@ -63,5 +63,18 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/other/nestest.nes")
                         ${CMAKE_CURRENT_SOURCE_DIR}/roms/${rom})
             set_tests_properties("tier1-${name}" PROPERTIES LABELS "tier1")
         endif()
+
     endforeach()
 endif()
+
+# Tier-2: Holy Mapperel execution + settle (T058). Screen-reported tests;
+# the settled hash is the deterministic baseline (golden capture pending a
+# reference emulator).
+file(GLOB HM_ROMS
+    "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/holy-mapperel/testroms/*.nes")
+foreach(rom IN LISTS HM_ROMS)
+    get_filename_component(name "${rom}" NAME_WE)
+    add_test(NAME "tier2-${name}"
+        COMMAND rom_harness settle ${rom})
+    set_tests_properties("tier2-${name}" PROPERTIES LABELS "tier2")
+endforeach()
