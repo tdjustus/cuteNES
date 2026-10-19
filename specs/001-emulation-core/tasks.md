@@ -180,7 +180,7 @@ independently testable increment. Paths follow plan.md's source tree.
 - [x] T054 [P] [US6] Implement UxROM in `core/src/cutenes/mappers/uxrom.cpp`: 16K bank switch + fixed last bank, bus-conflict behavior (AND/OR/NOMATCH subtypes), CHR-RAM
 - [x] T055 [P] [US6] Implement CNROM in `core/src/cutenes/mappers/cnrom.cpp`: 8K CHR bank switch, mirroring from header, bus-conflict behavior
 - [x] T056 [US6] Implement MMC3 in `core/src/cutenes/mappers/mmc3.cpp`: PRG $8000/$A000 bank modes (R6/R7), CHR 2Kx4 + 1Kx8 modes, A12-rise IRQ clocking (12 PPU-cycle guard), IRQ counter reload/enable/lock, MMC3 rev A/B, MMC6 SRAM differences documented
-- [ ] T057 [US6] Drive mmc3_test + mmc3_test_2 to pass via the T031 harness (tier-1 completion)
+- [x] T057 [US6] Drive mmc3_test + mmc3_test_2 to pass via the T031 harness (tier-1 completion)
 - [ ] T058 [P] [US6] Add tier-2 mapper verification: Holy Mapperel builds (mappers 1/2) from `third_party/holy-mapperel/` + rainwarrior 2_test/3_test bus-conflict ROMs in `tests/harness/suite.cpp` behind the `tier2` label (golden-frame or manual checklist, research D11)
 - [ ] T059 [US6] Create curated playtest list `tests/roms/playtest.txt` + `rom_harness playtest` execution (one representative commercial title per mapper 0-4 with scripted boot-to-gameplay criteria, US6 scenario 1)
 - [x] T060 [US6] Verify unsupported-mapper rejection names the id in `detail` end-to-end via harness (US6 scenario 2)
