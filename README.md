@@ -42,5 +42,22 @@ Public API contract: `specs/001-emulation-core/contracts/core-api.md`.
 
 ## Status
 
-Feature 001 (emulation core) is in implementation — see
-`specs/001-emulation-core/tasks.md`.
+Feature 001 (emulation core): 55/65 tasks complete. Hardware-verified
+green: nestest golden log (8991/8991 cycles), instr_test-v5 (all
+unofficial opcodes), instr_timing, ppu_vbl_nmi (all 10 subtests),
+apu_test (8/8), cpu_reset, oam_read, apu_reset, and mmc3_test
+1-clocking. Save states round-trip byte-identically; 600-frame
+determinism and instruction-stepping equivalence verified; ~592 fps
+single-threaded (9.9x real-time). See
+`specs/001-emulation-core/tasks.md` for the remaining calibration
+items (A12 rise guard, sprdma expected values, oam_stress columns).
+
+## Harness
+
+```bash
+build/tests/rom_harness nestest                 # CPU golden log
+build/tests/rom_harness suite --rom <rom>       # blargg $6000 protocol
+build/tests/rom_harness determinism --rom R --frames N
+build/tests/rom_harness savestate --rom R --at F --rerun-to G
+build/tests/rom_harness step-equiv R N          # stepping == runFrames
+build/tests/rom_harness bench --rom R           # sustained speed

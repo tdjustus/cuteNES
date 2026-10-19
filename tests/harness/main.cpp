@@ -6,6 +6,7 @@
 
 #include <cutenes/cutenes.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -311,6 +312,42 @@ int cmdSavestate(const char* romPath, std::uint32_t atFrame,
     return ok ? 0 : 1;
 }
 
+// T061: sustained emulation speed vs real-time (2x headroom = SC-003).
+int cmdBench(const char* romPath, std::uint32_t seconds)
+{
+    std::vector<std::uint8_t> rom;
+    if (!readRom(romPath, rom)) {
+        return 2;
+    }
+    cutenes::Machine machine;
+    if (machine.loadCartridge(rom.data(), rom.size()).error
+        != cutenes::LoadError::Ok) {
+        return 2;
+    }
+    RecordingSink sink;
+    machine.setVideoSink(&sink);
+    machine.setAudioSink(&sink);
+    machine.powerOn();
+
+    using Clock = std::chrono::steady_clock;
+    const auto start = Clock::now();
+    std::uint64_t frames = 0;
+    std::uint64_t ticks0 = 0;
+    while (true) {
+        machine.runFrames(60);
+        frames += 60;
+        const double elapsed = std::chrono::duration<double>(
+            Clock::now() - start).count();
+        if (elapsed >= seconds) {
+            ticks0 = machine.masterCycle();
+            const double fps = frames / elapsed;
+            std::printf("bench: %.1f fps (%.2fx real-time)\n", fps,
+                fps / 60.0988);
+            return fps >= 120.2 ? 0 : 1; // 2x headroom gate
+        }
+    }
+}
+
 int notImplemented(const char* command, const char* task)
 {
     std::fprintf(stderr,
@@ -329,7 +366,7 @@ void usage()
         "  nestest [--golden-log]          CPU golden-log verification (T029)\n"
         "  savestate --rom R --at F --rerun-to F   restore round trip (T051)\n"
         "  playtest --list FILE            scripted game checks (T059)\n"
-        "  bench --rom R --seconds N       sustained-speed benchmark (T061)\n");
+        "  bench --rom R                   5s sustained-speed benchmark (T061)\n");
 }
 
 std::uint32_t parseUint(const char* s)
@@ -356,6 +393,10 @@ int main(int argc, char** argv)
         && std::strcmp(argv[6], "--rerun-to") == 0) {
         return cmdSavestate(argv[3], parseUint(argv[5]), parseUint(argv[7]));
     }
+    if (command == "bench" && argc == 4
+        && std::strcmp(argv[2], "--rom") == 0) {
+        return cmdBench(argv[3], 5); // 5-second default run
+    }
     if (command == "step-equiv" && argc == 4) {
         return cmdStepEquiv(argv[2], parseUint(argv[3]));
     }
@@ -374,7 +415,6 @@ int main(int argc, char** argv)
     }
     if (command == "nestest") return cmdNestest(argc, argv);
     if (command == "playtest") return notImplemented("playtest", "T059");
-    if (command == "bench") return notImplemented("bench", "T061");
 
     usage();
     return 2;
