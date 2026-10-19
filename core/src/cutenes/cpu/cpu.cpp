@@ -683,6 +683,20 @@ CpuState Cpu::state() const
     return CpuState{m_a, m_x, m_y, m_s, m_p, m_pc, m_sched.now()};
 }
 
+void Cpu::writeRegisters(std::uint8_t mask, std::uint8_t newA,
+    std::uint8_t newX, std::uint8_t newY, std::uint8_t newS,
+    std::uint8_t newP, std::uint16_t newPc)
+{
+    if (mask & 0x01) m_a = newA;
+    if (mask & 0x02) m_x = newX;
+    if (mask & 0x04) m_y = newY;
+    if (mask & 0x08) m_s = newS;
+    if (mask & 0x10) {
+        m_p = static_cast<std::uint8_t>((newP | kU) & ~kB); // file consts
+    }
+    if (mask & 0x20) m_pc = newPc;
+}
+
 void Cpu::setProgramCounter(std::uint16_t pc) { m_pc = pc; }
 
 void Cpu::setInstructionTrace(std::function<void(const CpuState&)> callback)

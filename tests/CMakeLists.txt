@@ -17,7 +17,8 @@ add_executable(cutenes-core-tests
     unit/test_ppu.cpp
     unit/test_apu.cpp
     unit/test_controllers.cpp
-    unit/test_save_state.cpp)
+    unit/test_save_state.cpp
+    unit/test_full_control.cpp)
 
 target_link_libraries(cutenes-core-tests PRIVATE
     cutenes-core::cutenes-core cutenes-core-internal gtest_main)

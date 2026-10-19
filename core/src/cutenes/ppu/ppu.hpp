@@ -60,6 +60,20 @@ public:
     void saveState(StateWriter& w) const;
     void loadState(StateReader& r);
 
+    // Side-effect-free debug access (002 FR-015): no latch updates, no
+    // v increments, no status clears. Register views are reconstructed:
+    // $2004 = OAM[oamAddr], $2005 = fineX, $2006 = current v,
+    // $2007 = the read buffer.
+    void debugReadRegisters(std::uint8_t dst[8]) const;
+    void debugReadVram(std::uint16_t addr, std::size_t len,
+                       std::uint8_t* dst) const;
+    void debugWriteVram(std::uint16_t addr, const std::uint8_t* src,
+                        std::size_t len);
+    void debugReadOam(std::uint8_t dst[256]) const;
+    void debugWriteOam(const std::uint8_t src[256]);
+    void debugReadPalette(std::uint8_t dst[32]) const;
+    void debugWritePalette(const std::uint8_t src[32]);
+
     // OAM DMA target: 256 bytes pushed by the $4014 engine.
     void oamDmaWrite(std::uint8_t value);
 
@@ -92,7 +106,7 @@ private:
     void setBackgroundShifters();
 
     std::uint16_t nametableIndex(std::uint16_t addr) const;
-    std::uint8_t ppuBusRead(std::uint16_t addr); // $0000-$3FFF incl. palette
+    std::uint8_t ppuBusRead(std::uint16_t addr) const; // $0000-$3FFF
     void ppuBusWrite(std::uint16_t addr, std::uint8_t value);
     std::uint8_t paletteRead(std::uint8_t index) const;
 

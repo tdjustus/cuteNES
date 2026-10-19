@@ -50,6 +50,12 @@ public:
 
     CpuState state() const;
 
+    // Register write surface (002 full control): mask bits 0=a 1=x 2=y
+    // 3=s 4=p 5=pc; P bit 5 forced on, B never materialized.
+    void writeRegisters(std::uint8_t mask, std::uint8_t a,
+        std::uint8_t x, std::uint8_t y, std::uint8_t s,
+        std::uint8_t p, std::uint16_t pc);
+
     // Harness/debug entry points (nestest automation enters at $C000).
     void setProgramCounter(std::uint16_t pc);
     void restartClockForTest();

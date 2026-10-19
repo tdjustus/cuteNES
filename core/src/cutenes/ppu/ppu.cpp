@@ -225,7 +225,7 @@ std::uint16_t Ppu::nametableIndex(std::uint16_t addr) const
     return static_cast<std::uint16_t>(table * 1024 + (offset & 0x3FF));
 }
 
-std::uint8_t Ppu::ppuBusRead(std::uint16_t addr)
+std::uint8_t Ppu::ppuBusRead(std::uint16_t addr) const
 {
     addr &= 0x3FFF;
     if (addr < 0x2000) {
@@ -682,6 +682,68 @@ void Ppu::runTo(std::uint64_t masterClock)
     }
 }
 
+
+void Ppu::debugReadRegisters(std::uint8_t dst[8]) const
+{
+    dst[0] = m_ctrl;
+    dst[1] = m_mask;
+    dst[2] = m_status; // no clear-on-read
+    dst[3] = m_oamAddr;
+    dst[4] = static_cast<std::uint8_t>(m_fineX & 7);
+    dst[5] = static_cast<std::uint8_t>((m_v >> 8) & 0xFF);
+    dst[6] = static_cast<std::uint8_t>(m_v & 0xFF);
+    dst[7] = m_readBuffer;
+}
+
+void Ppu::debugReadVram(std::uint16_t addr, std::size_t len,
+    std::uint8_t* dst) const
+{
+    for (std::size_t i = 0; i < len; ++i) {
+        dst[i] = ppuBusRead(static_cast<std::uint16_t>(addr + i));
+    }
+}
+
+void Ppu::debugWriteVram(std::uint16_t addr, const std::uint8_t* src,
+    std::size_t len)
+{
+    for (std::size_t i = 0; i < len; ++i) {
+        ppuBusWrite(static_cast<std::uint16_t>(addr + i), src[i]);
+    }
+}
+
+void Ppu::debugReadOam(std::uint8_t dst[256]) const
+{
+    for (std::size_t i = 0; i < 256; ++i) {
+        dst[i] = m_oam[i];
+    }
+}
+
+void Ppu::debugWriteOam(const std::uint8_t src[256])
+{
+    for (std::size_t i = 0; i < 256; ++i) {
+        m_oam[i] = src[i];
+    }
+}
+
+void Ppu::debugReadPalette(std::uint8_t dst[32]) const
+{
+    for (int i = 0; i < 32; ++i) {
+        dst[static_cast<std::size_t>(i)] =
+            paletteRead(static_cast<std::uint8_t>(i));
+    }
+}
+
+void Ppu::debugWritePalette(const std::uint8_t src[32])
+{
+    for (int i = 0; i < 32; ++i) {
+        const auto idx = static_cast<std::size_t>(i);
+        if ((i & 3) == 0) {
+            m_palette[idx & 0x0F] = src[idx]; // alias -> backdrop copy
+        } else {
+            m_palette[idx] = src[idx];
+        }
+    }
+}
 
 void Ppu::saveState(StateWriter& w) const
 {

@@ -64,7 +64,7 @@ cutenes::Machine* g_machine = nullptr;
 
 std::uint8_t busPeek(std::uint16_t addr)
 {
-    return g_machine != nullptr ? g_machine->debugPeek(addr) : 0;
+    return g_machine != nullptr ? g_machine->peek(addr) : 0;
 }
 
 } // namespace

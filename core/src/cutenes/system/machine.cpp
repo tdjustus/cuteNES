@@ -4,6 +4,8 @@
 
 #include "cutenes/system/machine_impl.hpp"
 
+#include "cutenes/cpu/trace.hpp"
+
 #include "cutenes/serialize/save_state.hpp"
 
 #include <cstring>
@@ -149,6 +151,88 @@ void Machine::runFrames(std::uint32_t frames)
 }
 
 void Machine::frameAdvance() { runFrames(1); }
+
+void Machine::runFrames(std::uint32_t frames, const InputScript* script)
+{
+    auto& impl = *m_impl;
+    for (std::uint32_t i = 0; i < frames; ++i) {
+        if (script != nullptr && script->count > 0) {
+            const std::size_t idx = i < script->count ? i
+                                                      : script->count - 1;
+            impl.controllers[0] = script->frames[idx]; // hold last
+        }
+        impl.runUntilFrameComplete();
+    }
+}
+
+void Machine::writeCpu(const CpuWrite& w)
+{
+    m_impl->cpu->writeRegisters(w.mask, w.a, w.x, w.y, w.s, w.p, w.pc);
+}
+
+void Machine::readPpuRegisters(std::uint8_t dst[8]) const
+{
+    m_impl->ppu->debugReadRegisters(dst);
+}
+
+void Machine::readVram(std::uint16_t addr, std::size_t len,
+    std::uint8_t* dst) const
+{
+    m_impl->ppu->debugReadVram(addr, len, dst);
+}
+
+void Machine::writeVram(std::uint16_t addr, const std::uint8_t* src,
+    std::size_t len)
+{
+    m_impl->ppu->debugWriteVram(addr, src, len);
+}
+
+void Machine::readOam(std::uint8_t dst[256]) const
+{
+    m_impl->ppu->debugReadOam(dst);
+}
+
+void Machine::writeOam(const std::uint8_t src[256])
+{
+    m_impl->ppu->debugWriteOam(src);
+}
+
+void Machine::readPalette(std::uint8_t dst[32]) const
+{
+    m_impl->ppu->debugReadPalette(dst);
+}
+
+void Machine::writePalette(const std::uint8_t src[32])
+{
+    m_impl->ppu->debugWritePalette(src);
+}
+
+namespace {
+const Machine* g_peekTarget = nullptr;
+std::uint8_t peekThunk(std::uint16_t addr)
+{
+    return g_peekTarget != nullptr
+        ? const_cast<Machine*>(g_peekTarget)->peek(addr)
+        : 0;
+}
+} // namespace
+
+std::uint8_t Machine::peek(std::uint16_t addr) const
+{
+    return m_impl->bus.peek(addr);
+}
+
+std::string Machine::disassemble(std::uint16_t pc) const
+{
+    auto& impl = *m_impl;
+    CpuState state = impl.cpu->state();
+    state.pc = pc;
+    const TracePoint tp{state, impl.ppu->scanline(), impl.ppu->dot()};
+    g_peekTarget = this; // single-threaded core; set for the call
+    std::string line = traceLine(tp, &peekThunk);
+    g_peekTarget = nullptr;
+    return line;
+}
 
 void Machine::stepInstruction()
 {
@@ -394,11 +478,6 @@ void Machine::setInstructionTrace(
 void Machine::debugSetProgramCounter(std::uint16_t pc)
 {
     m_impl->cpu->setProgramCounter(pc);
-}
-
-std::uint8_t Machine::debugPeek(std::uint16_t addr) const
-{
-    return m_impl->bus.peek(addr);
 }
 
 Region Machine::region() const { return m_impl->regionId; }
