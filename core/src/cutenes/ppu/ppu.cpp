@@ -8,6 +8,7 @@
 
 #include "cutenes/ppu/ppu.hpp"
 
+
 #include "cutenes/serialize/save_state.hpp"
 
 #include "cutenes/cartridge/cart.hpp"
@@ -166,14 +167,12 @@ void Ppu::cpuWrite(std::uint16_t addr, std::uint8_t value)
             m_w = 1;
         } else {
             m_t = static_cast<std::uint16_t>((m_t & 0x7F00) | value);
-            const bool wasHigh = (m_v & 0x1000) != 0;
             m_v = m_t;
             m_w = 0;
-            // A12 rising via PPUADDR while rendering is off clocks the
-            // mapper (mmc3_test 1-clocking).
-            if (!renderingEnabled() && !wasHigh && (m_v & 0x1000) != 0
-                && m_cart != nullptr) {
-                m_cart->clockIrq();
+            // With rendering off the PPU address bus holds v, so A12
+            // follows bit 12; the shared guard filters shell-noise rises.
+            if (!renderingEnabled()) {
+                trackA12((m_v & 0x1000) != 0);
             }
         }
         break;
@@ -197,12 +196,29 @@ void Ppu::clockIfA12Rose()
 {
     const std::uint16_t next = static_cast<std::uint16_t>(
         m_v + ((m_ctrl & 0x04) != 0 ? 32 : 1));
-    const bool wasHigh = (m_v & 0x1000) != 0;
     m_v = next;
-    if (!renderingEnabled() && !wasHigh && (m_v & 0x1000) != 0
-        && m_cart != nullptr) {
-        m_cart->clockIrq(); // A12 rise via the VRAM-address increment
+    if (!renderingEnabled()) {
+        trackA12((m_v & 0x1000) != 0);
     }
+}
+
+// Per-dot PPU A12 (address bit 12 of the pattern-fetch bus): high during
+// pattern fetches from $1000 — sprites per ctrl bit 3 (dots 257-320),
+// background per ctrl bit 4 (pattern-fetch dots of 1-256 and 321-336).
+// Nametable/attribute fetches are $2xxx (bit 12 = 0). A guarded 0->1 rise
+// clocks mapper IRQ counters; the ~12-dot guard suppresses repeat rises.
+void Ppu::trackA12(bool high)
+{
+    if (high && !mA12High) {
+        // A rise clocks the counter only if A12 was low for >= ~12 PPU
+        // cycles first (the MMC3 guard; nesdev MMC3 "cycle timing").
+        if (m_dots - mA12LowStart >= 12 && m_cart != nullptr) {
+            m_cart->clockIrq();
+        }
+    } else if (!high && mA12High) {
+        mA12LowStart = m_dots; // falling edge: low-time window opens
+    }
+    mA12High = high;
 }
 
 void Ppu::oamDmaWrite(std::uint8_t value)
@@ -606,6 +622,31 @@ void Ppu::stepDot()
         m_dot = 340; // skip the final idle dot of the odd frame
     }
 
+    // 241 clocks per frame: visible lines 0-239 plus the pre-render line
+    // (2-details test 7). blargg's "scanline 0" is the pre-render line.
+    if ((m_scanline < kVisibleLines || m_scanline == kPreRenderLine)
+        && renderingEnabled()) {
+        // Per-dot A12 from the pattern-fetch bus (see trackA12).
+        bool high;
+        if (m_dot >= 262 && m_dot <= 320) {
+            // Sprite pattern fetches begin at dot 257, but the MMC3's
+            // internal delay clocks the counter at ~dot 260 (the classic
+            // 3-dot offset; 4-scanline_timing boundaries).
+            high = (m_ctrl & 0x08) != 0; // sprite pattern table select
+        } else if ((m_dot >= 1 && m_dot <= 256)
+            || (m_dot >= 321 && m_dot <= 336)) {
+            // Within each 8-dot fetch group the last two dots fetch
+            // patterns; NT/AT fetches are $2xxx (bit 12 = 0).
+            // lo fetch at group dots 5-6, hi at 7-8 (dot & 7 == 0).
+            const int phase = m_dot & 7;
+            high = (phase >= 5)
+                && ((m_ctrl & 0x10) != 0);
+        } else {
+            high = false; // NT prefetches at 337-340 and dot 0
+        }
+        trackA12(high);
+    }
+
     if (m_scanline < kVisibleLines) {
         if (m_dot >= 1 && m_dot <= 256) {
             renderPixel(static_cast<std::uint32_t>(m_dot - 1));
@@ -632,12 +673,6 @@ void Ppu::stepDot()
             loadSpriteUnits();
             if (renderingEnabled()) {
                 m_oamAddr = 0; // OAMADDR resets during sprite fetches
-                // A12 rises for sprite pattern fetches ($1xxx): clocks
-                // mapper IRQ counters (the ~12-dot guard suppresses the
-                // repeat rise, leaving one clock per scanline here).
-                if (m_cart != nullptr) {
-                    m_cart->clockIrq();
-                }
             }
         }
     } else if (m_scanline == kPreRenderLine) {

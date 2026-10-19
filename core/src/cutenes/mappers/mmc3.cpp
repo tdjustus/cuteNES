@@ -122,11 +122,19 @@ public:
     // A12-rise IRQ clocking (PPU-driven; task T057 wiring).
     void clockIrq() override
     {
+        // Wrap semantics (4-scanline_timing, 5-MMC3): a clock taken while
+        // the counter sits at 0 reloads from the latch and, when the latch
+        // is 0, asserts — "IRQ every clock" with a zero reload value. The
+        // $C001 reload itself never asserts. (blargg's 6-MMC6 test 3
+        // encodes the contradictory MMC6 variant and is not modeled.)
         if (mReloadPending) {
             mIrqCounter = mIrqLatch;
             mReloadPending = false;
         } else if (mIrqCounter == 0) {
             mIrqCounter = mIrqLatch;
+            if (mIrqLatch == 0 && mIrqEnable) {
+                mIrqAsserted = true;
+            }
         } else {
             --mIrqCounter;
             if (mIrqCounter == 0 && mIrqEnable) {
