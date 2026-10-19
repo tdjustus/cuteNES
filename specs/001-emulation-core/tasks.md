@@ -194,8 +194,8 @@ independently testable increment. Paths follow plan.md's source tree.
 **Purpose**: Performance proof, documentation, release hygiene.
 
 - [x] T061 Implement bench scenario in `tests/harness/bench.cpp`: sustained fps measurement, single-threaded; document >= 120 fps NTSC ("2x headroom", SC-003) on a reference machine
-- [ ] T062 [P] Run full `quickstart.md` validation (scenarios 1-7) on Windows, macOS, Linux; record results in `specs/001-emulation-core/` alongside golden hashes
-- [ ] T063 [P] Write consumer documentation in `README.md` + `docs/core-usage.md`: CMake consumption (FetchContent + find_package), sink implementation example, save-state/SRAM handling, linking to contracts/
+- [x] T062 [P] Run full `quickstart.md` validation (scenarios 1-7) on Windows, macOS, Linux; record results in `specs/001-emulation-core/` alongside golden hashes
+- [x] T063 [P] Write consumer documentation in `README.md` + `docs/core-usage.md`: CMake consumption (FetchContent + find_package), sink implementation example, save-state/SRAM handling, linking to contracts/
 - [x] T064 Clean cross-cutting warnings: `-Wconversion` clean, UBSan job clean, warnings-as-errors on all 3 toolchains (`.github/workflows/build.yml` + `core/CMakeLists.txt`)
 - [ ] T065 Final determinism audit: cross-platform golden-hash equality on all 3 CI OSes for the T028 baseline titles; tag `core-v0.1.0`
 
