@@ -29,6 +29,10 @@ struct Cartridge final : CpuBusDevice {
 
     Mirroring mirroring() const;
 
+    // A12-rise IRQ clocking (MMC3-class mappers; no-op otherwise).
+    void clockIrq() { if (mapper) mapper->clockIrq(); }
+    bool irqLine() const { return mapper && mapper->irqLine(); }
+
     CartridgeInfo info{};
     std::vector<std::uint8_t> prg;
     std::vector<std::uint8_t> chr;    // empty => CHR-RAM (8K default)

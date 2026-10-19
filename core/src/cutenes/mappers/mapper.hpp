@@ -39,6 +39,10 @@ public:
     virtual void saveState(class StateWriter& w) const;
     virtual void loadState(StateReader& r);
 
+    // IRQ generation (MMC3-class): A12-rise clocking from the PPU.
+    virtual void clockIrq() {}
+    virtual bool irqLine() const { return false; }
+
 protected:
     Cartridge& m_cart;
 };

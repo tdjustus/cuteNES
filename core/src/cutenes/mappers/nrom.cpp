@@ -5,6 +5,9 @@
 namespace cutenes {
 
 std::unique_ptr<Mapper> makeMmc1(Cartridge& cart);
+std::unique_ptr<Mapper> makeUxrom(Cartridge& cart);
+std::unique_ptr<Mapper> makeCnrom(Cartridge& cart);
+std::unique_ptr<Mapper> makeMmc3(Cartridge& cart);
 
 namespace {
 
@@ -40,8 +43,13 @@ std::unique_ptr<Mapper> createMapper(std::uint16_t mapperId, Cartridge& cart)
         return std::make_unique<NromMapper>(cart);
     case 1:
         return makeMmc1(cart);
+    case 2:
+        return makeUxrom(cart);
+    case 3:
+        return makeCnrom(cart);
+    case 4:
+        return makeMmc3(cart);
     default:
-        // Mappers 2-4 land with the remaining US6 tasks (T054-T056).
         return nullptr;
     }
 }

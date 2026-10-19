@@ -167,8 +167,15 @@ void Ppu::cpuWrite(std::uint16_t addr, std::uint8_t value)
             m_w = 1;
         } else {
             m_t = static_cast<std::uint16_t>((m_t & 0x7F00) | value);
+            const bool wasHigh = (m_v & 0x1000) != 0;
             m_v = m_t;
             m_w = 0;
+            // A12 rising via PPUADDR while rendering is off clocks the
+            // mapper (mmc3_test 1-clocking).
+            if (!renderingEnabled() && !wasHigh && (m_v & 0x1000) != 0
+                && m_cart != nullptr) {
+                m_cart->clockIrq();
+            }
         }
         break;
     case 0x2007: {
@@ -615,6 +622,12 @@ void Ppu::stepDot()
             loadSpriteUnits();
             if (renderingEnabled()) {
                 m_oamAddr = 0; // OAMADDR resets during sprite fetches
+                // A12 rises for sprite pattern fetches ($1xxx): clocks
+                // mapper IRQ counters (the ~12-dot guard suppresses the
+                // repeat rise, leaving one clock per scanline here).
+                if (m_cart != nullptr) {
+                    m_cart->clockIrq();
+                }
             }
         }
     } else if (m_scanline == kPreRenderLine) {
