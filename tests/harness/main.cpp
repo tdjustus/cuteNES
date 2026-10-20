@@ -6,8 +6,10 @@
 
 #include <cutenes/cutenes.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <sstream>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -387,6 +389,254 @@ int cmdSettle(const char* romPath, std::uint32_t maxFrames)
     return settled ? 0 : 1;
 }
 
+// T059/T046: scripted game checks. The list format is documented in
+// tests/playtest/playtest.txt. Entries run in order; each records PASS/FAIL.
+struct PlaytestStep {
+    enum class Kind { Run, ExpectMem, ExpectChanges };
+    Kind kind = Kind::Run;
+    std::uint32_t frames = 0;
+    cutenes::ButtonSet buttons;
+    std::uint16_t addr = 0;
+    std::uint32_t value = 0;
+};
+
+struct PlaytestEntry {
+    std::string name;
+    std::string rom;
+    std::string expectError;
+    std::vector<PlaytestStep> steps;
+};
+
+bool parseButtons(const std::string& spec, cutenes::ButtonSet& out)
+{
+    static const char* const kNames[] = {
+        "Right", "Left", "Down", "Up", "Start", "Select", "B", "A"};
+    out.reset();
+    if (spec == "none") {
+        return true;
+    }
+    std::size_t start = 0;
+    while (start <= spec.size()) {
+        const std::size_t plus = spec.find('+', start);
+        const std::string name = spec.substr(
+            start, plus == std::string::npos ? std::string::npos : plus - start);
+        bool found = false;
+        for (std::size_t i = 0; i < 8; ++i) {
+            if (name == kNames[i]) {
+                out.set(i);
+                found = true;
+            }
+        }
+        if (!found) {
+            return false;
+        }
+        if (plus == std::string::npos) {
+            break;
+        }
+        start = plus + 1;
+    }
+    return true;
+}
+
+const char* loadErrorName(cutenes::LoadError e)
+{
+    switch (e) {
+    case cutenes::LoadError::Ok: return "Ok";
+    case cutenes::LoadError::NotAnInesFile: return "NotAnInesFile";
+    case cutenes::LoadError::TruncatedFile: return "TruncatedFile";
+    case cutenes::LoadError::InvalidHeader: return "InvalidHeader";
+    case cutenes::LoadError::InvalidBankCounts: return "InvalidBankCounts";
+    case cutenes::LoadError::UnsupportedMapper: return "UnsupportedMapper";
+    case cutenes::LoadError::Nes2FieldInvalid: return "Nes2FieldInvalid";
+    }
+    return "Unknown";
+}
+
+bool parsePlaytest(const std::string& text, std::vector<PlaytestEntry>& out,
+    std::string& error)
+{
+    std::istringstream lines(text);
+    std::string line;
+    int lineNo = 0;
+    PlaytestEntry* current = nullptr;
+    while (std::getline(lines, line)) {
+        ++lineNo;
+        const std::size_t hash = line.find('#');
+        if (hash != std::string::npos) {
+            line.erase(hash);
+        }
+        std::istringstream tokens(line);
+        std::string cmd;
+        if (!(tokens >> cmd)) {
+            continue;
+        }
+        const auto fail = [&](const char* what) {
+            error = "line " + std::to_string(lineNo) + ": " + what;
+            return false;
+        };
+        if (cmd == "entry") {
+            PlaytestEntry entry;
+            if (!(tokens >> entry.name)) {
+                return fail("entry needs a name");
+            }
+            out.push_back(entry);
+            current = &out.back();
+            continue;
+        }
+        if (current == nullptr) {
+            return fail("command outside an entry");
+        }
+        if (cmd == "end") {
+            current = nullptr;
+        } else if (cmd == "rom") {
+            if (!(tokens >> current->rom)) {
+                return fail("rom needs a path");
+            }
+        } else if (cmd == "expect-error") {
+            if (!(tokens >> current->expectError)) {
+                return fail("expect-error needs a LoadError name");
+            }
+        } else if (cmd == "run") {
+            PlaytestStep step;
+            std::string buttons = "none";
+            if (!(tokens >> step.frames)) {
+                return fail("run needs a frame count");
+            }
+            tokens >> buttons;
+            if (!parseButtons(buttons, step.buttons)) {
+                return fail("unknown button name");
+            }
+            step.kind = PlaytestStep::Kind::Run;
+            current->steps.push_back(step);
+        } else if (cmd == "expect-mem") {
+            PlaytestStep step;
+            step.kind = PlaytestStep::Kind::ExpectMem;
+            if (!(tokens >> std::hex >> step.addr >> step.value >> std::dec)) {
+                return fail("expect-mem needs hex <addr> <value>");
+            }
+            current->steps.push_back(step);
+        } else if (cmd == "expect-changes") {
+            PlaytestStep step;
+            step.kind = PlaytestStep::Kind::ExpectChanges;
+            if (!(tokens >> step.value)) {
+                return fail("expect-changes needs a count");
+            }
+            current->steps.push_back(step);
+        } else {
+            return fail("unknown command");
+        }
+    }
+    if (current != nullptr) {
+        error = "entry '" + current->name + "' is missing 'end'";
+        return false;
+    }
+    return true;
+}
+
+bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry,
+    std::string& why)
+{
+    std::vector<std::uint8_t> rom;
+    const std::string romPath = dir.empty() ? entry.rom : dir + "/" + entry.rom;
+    if (!readRom(romPath.c_str(), rom)) {
+        why = "cannot read " + romPath;
+        return false;
+    }
+    cutenes::Machine machine;
+    const auto result = machine.loadCartridge(rom.data(), rom.size());
+    if (!entry.expectError.empty()) {
+        if (std::string(loadErrorName(result.error)) == entry.expectError) {
+            return true;
+        }
+        why = std::string("expected load error ") + entry.expectError
+            + ", got " + loadErrorName(result.error);
+        return false;
+    }
+    if (result.error != cutenes::LoadError::Ok) {
+        why = std::string("load error ") + loadErrorName(result.error);
+        return false;
+    }
+    RecordingSink sink;
+    machine.setVideoSink(&sink);
+    machine.setAudioSink(&sink);
+    machine.powerOn();
+
+    std::uint32_t lastChanges = 0;
+    for (const PlaytestStep& step : entry.steps) {
+        switch (step.kind) {
+        case PlaytestStep::Kind::Run: {
+            const std::size_t before = sink.hashes.size();
+            lastChanges = 0;
+            for (std::uint32_t f = 0; f < step.frames; ++f) {
+                machine.setController(cutenes::Port::One, step.buttons);
+                machine.runFrames(1);
+            }
+            for (std::size_t i = std::max<std::size_t>(before, 1);
+                 i < sink.hashes.size(); ++i) {
+                if (sink.hashes[i] != sink.hashes[i - 1]) {
+                    ++lastChanges;
+                }
+            }
+            break;
+        }
+        case PlaytestStep::Kind::ExpectMem: {
+            const std::uint8_t actual = machine.peek(step.addr);
+            if (actual != step.value) {
+                char buf[96];
+                std::snprintf(buf, sizeof buf,
+                    "mem[%04X] = %02X, expected %02X", step.addr, actual,
+                    static_cast<unsigned>(step.value));
+                why = buf;
+                return false;
+            }
+            break;
+        }
+        case PlaytestStep::Kind::ExpectChanges:
+            if (lastChanges < step.value) {
+                why = "screen changed " + std::to_string(lastChanges)
+                    + " times, expected at least " + std::to_string(step.value);
+                return false;
+            }
+            break;
+        }
+    }
+    return true;
+}
+
+int cmdPlaytest(const char* listPath)
+{
+    std::vector<std::uint8_t> bytes;
+    if (!readRom(listPath, bytes)) {
+        return 2;
+    }
+    const std::string text(bytes.begin(), bytes.end());
+    std::vector<PlaytestEntry> entries;
+    std::string error;
+    if (!parsePlaytest(text, entries, error)) {
+        std::printf("playtest: %s: %s\n", listPath, error.c_str());
+        return 2;
+    }
+    std::string dir;
+    const std::string listStr = listPath;
+    const std::size_t slash = listStr.find_last_of('/');
+    if (slash != std::string::npos) {
+        dir = listStr.substr(0, slash);
+    }
+    int failures = 0;
+    for (const PlaytestEntry& entry : entries) {
+        std::string why;
+        const bool ok = runPlaytestEntry(dir, entry, why);
+        if (ok) {
+            std::printf("playtest: %s: PASS\n", entry.name.c_str());
+        } else {
+            ++failures;
+            std::printf("playtest: %s: FAIL (%s)\n", entry.name.c_str(), why.c_str());
+        }
+    }
+    std::printf("playtest: %zu entries, %d failed\n", entries.size(), failures);
+    return failures == 0 ? 0 : 1;
+}
+
 int notImplemented(const char* command, const char* task)
 {
     std::fprintf(stderr,
@@ -456,7 +706,14 @@ int main(int argc, char** argv)
         return 2;
     }
     if (command == "nestest") return cmdNestest(argc, argv);
-    if (command == "playtest") return notImplemented("playtest", "T059");
+    if (command == "playtest" && argc == 4
+        && std::strcmp(argv[2], "--list") == 0) {
+        return cmdPlaytest(argv[3]);
+    }
+    if (command == "playtest") {
+        std::fprintf(stderr, "usage: rom_harness playtest --list FILE\n");
+        return 2;
+    }
 
     usage();
     return 2;

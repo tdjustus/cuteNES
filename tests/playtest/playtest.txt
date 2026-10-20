@@ -1,0 +1,33 @@
+# Scripted game checks for `rom_harness playtest --list tests/playtest/playtest.txt`.
+#
+# ROM paths are relative to this file's directory. Blank lines and text after
+# '#' are ignored. Each entry is:
+#
+#   entry <name>              start an entry (name has no spaces)
+#   rom <path>                the cartridge to load
+#   expect-error <Name>       loading must fail with this LoadError name
+#                             (Ok, NotAnInesFile, TruncatedFile, InvalidHeader,
+#                              InvalidBankCounts, UnsupportedMapper, Nes2FieldInvalid)
+#   run <frames> [buttons]    run frames holding Port One buttons: "none", or
+#                             names joined by '+' (A, B, Select, Start, Up,
+#                             Down, Left, Right)
+#   expect-mem <hexaddr> <hexval>
+#                             CPU-visible byte (side-effect free) must equal value
+#   expect-changes <n>        at least n frame-to-frame screen changes during
+#                             the most recent run
+#   end                       end of entry
+#
+# Commercial titles are not checked in. Keep local copies under the
+# repository's roms-local/ folder (gitignored) and reference them as
+# ../../roms-local/<title>.nes.
+
+entry nestest-runs
+rom ../roms/other/nestest.nes
+run 120 none
+expect-changes 1
+end
+
+entry not-an-ines-file-is-rejected
+rom bad-header.nes
+expect-error NotAnInesFile
+end

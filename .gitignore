@@ -28,3 +28,6 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# Local commercial ROMs for playtest (never committed)
+roms-local/
