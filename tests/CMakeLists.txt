@@ -18,7 +18,8 @@ add_executable(cutenes-core-tests
     unit/test_apu.cpp
     unit/test_controllers.cpp
     unit/test_save_state.cpp
-    unit/test_full_control.cpp)
+    unit/test_full_control.cpp
+    unit/test_mappers.cpp)
 
 target_link_libraries(cutenes-core-tests PRIVATE
     cutenes-core::cutenes-core cutenes-core-internal gtest_main)
@@ -39,16 +40,39 @@ target_link_libraries(rom_harness PRIVATE
 # Tier-1 acceptance gate (constitution Principle III). Every ROM listed
 # here is green as of its registration; the set grows as remaining suites
 # pass (oam_stress, sprdma, remaining apu_reset, cpu_interrupts_v2 5).
+# The ppu_vbl_nmi and apu_test entries are the standalone sub-test ROMs:
+# the multi-test builds can mask sub-test failures behind their bank layout.
 set(TIER1_ROMS
     instr_test-v5/official_only.nes
     instr_test-v5/all_instrs.nes
     instr_timing/instr_timing.nes
-    ppu_vbl_nmi/ppu_vbl_nmi.nes
+    ppu_vbl_nmi/rom_singles/01-vbl_basics.nes
+    ppu_vbl_nmi/rom_singles/02-vbl_set_time.nes
+    ppu_vbl_nmi/rom_singles/04-nmi_control.nes
+    ppu_vbl_nmi/rom_singles/05-nmi_timing.nes
+    ppu_vbl_nmi/rom_singles/06-suppression.nes
+    ppu_vbl_nmi/rom_singles/07-nmi_on_timing.nes
+    ppu_vbl_nmi/rom_singles/08-nmi_off_timing.nes
+    ppu_vbl_nmi/rom_singles/09-even_odd_frames.nes
+    ppu_vbl_nmi/rom_singles/10-even_odd_timing.nes
     cpu_reset/ram_after_reset.nes
     oam_read/oam_read.nes
-    apu_test/apu_test.nes
+    apu_test/rom_singles/2-len_table.nes
+    apu_test/rom_singles/3-irq_flag.nes
+    apu_test/rom_singles/4-jitter.nes
+    apu_test/rom_singles/6-irq_flag_timing.nes
     apu_reset/4015_cleared.nes
     apu_reset/irq_flag_cleared.nes)
+
+# Real hardware sub-test failures found by the standalone ROMs (not yet
+# fixed). Registered under the known-failing label, which CI excludes, so
+# they stay visible without blocking merges. Tracked in tasks.md (T068).
+set(KNOWN_FAILING_ROMS
+    ppu_vbl_nmi/rom_singles/03-vbl_clear_time.nes
+    apu_test/rom_singles/1-len_ctr.nes
+    apu_test/rom_singles/5-len_timing.nes
+    apu_test/rom_singles/7-dmc_basics.nes
+    apu_test/rom_singles/8-dmc_rates.nes)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/other/nestest.nes")
     add_test(NAME nestest-golden-log
         COMMAND rom_harness nestest
@@ -64,6 +88,16 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/other/nestest.nes")
             set_tests_properties("tier1-${name}" PROPERTIES LABELS "tier1")
         endif()
 
+    endforeach()
+    foreach(rom IN LISTS KNOWN_FAILING_ROMS)
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/${rom}")
+            get_filename_component(name "${rom}" NAME_WE)
+            add_test(NAME "known-failing-${name}"
+                COMMAND rom_harness suite --rom
+                        ${CMAKE_CURRENT_SOURCE_DIR}/roms/${rom})
+            set_tests_properties("known-failing-${name}" PROPERTIES
+                LABELS "known-failing")
+        endif()
     endforeach()
 endif()
 

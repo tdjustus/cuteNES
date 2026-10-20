@@ -22,7 +22,8 @@ std::uint8_t Cartridge::cpuRead(std::uint16_t addr)
 void Cartridge::cpuWrite(std::uint16_t addr, std::uint8_t value)
 {
     if (addr < 0x8000) {
-        if (addr >= 0x6000 && !prgRam.empty()) {
+        if (addr >= 0x6000 && !prgRam.empty()
+            && (!mapper || mapper->prgRamWritable())) {
             prgRam[addr % prgRam.size()] = value;
         }
         return;

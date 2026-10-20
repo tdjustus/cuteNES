@@ -1,7 +1,7 @@
 // MMC1 (mapper 1) — task T053 (pulled forward: every blargg console test
 // ROM is an MMC1/SXROM board, so the tier-1 suite needs it).
 //
-// 5-bit shift-latch write protocol (write bit 0 = "commit now"), PRG bank
+// 5-bit shift-latch write protocol (the fifth write commits), PRG bank
 // modes 0-3 (32K / 16K fixed-low / 16K fixed-high), CHR 4K/8K banks,
 // mirroring control, and battery WRAM. Per nesdev MMC1 documentation.
 
@@ -32,10 +32,7 @@ public:
     void cpuWrite(std::uint16_t addr, std::uint8_t value) override
     {
         if (addr < 0x8000) {
-            if ((m_control & 0x10) == 0 && !m_cart.prgRam.empty()) {
-                m_cart.prgRam[addr & (m_cart.prgRam.size() - 1)] = value;
-            }
-            return; // WRAM write-protect via control bit 4
+            return; // PRG-RAM writes are gated by prgRamWritable()
         }
         if ((value & 0x80) != 0) {
             // Reset: shift register cleared, control bit 3 (PRG mode) set.
@@ -43,7 +40,9 @@ public:
             m_control = static_cast<std::uint8_t>(m_control | 0x0C);
             return;
         }
-        const bool commit = (value & 0x01) != 0;
+        // A sentinel bit in the shift register marks the fifth write: it sits
+        // at bit 0 once four data bits have been shifted in.
+        const bool commit = (m_shift & 0x01) != 0;
         m_shift = static_cast<std::uint8_t>(
             ((value & 1) << 4) | (m_shift >> 1));
         if (!commit) {
@@ -62,40 +61,28 @@ public:
         case 2: // CHR bank 1
             m_chrBank1 = data;
             break;
-        default: // PRG bank (bits 0-3; bit 4 = WRAM protect handled above)
+        default: // PRG bank (bits 0-3); bit 4 = WRAM disable (0 = enabled)
             m_prgBank = static_cast<std::uint8_t>(data & 0x0F);
+            m_wramDisabled = (data & 0x10) != 0;
             break;
         }
     }
 
+    bool prgRamWritable() const override { return !m_wramDisabled; }
+
     std::uint8_t chrRead(std::uint16_t addr) const override
     {
-        const bool banks8K = (m_control & 0x10) != 0;
         if (m_cart.chr.empty()) { // CHR-RAM (8K default)
             return m_cart.chrRam.empty() ? 0
-                : m_cart.chrRam[addr & (m_cart.chrRam.size() - 1)];
+                : m_cart.chrRam[chrIndex(addr) % m_cart.chrRam.size()];
         }
-        const std::size_t bank = banks8K ? (m_chrBank0 & 0x1E)
-            : (addr < 0x1000 ? (m_chrBank0 & 0x1F) : (m_chrBank1 & 0x1F));
-        const std::uint16_t offset = banks8K
-            ? static_cast<std::uint16_t>(addr & 0x1FFF)
-            : static_cast<std::uint16_t>(addr & 0x0FFF);
-        const std::size_t bankBytes = banks8K ? 8192 : 4096;
-        return m_cart.chr[(bank * bankBytes + offset) % m_cart.chr.size()];
+        return m_cart.chr[chrIndex(addr) % m_cart.chr.size()];
     }
 
     void chrWrite(std::uint16_t addr, std::uint8_t value) override
     {
         if (m_cart.chr.empty() && !m_cart.chrRam.empty()) {
-            const bool banks8K = (m_control & 0x10) != 0;
-            const std::size_t bank = banks8K ? (m_chrBank0 & 0x1E)
-                : (addr < 0x1000 ? (m_chrBank0 & 0x1F) : (m_chrBank1 & 0x1F));
-            const std::uint16_t offset = banks8K
-                ? static_cast<std::uint16_t>(addr & 0x1FFF)
-                : static_cast<std::uint16_t>(addr & 0x0FFF);
-            const std::size_t bankBytes = banks8K ? 8192 : 4096;
-            m_cart.chrRam[(bank * bankBytes + offset) % m_cart.chrRam.size()]
-                = value;
+            m_cart.chrRam[chrIndex(addr) % m_cart.chrRam.size()] = value;
         }
     }
 
@@ -117,6 +104,18 @@ private:
             return 0;
         }
         return m_cart.prgRam[addr & (m_cart.prgRam.size() - 1)];
+    }
+
+    // Byte offset into CHR for a pattern address under the current CHR mode.
+    // Bank registers are in 4K units; in 8K mode bit 0 of the value is ignored.
+    std::size_t chrIndex(std::uint16_t addr) const
+    {
+        if ((m_control & 0x10) == 0) {
+            return static_cast<std::size_t>(m_chrBank0 & 0x1E) * 4096
+                + (addr & 0x1FFF);
+        }
+        const std::uint8_t bank = addr < 0x1000 ? m_chrBank0 : m_chrBank1;
+        return static_cast<std::size_t>(bank & 0x1F) * 4096 + (addr & 0x0FFF);
     }
 
     std::size_t prgBankFor(std::uint16_t addr) const
@@ -145,6 +144,7 @@ private:
     std::uint8_t m_control = 0x0C; // PRG mode 3, CHR 8K
     std::uint8_t m_chrBank0 = 0, m_chrBank1 = 0, m_prgBank = 0;
     std::uint8_t m_shift = 0x10;
+    bool m_wramDisabled = false;
 
 public:
     void saveState(StateWriter& w) const override
@@ -156,6 +156,7 @@ public:
         w.w(m_chrBank1);
         w.w(m_prgBank);
         w.w(m_shift);
+        w.w(m_wramDisabled);
         w.end();
     }
 
@@ -167,6 +168,7 @@ public:
         m_chrBank1 = r.get<std::uint8_t>();
         m_prgBank = r.get<std::uint8_t>();
         m_shift = r.get<std::uint8_t>();
+        m_wramDisabled = r.get<std::uint8_t>() != 0;
     }
 };
 

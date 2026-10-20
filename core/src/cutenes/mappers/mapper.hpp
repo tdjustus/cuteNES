@@ -43,6 +43,9 @@ public:
     virtual void clockIrq() {}
     virtual bool irqLine() const { return false; }
 
+    // PRG-RAM write gate ($6000-$7FFF); boards with a protect bit override.
+    virtual bool prgRamWritable() const { return true; }
+
 protected:
     Cartridge& m_cart;
 };
