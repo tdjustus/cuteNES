@@ -80,6 +80,26 @@ that never exercises the divergent cases.
 - Licensing: MIT for project code (see LICENSE); test-ROM provenance in
   `third_party/NOTICE.md`.
 
+### Branching & merging
+
+`main` is always green: every change lands through a branch and a pull
+request, merged only after the CI matrix (ubuntu/macos/windows x
+Release/Debug plus UBSan) passes.
+
+- Branch from `main` as `<kind>/<slug>`: `feat/`, `fix/`, `docs/`,
+  `test/`, `chore/` (matching the commit-prefix convention).
+- One logical change per branch; keep commits prefixed the same way
+  (`feat(api): ...`).
+- Open a PR against `main`; CI runs the full gate including the
+  cross-platform `golden-hashes` audit. Do not self-merge while the
+  matrix is red.
+- Merge with a merge commit (no squash) to preserve per-change commit
+  messages, then delete the branch.
+- Tags (`core-v0.1.0`, ...) are cut from `main` only after its CI run is
+  green.
+- Never push directly to `main`; hotfixes follow the same path on
+  `fix/`.
+
 ## Status
 
 Feature 001 (emulation core): see `specs/001-emulation-core/tasks.md`.
