@@ -405,6 +405,7 @@ struct PlaytestEntry {
     std::string name;
     std::string rom;
     std::string expectError;
+    int forceSubmapper = -1; // test-only: patch header to NES 2.0 + submapper
     std::vector<PlaytestStep> steps;
 };
 
@@ -516,6 +517,14 @@ bool parsePlaytest(const std::string& text, std::vector<PlaytestEntry>& out,
                 return fail("expect-mem needs hex <addr> <value>");
             }
             current->steps.push_back(step);
+        } else if (cmd == "force-submapper") {
+            if (current == nullptr) {
+                return fail("force-submapper outside an entry");
+            }
+            if (!(tokens >> current->forceSubmapper) || current->forceSubmapper < 0
+                || current->forceSubmapper > 15) {
+                return fail("force-submapper needs 0..15");
+            }
         } else if (cmd == "expect-text") {
             PlaytestStep step;
             step.kind = PlaytestStep::Kind::ExpectText;
@@ -552,6 +561,21 @@ bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry,
     if (!readRom(romPath.c_str(), rom)) {
         why = "cannot read " + romPath;
         return false;
+    }
+    if (entry.forceSubmapper >= 0 && rom.size() >= 16) {
+        // Test-only: promote the header to NES 2.0 and select the
+        // submapper (byte 7 bit 3; byte 13 low nibble). Keeps PRG/CHR
+        // sizes; RAM bytes set to a safe 8K shift.
+        rom[7] = static_cast<std::uint8_t>((rom[7] & 0xF0) | 0x08);
+        rom[8] = 0;
+        rom[9] = 0;
+        rom[10] = 7; // 8K PRG-RAM shift
+        rom[11] = 0;
+        rom[12] = 0; // NTSC
+        rom[13] = static_cast<std::uint8_t>(
+            (rom[13] & 0xF0) | (entry.forceSubmapper & 0x0F));
+        rom[14] = 0;
+        rom[15] = 0;
     }
     cutenes::Machine machine;
     const auto result = machine.loadCartridge(rom.data(), rom.size());

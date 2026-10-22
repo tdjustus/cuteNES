@@ -170,13 +170,18 @@ std::vector<std::uint8_t> makeMmc3Rom()
 
 struct Mmc3Harness {
     std::vector<std::uint8_t> rom = makeMmc3Rom();
-    cutenes::Cartridge cart;
-
-    Mmc3Harness()
+    // submapper > 0 promotes the header to NES 2.0 (byte 7 bit 3, byte 13
+    // low nibble) so mapper 4 can select the MMC3 revision.
+    explicit Mmc3Harness(int submapper = 0)
     {
+        if (submapper > 0) {
+            rom[7] = static_cast<std::uint8_t>((rom[7] & 0xF0) | 0x08);
+            rom[13] = static_cast<std::uint8_t>(submapper & 0x0F);
+        }
         const auto result = cutenes::Cartridge::load(rom.data(), rom.size(), cart);
         EXPECT_EQ(result.error, cutenes::LoadError::Ok);
     }
+    cutenes::Cartridge cart;
 
     void select(std::uint8_t reg, std::uint8_t data)
     {
@@ -272,6 +277,41 @@ TEST(Mmc3Irq, EnableAloneDoesNotAssertUntilCounterReachesZero)
     EXPECT_FALSE(h.cart.irqLine());
     h.cart.clockIrq();
     EXPECT_FALSE(h.cart.irqLine());
+}
+
+TEST(Mmc3Irq, RevisionAAssertsOnChangeToZeroOnly)
+{
+    Mmc3Harness h(/*submapper=*/4);
+    // Latch 0 + $C001: the write puts the counter above 127, so the reload
+    // clock is a change to zero -> assert (rev A rule, nesdev wiki MMC3).
+    h.cart.cpuWrite(0xC000, 0);
+    h.cart.cpuWrite(0xC001, 0);
+    h.cart.cpuWrite(0xE001, 0);
+    h.cart.clockIrq();
+    EXPECT_TRUE(h.cart.irqLine());
+    h.cart.cpuWrite(0xE000, 0); // acknowledge (also disables)
+    // Automatic reload of 0 onto 0 is NOT a change -> stays quiet.
+    h.cart.clockIrq();
+    EXPECT_FALSE(h.cart.irqLine());
+    // A decrement reaching 0 is a change -> assert.
+    h.cart.cpuWrite(0xE001, 0); // re-enable
+    h.cart.cpuWrite(0xC000, 1);
+    h.cart.clockIrq();          // auto-reload (counter 0) -> 1
+    h.cart.clockIrq();          // 1 -> 0
+    EXPECT_TRUE(h.cart.irqLine());
+}
+
+TEST(Mmc3Irq, RevisionBIsThePlainInesDefault)
+{
+    Mmc3Harness h; // iNES 1.0 header: submapper 0 = revision B
+    h.cart.cpuWrite(0xC000, 0);
+    h.cart.cpuWrite(0xC001, 0);
+    h.cart.cpuWrite(0xE001, 0);
+    h.cart.clockIrq();
+    EXPECT_TRUE(h.cart.irqLine()); // every clock with latch 0
+    h.cart.cpuWrite(0xE000, 0);
+    h.cart.clockIrq();
+    EXPECT_FALSE(h.cart.irqLine()); // acknowledged and disabled
 }
 
 TEST(Mmc3Irq, ZeroLatchAssertsEveryClockWhenEnabled)

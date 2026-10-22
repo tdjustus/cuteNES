@@ -31,6 +31,7 @@ enum class LoadError : std::uint8_t {
 struct CartridgeInfo {
     std::uint8_t formatVersion = 0; // 0 = iNES 1.0, 2 = NES 2.0
     std::uint16_t mapperId = 0;     // 0,1,2,3,4 supported initially
+    std::uint8_t submapper = 0;   // NES 2.0 byte 13 low nibble; 0 for iNES 1.0
     Mirroring mirroring = Mirroring::Horizontal;
     bool battery = false;
     std::size_t prgSize = 0;

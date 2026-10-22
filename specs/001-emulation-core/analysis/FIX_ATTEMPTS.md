@@ -83,6 +83,20 @@ The PPU analogue worked because PPU dots are 1/3 CPU cycle. Fixing 5-len require
 the sequencer scheduled in master ticks (L9) plus the frame-IRQ recalibration that
 L5/L6 showed is entangled with it. That is the remaining scoped task.
 
+## MMC3 revision selection via NES 2.0 submapper (2026-10-22)
+
+nesdev wiki (MMC3, IRQ Specifics) confirms the revision behaviors are mutually
+exclusive hardware variants and are encoded as mapper 4 submapper 0 (rev B
+"normal": IRQ while counter == 0, so latch 0 IRQs every scanline) vs submapper 4
+(rev A "alternate": IRQ only on a change to zero). Implemented:
+- `CartridgeInfo::submapper` parsed from NES 2.0 byte 13 low nibble (0 for iNES 1.0,
+  so plain headers keep rev B — the majority behavior).
+- `Mmc3` picks the rule from the header; `$C001` now also ORs the counter above 127
+  (Sharp behavior, per the wiki) so a manual reload counts as a change to zero.
+- Playtest `force-submapper <n>` promotes a header to NES 2.0 in memory for testing.
+  `5.MMC3_rev_A` passes under `force-submapper 4` and is gated; all six blargg
+  MMC3 IRQ ROMs now pass. Unit tests cover both revision rules.
+
 ## RESOLVED: T069 MMC3 scanline IRQ (2026-10-22)
 
 | # | Change | Result |

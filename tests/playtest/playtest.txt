@@ -107,3 +107,10 @@ rom ../roms/mmc3_irq_tests/6.MMC3_rev_B.nes
 run 1500 none
 expect-text PASSED
 end
+
+entry mmc3-irq-5-rev-a
+force-submapper 4
+rom ../roms/mmc3_irq_tests/5.MMC3_rev_A.nes
+run 1500 none
+expect-text PASSED
+end

@@ -103,6 +103,9 @@ LoadResult Cartridge::load(const std::uint8_t* data, std::size_t size,
                                          : Region::Unspecified;
     }
     info.mapperId = mapperId;
+    // NES 2.0 byte 13 low nibble: submapper (e.g. mapper 4 submapper 4 =
+    // MMC3 revision A IRQ behavior; nesdev wiki MMC3, IRQ Specifics).
+    info.submapper = nes2 ? static_cast<std::uint8_t>(h[13] & 0x0F) : 0;
 
     // Payload bounds.
     const std::size_t trainerSize = trainer ? kTrainerSize : 0;

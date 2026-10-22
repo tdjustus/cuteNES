@@ -23,6 +23,10 @@ public:
         // reachable (universal emulator convention).
         const std::size_t banks = cartridge.prg.size() / 0x2000;
         mPrg[1] = static_cast<std::uint8_t>(banks > 0 ? banks - 1 : 0);
+        // NES 2.0 mapper 4 submapper 4 selects the MMC3 revision A
+        // ("alternate") IRQ rule; submapper 0 / plain iNES is revision B
+        // ("normal") — nesdev wiki MMC3, IRQ Specifics.
+        mRevA = cartridge.info.mapperId == 4 && cartridge.info.submapper == 4;
     }
 
     std::uint8_t cpuRead(std::uint16_t addr) override
@@ -92,6 +96,10 @@ public:
             if (even) {
                 mIrqLatch = value;
             } else {
+                // $C001 sets the counter above 127 and arms the reload
+                // (nesdev: the instant OR keeps the counter from reaching
+                // 0 on its own before the reload clock).
+                mIrqCounter = static_cast<std::uint8_t>(mIrqCounter | 0x80);
                 mReloadPending = true;
             }
             break;
@@ -130,21 +138,33 @@ public:
     // A12-rise IRQ clocking (PPU-driven; task T057 wiring).
     void clockIrq() override
     {
-        // Revision B (Super Mario Bros. 3, Mega Man 3; mmc3_irq_tests 6):
-        // reload from the latch when the counter is 0 or was cleared by
-        // $C001, otherwise decrement. After either, a zero counter with
-        // IRQ enabled asserts — so a zero latch asserts on every clock,
-        // including the reload clock itself (4-scanline_timing: the IRQ
-        // for reload N lands N scanlines after the pre-render clock; N=0
-        // asserts there, which is why our old rule read one line late).
+        // Reload from the latch when the counter is 0 (automatic) or was
+        // cleared by $C001 (reload flag); otherwise decrement.
+        const std::uint8_t before = mIrqCounter;
         if (mReloadPending || mIrqCounter == 0) {
             mIrqCounter = mIrqLatch;
             mReloadPending = false;
         } else {
             --mIrqCounter;
         }
-        if (mIrqCounter == 0 && mIrqEnable) {
-            mIrqAsserted = true;
+        if (!mIrqEnable) {
+            return;
+        }
+        if (mRevA) {
+            // Revision A ("alternate", submapper 4): IRQ only on a CHANGE
+            // to zero — a decrement reaching 0, or a $C001 reload landing
+            // on 0 (the write put the counter above 127 first). An
+            // automatic reload of 0 onto 0 does not re-assert.
+            if (before != 0 && mIrqCounter == 0) {
+                mIrqAsserted = true;
+            }
+        } else {
+            // Revision B ("normal", submapper 0): IRQ whenever the counter
+            // is 0 after reload or decrement — a zero latch asserts on
+            // every clock (mmc3_irq_tests 4 and 6).
+            if (mIrqCounter == 0) {
+                mIrqAsserted = true;
+            }
         }
     }
 
@@ -217,6 +237,7 @@ private:
     std::uint8_t mIrqCounter = 0;
     bool mIrqEnable = false;
     bool mReloadPending = false;
+    bool mRevA = false; // NES 2.0 submapper 4 => revision A IRQ rule
     bool mIrqAsserted = false;
 };
 
