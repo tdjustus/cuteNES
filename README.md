@@ -65,6 +65,14 @@ All six blargg `mmc3_irq_tests` ROMs pass: 1-4 and 6 under revision B,
 `5.MMC3_rev_A` under an NES 2.0 submapper 4 header (the playtest suite does
 exactly this via its `force-submapper` directive).
 
+Caveat: for nearly all games the two revisions are indistinguishable, since
+the behavior only diverges when a game writes a reload value of `$00` or
+otherwise depends on the change-to-zero nuance. The header tagging (or manual
+override) therefore matters only for that small set of titles — Crystalis is
+the known revision A case. An untagged revision A dump still runs; it simply
+gets the revision B rule, which is byte-identical in practice for anything
+that never exercises the divergent cases.
+
 ## Project governance
 
 - Constitution: `.specify/memory/constitution.md`
