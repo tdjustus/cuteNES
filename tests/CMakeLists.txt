@@ -112,6 +112,13 @@ foreach(rom IN LISTS HM_ROMS)
     set_tests_properties("tier2-${name}" PROPERTIES LABELS "tier2")
 endforeach()
 
+# Cross-platform golden hashes (T065): vendored ROMs only, so CI (which
+# has no roms-local/) can compare every OS against the checked-in baseline.
+add_test(NAME golden-hashes
+    COMMAND rom_harness golden --list ${CMAKE_CURRENT_SOURCE_DIR}/golden/roms.txt
+            --check ${CMAKE_CURRENT_SOURCE_DIR}/golden/baseline.txt)
+set_tests_properties(golden-hashes PROPERTIES LABELS "tier1")
+
 # Scripted game checks (T059/T046). Commercial titles in roms-local/ are
 # skipped, not failed, when absent.
 add_test(NAME playtest

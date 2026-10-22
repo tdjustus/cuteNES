@@ -1,0 +1,6 @@
+golden: nestest            last=300da3c0 audio=479143
+golden: full_palette       last=102e0067 audio=239538
+golden: litewall           last=9e0c0685 audio=239538
+golden: mmc1_a12           last=702d9a92 audio=239538
+golden: mmc3_clocking      last=4cf67297 audio=479143
+golden: apu_len_table      last=c12d1585 audio=239538

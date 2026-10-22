@@ -1,0 +1,8 @@
+# T065 cross-platform golden set: vendored ROMs only (CI has no roms-local).
+# name                  rom                                            frames
+nestest                 ../roms/other/nestest.nes                       600
+full_palette            ../roms/full_palette/full_palette.nes           300
+litewall                ../roms/blargg_litewall/litewall3.nes           300
+mmc1_a12                ../roms/MMC1_A12/mmc1_a12.nes                   300
+mmc3_clocking           ../roms/mmc3_test/1-clocking.nes                600
+apu_len_table           ../roms/apu_test/rom_singles/2-len_table.nes    300

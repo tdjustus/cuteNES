@@ -706,6 +706,96 @@ int cmdPlaytest(const char* listPath)
     return failures == 0 ? 0 : 1;
 }
 
+// T065 cross-platform golden hashes: run vendored ROMs for fixed frame
+// counts and print one stable line each. `--check FILE` compares against a
+// checked-in baseline generated on the reference platform.
+int cmdGolden(const char* listPath, const char* checkPath)
+{
+    std::vector<std::uint8_t> bytes;
+    if (!readRom(listPath, bytes)) {
+        return 2;
+    }
+    const std::string text(bytes.begin(), bytes.end());
+    std::string dir;
+    const std::string listStr = listPath;
+    const std::size_t slash = listStr.find_last_of('/');
+    if (slash != std::string::npos) {
+        dir = listStr.substr(0, slash);
+    }
+    std::istringstream lines(text);
+    std::string line;
+    std::vector<std::string> out;
+    while (std::getline(lines, line)) {
+        const std::size_t hash = line.find_first_not_of(" \t");
+        if (hash == std::string::npos || line[hash] == '#') {
+            continue;
+        }
+        std::istringstream fields(line);
+        std::string name, rom;
+        std::uint32_t frames = 0;
+        if (!(fields >> name >> rom >> frames)) {
+            std::printf("golden: bad line: %s\n", line.c_str());
+            return 2;
+        }
+        const std::string romPath =
+            dir.empty() ? rom : dir + "/" + rom;
+        std::vector<std::uint8_t> romBytes;
+        if (!readRom(romPath.c_str(), romBytes)) {
+            std::printf("golden: %s: cannot read %s\n", name.c_str(),
+                romPath.c_str());
+            return 2;
+        }
+        RecordingSink sink;
+        cutenes::Machine machine;
+        const auto result =
+            machine.loadCartridge(romBytes.data(), romBytes.size());
+        if (result.error != cutenes::LoadError::Ok) {
+            std::printf("golden: %s: load error %d\n", name.c_str(),
+                static_cast<int>(result.error));
+            return 2;
+        }
+        machine.setVideoSink(&sink);
+        machine.setAudioSink(&sink);
+        machine.powerOn();
+        machine.runFrames(frames);
+        char buf[160];
+        std::snprintf(buf, sizeof buf, "golden: %-18s last=%08x audio=%llu",
+            name.c_str(),
+            sink.hashes.empty() ? 0 : sink.hashes.back(),
+            static_cast<unsigned long long>(sink.audio.size()));
+        out.push_back(buf);
+    }
+    for (const std::string& o : out) {
+        std::printf("%s\n", o.c_str());
+    }
+    if (checkPath == nullptr) {
+        return 0;
+    }
+    std::vector<std::uint8_t> base;
+    if (!readRom(checkPath, base)) {
+        std::printf("golden: cannot read baseline %s\n", checkPath);
+        return 2;
+    }
+    std::string all(reinterpret_cast<const char*>(base.data()), base.size());
+    std::istringstream wantLines(all);
+    std::vector<std::string> expected;
+    std::string l;
+    while (std::getline(wantLines, l)) {
+        if (!l.empty() && l.back() == '\r') {
+            l.pop_back();
+        }
+        if (l.find("golden:") == 0) {
+            expected.push_back(l);
+        }
+    }
+    if (expected != out) {
+        std::printf("golden: MISMATCH against %s\n", checkPath);
+        return 1;
+    }
+    std::printf("golden: baseline match (%zu entries)\n", out.size());
+    return 0;
+}
+
 int notImplemented(const char* command, const char* task)
 {
     std::fprintf(stderr,
@@ -724,7 +814,8 @@ void usage()
         "  nestest [--golden-log]          CPU golden-log verification (T029)\n"
         "  savestate --rom R --at F --rerun-to F   restore round trip (T051)\n"
         "  playtest --list FILE            scripted game checks (T059)\n"
-        "  bench --rom R                   5s sustained-speed benchmark (T061)\n");
+        "  bench --rom R                   5s sustained-speed benchmark (T061)\n"
+        "  golden --list F [--check B]     cross-platform golden hashes (T065)\n");
 }
 
 std::uint32_t parseUint(const char* s)
@@ -750,6 +841,16 @@ int main(int argc, char** argv)
         && std::strcmp(argv[4], "--at") == 0
         && std::strcmp(argv[6], "--rerun-to") == 0) {
         return cmdSavestate(argv[3], parseUint(argv[5]), parseUint(argv[7]));
+    }
+    if (command == "golden" && argc >= 4 && std::strcmp(argv[2], "--list") == 0) {
+        const char* check = nullptr;
+        if (argc == 6 && std::strcmp(argv[4], "--check") == 0) {
+            check = argv[5];
+        } else if (argc != 4) {
+            usage();
+            return 2;
+        }
+        return cmdGolden(argv[3], check);
     }
     if (command == "settle" && argc == 3) {
         return cmdSettle(argv[2], 1800); // ~30s emulated cap
