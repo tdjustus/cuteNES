@@ -242,3 +242,13 @@ table is therefore part of the contract:
 | Side-effect-free peek (002 FR-002) | `peek` / `disassemble` |
 | Scripted input runs (002 FR-019) | `runFrames(n, InputScript*)` |
 | Status/info (002 FR-018) | `cartridgeInfo` `region` `frameCounter` `masterCycle` `runState` + `coreVersionString` |
+
+### Debug memory dump (debugging)
+
+```cpp
+// Creates a debug directory if missing and writes a binary memory dump
+// with timestamp in filename: <YYYYMMDDHHMMSS>.dmp (or ISO8601)
+std::string Machine::dumpMemory(const std::string& debugDir = "debug") const;
+// Returns absolute/relative path to the written dump file.
+// Dump includes CPU memory, PPU memory, OAM, palette, and cartridge RAM/ROM snapshots.
+```

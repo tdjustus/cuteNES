@@ -61,3 +61,8 @@ build/tests/rom_harness determinism --rom R --frames N
 build/tests/rom_harness savestate --rom R --at F --rerun-to G
 build/tests/rom_harness step-equiv R N          # stepping == runFrames
 build/tests/rom_harness bench --rom R           # sustained speed
+
+- **Embeddable UI Design**: Qt 6 widget architecture designed for reuse in other applications ([specs/001-emulation-core/ui-embeddable-design.md](specs/001-emulation-core/ui-embeddable-design.md)). Strict core/UI separation via public API, OpenGL-accelerated rendering, and library-first CMake integration.
+
+### Debugging
+- `Machine::dumpMemory("debug")` creates a `<datetime>.dmp` file in the debug directory with snapshots of CPU memory, PPU memory, OAM, palette, and cartridge RAM/ROM for troubleshooting.

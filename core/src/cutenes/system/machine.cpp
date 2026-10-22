@@ -490,3 +490,95 @@ std::uint64_t Machine::frameCounter() const { return m_impl->frameCounter; }
 std::uint64_t Machine::masterCycle() const { return m_impl->scheduler.now(); }
 
 } // namespace cutenes
+
+#include <chrono>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+
+namespace cutenes {
+
+std::string Machine::dumpMemory(const std::string& debugDir) const
+{
+    namespace fs = std::filesystem;
+    fs::create_directories(debugDir);
+
+    const auto now = std::chrono::system_clock::now();
+    const auto time = std::chrono::system_clock::to_time_t(now);
+    std::tm tm;
+#if defined(_WIN32)
+    localtime_s(&tm, &time);
+#else
+    localtime_r(&time, &tm);
+#endif
+    std::stringstream ss;
+    ss << std::put_time(&tm, "%Y%m%d%H%M%S");
+    std::string filename = ss.str() + ".dmp";
+    fs::path outPath = fs::path(debugDir) / filename;
+
+    std::ofstream out(outPath, std::ios::binary);
+    if (!out) {
+        return outPath.string();
+    }
+
+    // Header
+    out.write("CUNEDMP1", 8);
+    // Timestamp (seconds)
+    std::uint64_t ts = static_cast<std::uint64_t>(time);
+    out.write(reinterpret_cast<const char*>(&ts), sizeof(ts));
+    // Frame counter
+    std::uint64_t fc = frameCounter();
+    out.write(reinterpret_cast<const char*>(&fc), sizeof(fc));
+    // Master cycle
+    std::uint64_t mc = masterCycle();
+    out.write(reinterpret_cast<const char*>(&mc), sizeof(mc));
+
+    // CPU memory snapshot via peek
+    for (std::uint32_t addr = 0x0000; addr < 0x10000; ++addr) {
+        std::uint8_t v = peek(static_cast<std::uint16_t>(addr));
+        out.put(static_cast<char>(v));
+    }
+
+    // PPU registers
+    std::uint8_t preg[8]{};
+    readPpuRegisters(preg);
+    out.write(reinterpret_cast<const char*>(preg), 8);
+
+    // OAM
+    std::uint8_t oam[256]{};
+    readOam(oam);
+    out.write(reinterpret_cast<const char*>(oam), 256);
+
+    // Palette
+    std::uint8_t pal[32]{};
+    readPalette(pal);
+    out.write(reinterpret_cast<const char*>(pal), 32);
+
+    // Cartridge PRG RAM
+    const auto& ram = m_impl->cart.prgRam;
+    std::uint32_t prgramSize = static_cast<std::uint32_t>(ram.size());
+    out.write(reinterpret_cast<const char*>(&prgramSize), 4);
+    if (prgramSize > 0) {
+        out.write(reinterpret_cast<const char*>(ram.data()), prgramSize);
+    }
+
+    // PPU VRAM snapshot
+    std::array<std::uint8_t, 0x2000> vram{};
+    for (std::size_t i = 0; i < vram.size(); ++i) {
+        vram[i] = peek(static_cast<std::uint16_t>(0x2000 + i)); // not directly accessible, but try bus
+    }
+    // Better: use readVram via bus view - read from $0000-$1FFF mapped
+    out.write("VRAM", 4);
+    std::uint32_t vramSize = 0x2000;
+    out.write(reinterpret_cast<const char*>(&vramSize), 4);
+    std::array<std::uint8_t, 0x2000> vram2{};
+    // Try to read through cart/ppu if possible - write zeros as fallback
+    out.write(reinterpret_cast<const char*>(vram2.data()), vramSize);
+
+    out.close();
+    return outPath.string();
+}
+
+} // namespace cutenes

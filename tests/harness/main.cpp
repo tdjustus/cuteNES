@@ -392,8 +392,9 @@ int cmdSettle(const char* romPath, std::uint32_t maxFrames)
 // T059/T046: scripted game checks. The list format is documented in
 // tests/playtest/playtest.txt. Entries run in order; each records PASS/FAIL.
 struct PlaytestStep {
-    enum class Kind { Run, ExpectMem, ExpectChanges };
+    enum class Kind { Run, ExpectMem, ExpectChanges, ExpectText };
     Kind kind = Kind::Run;
+    std::string text;
     std::uint32_t frames = 0;
     cutenes::ButtonSet buttons;
     std::uint16_t addr = 0;
@@ -515,6 +516,16 @@ bool parsePlaytest(const std::string& text, std::vector<PlaytestEntry>& out,
                 return fail("expect-mem needs hex <addr> <value>");
             }
             current->steps.push_back(step);
+        } else if (cmd == "expect-text") {
+            PlaytestStep step;
+            step.kind = PlaytestStep::Kind::ExpectText;
+            std::getline(tokens, step.text);
+            const std::size_t first = step.text.find_first_not_of(' ');
+            step.text = first == std::string::npos ? "" : step.text.substr(first);
+            if (step.text.empty()) {
+                return fail("expect-text needs text");
+            }
+            current->steps.push_back(step);
         } else if (cmd == "expect-changes") {
             PlaytestStep step;
             step.kind = PlaytestStep::Kind::ExpectChanges;
@@ -591,6 +602,25 @@ bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry,
             }
             break;
         }
+        case PlaytestStep::Kind::ExpectText: {
+            // Nametable 0 tiles that are printable ASCII read as their
+            // character (the ROM text console uses ASCII tile codes).
+            std::vector<std::uint8_t> nt(0x3C0);
+            machine.readVram(0x2000, 0x3C0, nt.data());
+            std::string screen;
+            for (std::size_t i = 0; i < nt.size(); ++i) {
+                const std::uint8_t c = nt[i];
+                screen += (c >= 0x20 && c <= 0x7E) ? static_cast<char>(c) : ' ';
+                if (i % 32 == 31) {
+                    screen += '\n';
+                }
+            }
+            if (screen.find(step.text) == std::string::npos) {
+                why = "screen does not show \"" + step.text + "\"";
+                return false;
+            }
+            break;
+        }
         case PlaytestStep::Kind::ExpectChanges:
             if (lastChanges < step.value) {
                 why = "screen changed " + std::to_string(lastChanges)
@@ -623,7 +653,21 @@ int cmdPlaytest(const char* listPath)
         dir = listStr.substr(0, slash);
     }
     int failures = 0;
+    int skipped = 0;
     for (const PlaytestEntry& entry : entries) {
+        // Commercial titles live in the gitignored roms-local/ folder; a
+        // checkout without them skips those entries instead of failing.
+        const std::string romPath = dir.empty() ? entry.rom : dir + "/" + entry.rom;
+        const bool localOnly = entry.rom.find("roms-local/") != std::string::npos;
+        std::FILE* probe = std::fopen(romPath.c_str(), "rb");
+        if (probe != nullptr) {
+            std::fclose(probe);
+        } else if (localOnly) {
+            ++skipped;
+            std::printf("playtest: %s: SKIP (ROM not present: %s)\n",
+                entry.name.c_str(), romPath.c_str());
+            continue;
+        }
         std::string why;
         const bool ok = runPlaytestEntry(dir, entry, why);
         if (ok) {
@@ -633,7 +677,8 @@ int cmdPlaytest(const char* listPath)
             std::printf("playtest: %s: FAIL (%s)\n", entry.name.c_str(), why.c_str());
         }
     }
-    std::printf("playtest: %zu entries, %d failed\n", entries.size(), failures);
+    std::printf("playtest: %zu entries, %d skipped, %d failed\n",
+        entries.size(), skipped, failures);
     return failures == 0 ? 0 : 1;
 }
 

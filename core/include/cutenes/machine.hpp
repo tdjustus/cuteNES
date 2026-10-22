@@ -113,6 +113,9 @@ public:
         std::function<void(const TracePoint&)> callback); // per instruction
     void debugSetProgramCounter(std::uint16_t pc); // nestest entry $C000
 
+    // --- Debugging ---------------------------------------------------------
+    std::string dumpMemory(const std::string& debugDir = "debug") const;
+
     // --- Region & counters -------------------------------------------------
     Region region() const;
     std::uint64_t frameCounter() const;

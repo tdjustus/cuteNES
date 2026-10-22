@@ -31,3 +31,67 @@ entry not-an-ines-file-is-rejected
 rom bad-header.nes
 expect-error NotAnInesFile
 end
+
+entry super-mario-bros-boot-changes
+rom ../../roms-local/super-mario-bros.nes
+run 600 none
+expect-changes 1
+end
+
+entry tetris-boot-changes
+rom ../../roms-local/tetris.nes
+run 600 none
+expect-changes 1
+end
+
+entry tetris-start-reaches-gameplay
+rom ../../roms-local/tetris.nes
+run 300 none
+expect-mem 00C0 00
+run 10 Start
+run 120 none
+expect-mem 00C0 01
+run 10 Start
+run 120 none
+run 300 none
+expect-mem 00C0 02
+expect-changes 1
+end
+
+entry mega-man-boot-changes
+rom ../../roms-local/mega-man.nes
+run 600 none
+expect-changes 1
+end
+
+entry mega-man-3-start-changes
+rom ../../roms-local/mega-man-3.nes
+run 600 none
+run 4 Start
+run 300 none
+expect-changes 1
+end
+
+entry solomons-key-boot-changes
+rom ../../roms-local/solomons-key.nes
+run 600 none
+expect-changes 1
+end
+
+entry mmc3-irq-1-clocking
+rom ../roms/mmc3_irq_tests/1.Clocking.nes
+run 1500 none
+expect-text PASSED
+end
+
+entry mmc3-irq-2-details
+rom ../roms/mmc3_irq_tests/2.Details.nes
+run 1500 none
+expect-text PASSED
+end
+
+entry mmc3-irq-3-a12-clocking
+rom ../roms/mmc3_irq_tests/3.A12_clocking.nes
+run 1500 none
+expect-text PASSED
+end
