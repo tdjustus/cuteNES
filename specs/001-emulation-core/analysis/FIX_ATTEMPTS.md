@@ -197,3 +197,28 @@ and $00 (3424c/byte), across 16 alignments. Next step: model the bit-4 clear
 time as [write + halt latency + DMA duration] and iterate against the row table
 (currently still 3768/3767 alternating, i.e. the DMC contribution is constant);
 expected CRC $FBADA48D (screen CRC line is the ROM's own computed value).
+
+## T037 session 2 (2026-10-22, branch feat/t037-dma-alignment)
+
+Root cause chain for the sprdma hang, now understood and fixed:
+1. The ROM's sync_dmc fine loop NEVER exited: it iterates every 433 cycles
+   (429 base + the DMC reload DMA's usual 4 stolen clocks — blargg's source
+   comments spell this out), drifting 1 cycle/iter against the 432-cycle byte
+   period until the phase aligns. Our loop ran at exactly 432 (no drift): two
+   bugs cancelled into a hang:
+   a. the DMC stall was 1 cycle short (the halt cycle was never charged);
+   b. fetches were serviced at any cycle parity, so the reload DMA's
+      alignment cycle never appeared.
+2. Fixes landed: halt cycle charged (stall = halt+dummy+align+get = 3/4);
+   halt parity scheduled per DMA type (reload halts on PUT, load on GET —
+   nesdev wiki DMA), enforced in dmcFetchPending and serialized.
+   Result: sync exits, all 16 rows print, gate 139/139 green.
+3. Remaining calibration: the rows still show no DMC/OAM collision (flat
+   3770/3769, per-row = OAM parity only; 0 preemptions in 16 DMAs). The test's
+   delay puts a byte boundary inside the OAM window; whether it lands there
+   depends on the DMC timer phase our sync EXIT leaves behind. Sensitivity
+   proven: load-DMA due +4 makes rows vary (3093s appear), +5 hangs, +3 is
+   stable-but-flat (and +4 breaks 7-dmc_basics #19). Next: model the sync-exit
+   phase exactly (the final iteration's load-DMA completion vs the `bit $4015`
+   read at write+7..9), then the OAM collision cost (+2 common per wiki).
+   Current computed CRC 8D018086, target FBADA48D.

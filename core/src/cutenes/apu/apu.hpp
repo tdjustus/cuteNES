@@ -68,8 +68,11 @@ public:
         // DMA halts on a get cycle during the 2nd APU cycle after the
         // $4015 write; reload DMAs as soon as the buffer empties (nesdev
         // wiki DMA). Before that the byte is not yet wanted.
+        // The halt is scheduled on a specific cycle parity: reload DMAs
+        // halt on put cycles, load DMAs on get cycles (nesdev wiki DMA).
         return m_dmc.enabled && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0
-            && m_sched.now() >= m_dmcDueMaster;
+            && m_sched.now() >= m_dmcDueMaster
+            && ((m_sched.now() / 12) % 2 == 1) == m_dmcHaltOnPut;
     }
     std::uint16_t dmcFetchAddress() const override
     {
@@ -143,6 +146,7 @@ private:
     void clockDmcTimer();
     void dmcFetchByte();
     std::uint64_t m_dmcDueMaster = 0; // earliest halt for the next fetch
+    bool m_dmcHaltOnPut = false; // reload DMAs halt on put, load on get
     void advanceDmcAddress();
     void mixNativeSample();
     std::uint8_t statusRead();
