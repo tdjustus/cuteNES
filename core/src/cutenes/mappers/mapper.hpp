@@ -40,6 +40,9 @@ public:
     virtual void loadState(StateReader& r);
 
     // IRQ generation (MMC3-class): A12-rise clocking from the PPU.
+    // Revision override (MMC3-class): manual selection of the IRQ counter
+    // rule; the header's NES 2.0 submapper decides by default.
+    virtual void setRevisionA(bool) {}
     virtual void clockIrq() {}
     virtual bool irqLine() const { return false; }
 

@@ -126,6 +126,7 @@ struct Machine::Impl {
     ApuIoBridge io;
 
     Cartridge cart;
+    int mmc3RevSel = 0; // Machine::Mmc3Revision: 0 Auto, 1 B, 2 A
     std::unique_ptr<Ppu> ppu;
     std::unique_ptr<Apu> apu;
     std::unique_ptr<Cpu> cpu;

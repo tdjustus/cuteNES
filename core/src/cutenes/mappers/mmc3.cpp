@@ -170,11 +170,14 @@ public:
 
     bool irqLine() const override { return mIrqAsserted; }
 
+    void setRevisionA(bool revA) override { mRevA = revA; }
+
     void saveState(StateWriter& w) const override
     {
         w.begin("MAP ");
         w.w<std::uint16_t>(m_cart.info.mapperId);
         w.w(mBankMode);
+    w.w<std::uint8_t>(mRevA ? 1 : 0);
         w.w(mPrg[0]);
         w.w(mPrg[1]);
         for (const std::uint8_t b : mChr) {
@@ -194,6 +197,7 @@ public:
     {
         (void)r.get<std::uint16_t>(); // mapperId (validated at load)
         mBankMode = r.get<std::uint8_t>();
+    mRevA = r.get<std::uint8_t>() != 0;
         mPrg[0] = r.get<std::uint8_t>();
         mPrg[1] = r.get<std::uint8_t>();
         for (std::uint8_t& b : mChr) {

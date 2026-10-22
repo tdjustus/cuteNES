@@ -301,6 +301,24 @@ TEST(Mmc3Irq, RevisionAAssertsOnChangeToZeroOnly)
     EXPECT_TRUE(h.cart.irqLine());
 }
 
+TEST(Mmc3Irq, ManualRevisionSwitchOverridesTheHeader)
+{
+    Mmc3Harness h; // plain iNES header => revision B by default
+    h.cart.mapper->setRevisionA(true); // manual override, no re-load
+    h.cart.cpuWrite(0xC000, 0);
+    h.cart.cpuWrite(0xC001, 0);
+    h.cart.cpuWrite(0xE001, 0);
+    h.cart.clockIrq();          // reload 0xFF -> 0: change to zero
+    EXPECT_TRUE(h.cart.irqLine());
+    h.cart.cpuWrite(0xE000, 0); // acknowledge
+    h.cart.clockIrq();          // auto reload 0 -> 0: no change
+    EXPECT_FALSE(h.cart.irqLine()) << "revision A rule after manual switch";
+    h.cart.cpuWrite(0xE001, 0); // re-enable
+    h.cart.mapper->setRevisionA(false); // and back
+    h.cart.clockIrq();          // revision B: counter 0 asserts
+    EXPECT_TRUE(h.cart.irqLine());
+}
+
 TEST(Mmc3Irq, RevisionBIsThePlainInesDefault)
 {
     Mmc3Harness h; // iNES 1.0 header: submapper 0 = revision B

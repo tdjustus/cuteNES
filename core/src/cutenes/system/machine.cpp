@@ -107,8 +107,36 @@ LoadResult Machine::loadCartridge(const std::uint8_t* data, std::size_t size)
         (void)again;
     }
     m_impl->ppu->attachCartridge(&m_impl->cart);
+    applyMmc3Revision(); // header default or the stored manual override
     m_impl->runState = RunState::Paused;
     return result;
+}
+
+void Machine::setMmc3Revision(Mmc3Revision revision)
+{
+    auto& impl = *m_impl;
+    impl.mmc3RevSel = static_cast<int>(revision);
+    if (impl.cart.mapper != nullptr) {
+        applyMmc3Revision();
+    }
+}
+
+Machine::Mmc3Revision Machine::mmc3Revision() const
+{
+    return static_cast<Mmc3Revision>(m_impl->mmc3RevSel);
+}
+
+// Resolve Auto from the header (NES 2.0 mapper 4 submapper 4 = revision A)
+// and forward the effective choice to the mapper.
+void Machine::applyMmc3Revision()
+{
+    auto& impl = *m_impl;
+    if (impl.cart.info.mapperId != 4) {
+        return; // not an MMC3 cartridge
+    }
+    const bool revA = impl.mmc3RevSel == 2
+        || (impl.mmc3RevSel == 0 && impl.cart.info.submapper == 4);
+    impl.cart.mapper->setRevisionA(revA);
 }
 
 void Machine::ejectCartridge()

@@ -33,6 +33,38 @@ target_link_libraries(your_app PRIVATE cutenes-core::cutenes-core)
 
 Public API contract: `specs/001-emulation-core/contracts/core-api.md`.
 
+## MMC3 revision (mapper 4 IRQ behavior)
+
+The MMC3 exists in two behaviorally distinct silicon revisions, and the
+difference shows only in the scanline IRQ counter (nesdev wiki, MMC3 —
+"IRQ Specifics"):
+
+- **Revision B ("normal")** asserts the IRQ whenever the counter is 0, so a
+  reload value of `$00` IRQs every scanline. This is the behavior of the
+  boards in Super Mario Bros. 3 and Mega Man 3, and of the vast majority of
+  cartridges.
+- **Revision A ("alternate")** asserts only when the counter *changes* to 0 —
+  by decrementing, or by a `$C001` reload landing on 0 (the write first puts
+  the counter above 127). Found in Crystalis-era boards.
+
+The two are mutually exclusive at the hardware level, and the emulator picks
+between them as follows:
+
+1. **Header (preferred):** an NES 2.0 header selects the revision through the
+   submapper field — mapper 4, submapper 4 means revision A; submapper 0 (or
+   any plain iNES 1.0 header, which cannot express the choice) means revision
+   B. If you have a revision A dump (e.g. Crystalis), tag its header NES 2.0
+   with submapper 4 to get the exact IRQ behavior.
+2. **Manual override (any time):** `machine.setMmc3Revision(
+   Machine::Mmc3Revision::A)` forces a revision regardless of the header —
+   also `::B` to force the other way, and `::Auto` (the default) to follow
+   the header. The setting applies immediately to a loaded cartridge and to
+   subsequent loads, and it is part of the save state.
+
+All six blargg `mmc3_irq_tests` ROMs pass: 1-4 and 6 under revision B,
+`5.MMC3_rev_A` under an NES 2.0 submapper 4 header (the playtest suite does
+exactly this via its `force-submapper` directive).
+
 ## Project governance
 
 - Constitution: `.specify/memory/constitution.md`
@@ -45,9 +77,9 @@ Public API contract: `specs/001-emulation-core/contracts/core-api.md`.
 Feature 001 (emulation core): see `specs/001-emulation-core/tasks.md`.
 The tier-1 gate runs the standalone sub-test ROMs for ppu_vbl_nmi and
 apu_test, plus nestest, instr_test-v5, instr_timing, cpu_reset,
-oam_read, and apu_reset. Known sub-test failures are tracked under the
-`known-failing` ctest label (excluded from CI) until T068 lands:
-ppu_vbl_nmi 03-vbl_clear_time and apu_test 1, 5, 7, 8. Save states
+oam_read, and apu_reset, and the six blargg mmc3_irq_tests ROMs. All
+formerly known-failing tests are fixed (T068/T069 closed; the MMC3
+revision A/B split is header-selectable, see above). Save states
 round-trip byte-identically; 600-frame determinism and
 instruction-stepping equivalence verified; ~592 fps single-threaded
 (9.9x real-time).

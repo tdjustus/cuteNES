@@ -56,6 +56,14 @@ public:
     void ejectCartridge();
     const CartridgeInfo& cartridgeInfo() const;
 
+    // --- MMC3 revision (mapper 4 IRQ behavior) -----------------------------
+    // Auto (default): revision B, or A when the NES 2.0 header sets mapper 4
+    // submapper 4. Explicit A/B override the header. Applies to the loaded
+    // cartridge and to subsequent loads.
+    enum class Mmc3Revision { Auto, B, A };
+    void setMmc3Revision(Mmc3Revision revision);
+    Mmc3Revision mmc3Revision() const;
+
     // --- Run control (FR-008) -------------------------------------------
     void powerOn();                          // cold boot: P=$24, S=$FD,
                                              // 7-cycle reset (research D4)
@@ -122,6 +130,7 @@ public:
     std::uint64_t masterCycle() const; // the sole time source
 
 private:
+    void applyMmc3Revision(); // resolve Auto/override onto the mapper
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

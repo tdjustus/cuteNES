@@ -47,6 +47,13 @@ struct CartridgeInfo {
 };
 
 LoadResult Machine::loadCartridge(const std::uint8_t* data, std::size_t size);
+
+// MMC3 revision selection (mapper 4 IRQ behavior). Auto: revision B, or A
+// when the NES 2.0 header sets submapper 4; explicit values override the
+// header. Applies to the loaded cartridge and to subsequent loads.
+enum class Mmc3Revision { Auto, B, A };
+void Machine::setMmc3Revision(Mmc3Revision revision);
+Mmc3Revision Machine::mmc3Revision() const;
 void       Machine::ejectCartridge();
 ```
 
