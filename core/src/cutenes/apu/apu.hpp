@@ -64,7 +64,12 @@ public:
     // for 4 cycles while it reads its next sample byte (task T037).
     bool dmcFetchPending() const override
     {
-        return m_dmc.enabled && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0;
+        // A fetch is only *due* once its DMA halt is scheduled: the load
+        // DMA halts on a get cycle during the 2nd APU cycle after the
+        // $4015 write; reload DMAs as soon as the buffer empties (nesdev
+        // wiki DMA). Before that the byte is not yet wanted.
+        return m_dmc.enabled && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0
+            && m_sched.now() >= m_dmcDueMaster;
     }
     std::uint16_t dmcFetchAddress() const override
     {
@@ -137,6 +142,7 @@ private:
     void clockLength(std::uint8_t& length, bool enabled);
     void clockDmcTimer();
     void dmcFetchByte();
+    std::uint64_t m_dmcDueMaster = 0; // earliest halt for the next fetch
     void advanceDmcAddress();
     void mixNativeSample();
     std::uint8_t statusRead();

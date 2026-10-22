@@ -354,11 +354,16 @@ std::uint8_t Cpu::rd(std::uint16_t addr)
     // A pending DMC fetch halts the CPU: ~3 stall cycles plus the clocked
     // memory read itself (task T037). Get-cycles here also stall sprite DMA.
     while (m_apu != nullptr && m_apu->dmcFetchPending()) {
-        tick();
-        tick();
-        tick();
+        // DMC DMA (nesdev wiki DMA): this halted read is the halt cycle,
+        // then a dummy cycle, an optional alignment to a get cycle, and
+        // the get — 3 or 4 cycles total. Get is the even CPU cycle, the
+        // same power-on alignment the OAM DMA engine uses.
+        tick(); // dummy
+        if ((m_sched.now() / 12) % 2 != 0) {
+            tick(); // align to get
+        }
         const std::uint16_t dmcAddr = m_apu->dmcFetchAddress();
-        const std::uint8_t byte = rawRead(dmcAddr);
+        const std::uint8_t byte = rawRead(dmcAddr); // the get
         m_apu->dmcDeliver(byte);
         break; // one fetch per halt
     }

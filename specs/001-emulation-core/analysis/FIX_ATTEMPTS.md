@@ -174,3 +174,26 @@ Conclusion: the 03/07 conflict is over the clear dot, not the CPU sample offset.
 
 - DMC timer without `/2` (`kDmcRates` used as-is): 8-dmc_rates fails rate 0.
 - DMC timer with `/2` and no `-1`: 8-dmc_rates fails rate 0 (period 1 APU cycle too long).
+
+## T037 WIP findings (2026-10-22, branch feat/t037-dma-alignment)
+
+Landed on the branch (gate 139/139 green):
+- OAM DMA rewritten as a cycle-accurate get/put state machine (nesdev wiki DMA):
+  DMC get preempts an OAM get; dummy/align overlap the OAM stream; OAM realigns
+  after (+2 common case, tail cases fall out of the loop).
+- Cpu::rd DMC stall is phase-aware: halt + dummy + optional align + get = 3/4
+  cycles (was a fixed 3 ticks + read).
+- The $4015 load fetch is no longer instantaneous: the load DMA is scheduled
+  +3 CPU cycles after the write (wiki: halt on a get cycle during the 2nd APU
+  cycle after the write). dmcFetchPending() is now due-time aware; serialized.
+  7-dmc_basics/8-dmc_rates semantics still pass (+4 cycles broke #19; +3 fits).
+
+Remaining (the actual sprdma blocker), from blargg's source (koute/pinky mirror):
+the ROM times code with a DMC TIMER — sync_dmc syncs to the DMC output cycle,
+end_dmc_timer measures elapsed mod 3424 by polling $4015 bit 4 after sample
+restarts. So the pass/fail depends on the bit-4 clear latency after a $4015
+restart (load-DMA halt+DMA cycles) at cycle accuracy, at rates $0F (432c/byte)
+and $00 (3424c/byte), across 16 alignments. Next step: model the bit-4 clear
+time as [write + halt latency + DMA duration] and iterate against the row table
+(currently still 3768/3767 alternating, i.e. the DMC contribution is constant);
+expected CRC $FBADA48D (screen CRC line is the ROM's own computed value).

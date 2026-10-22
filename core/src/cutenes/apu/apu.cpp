@@ -170,6 +170,7 @@ void Apu::saveState(StateWriter& w) const
     w.w(m_dmc.loop);
     w.w(m_dmc.rateIndex);
     w.w(m_dmc.timer);
+    w.w<std::uint64_t>(m_dmcDueMaster);
     w.w(m_dmc.addrReg);
     w.w(m_dmc.lenReg);
     w.w(m_dmc.currentAddr);
@@ -264,6 +265,7 @@ void Apu::loadState(StateReader& r)
     m_dmc.loop = r.get<std::uint8_t>() != 0;
     m_dmc.rateIndex = r.get<std::uint8_t>();
     m_dmc.timer = r.get<std::uint16_t>();
+    m_dmcDueMaster = r.get<std::uint64_t>();
     m_dmc.addrReg = r.get<std::uint16_t>();
     m_dmc.lenReg = r.get<std::uint16_t>();
     m_dmc.currentAddr = r.get<std::uint16_t>();
@@ -538,7 +540,9 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         m_dmc.enabled = dmcOn;
         m_dmcIrq = false;
         if (dmcOn && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0) {
-            dmcFetchByte();
+            // Load DMA (wiki DMA): the halt is scheduled for a get cycle
+            // during the 2nd APU cycle after this write — not immediate.
+            m_dmcDueMaster = m_sched.now() + 3 * m_profile.cpuDivisor;
         }
     } else if (addr == 0x4017) {
         m_frameMode5 = (value & 0x80) != 0;
@@ -731,6 +735,7 @@ void Apu::clockDmcTimer()
                 m_dmc.silence = false;
                 m_dmc.shiftReg = m_dmc.sampleBuffer;
                 m_dmc.bufferEmpty = true;
+                m_dmcDueMaster = m_sched.now(); // reload DMA halt
             }
         }
     } else {
