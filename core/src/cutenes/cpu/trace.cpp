@@ -228,11 +228,11 @@ std::string traceLine(const TracePoint& tp, Peek peek)
                 dis, ea, peek(ea));
             break;
         case Cpu::Mode::Izx:
-            std::snprintf(disValue, sizeof disValue, "%s @ %02X = %04X = %02X",
+            std::snprintf(disValue, sizeof disValue, "%.24s @ %02X = %04X = %02X",
                 dis, izxPtr(), ea, peek(ea));
             break;
         case Cpu::Mode::Izy:
-            std::snprintf(disValue, sizeof disValue, "%s = %04X @ %04X = %02X",
+            std::snprintf(disValue, sizeof disValue, "%.24s = %04X @ %04X = %02X",
                 dis, izyBase(), ea, peek(ea));
             break;
         default:

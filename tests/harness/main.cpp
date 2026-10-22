@@ -462,6 +462,9 @@ bool parsePlaytest(const std::string& text, std::vector<PlaytestEntry>& out,
     int lineNo = 0;
     PlaytestEntry* current = nullptr;
     while (std::getline(lines, line)) {
+        if (!line.empty() && line.back() == '\r') { // CRLF checkouts
+            line.pop_back();
+        }
         ++lineNo;
         const std::size_t hash = line.find('#');
         if (hash != std::string::npos) {
@@ -726,6 +729,9 @@ int cmdGolden(const char* listPath, const char* checkPath)
     std::string line;
     std::vector<std::string> out;
     while (std::getline(lines, line)) {
+        if (!line.empty() && line.back() == '\r') { // CRLF checkouts
+            line.pop_back();
+        }
         const std::size_t hash = line.find_first_not_of(" \t");
         if (hash == std::string::npos || line[hash] == '#') {
             continue;
