@@ -143,6 +143,10 @@ single value that makes all of its tests pass together.
   write + 3-cycle restart skew, IRQ from the write grid-quantized, wrap as its own
   period-end event, 5-step period 37281.5 CPU cycles. No known-failing ROMs remain.
 
+- **MMC3 IRQ resolved (T069):** revision B counter rule; the A12 delivery model
+  (sprite-fetch rise at dot 262, BG fetch phases) was already correct — only the
+  reload-clock assertion was missing. `4.Scanline_timing` and `6.MMC3_rev_B` gated.
+
 ## 6. Non-goals
 
 - DMA alignment details beyond the existing approximation (T037), except as needed

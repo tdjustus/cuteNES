@@ -95,3 +95,15 @@ rom ../roms/mmc3_irq_tests/3.A12_clocking.nes
 run 1500 none
 expect-text PASSED
 end
+
+entry mmc3-irq-4-scanline-timing
+rom ../roms/mmc3_irq_tests/4.Scanline_timing.nes
+run 1500 none
+expect-text PASSED
+end
+
+entry mmc3-irq-6-rev-b
+rom ../roms/mmc3_irq_tests/6.MMC3_rev_B.nes
+run 1500 none
+expect-text PASSED
+end

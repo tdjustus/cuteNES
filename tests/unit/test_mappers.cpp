@@ -280,9 +280,9 @@ TEST(Mmc3Irq, ZeroLatchAssertsEveryClockWhenEnabled)
     h.cart.cpuWrite(0xC000, 0);
     h.cart.cpuWrite(0xC001, 0);
     h.cart.cpuWrite(0xE001, 0);
-    h.cart.clockIrq();          // the $C001 reload itself does not assert
-    EXPECT_FALSE(h.cart.irqLine());
-    h.cart.clockIrq();          // counter is 0: reloads 0 and asserts
+    // Revision B: the reload clock itself asserts when the latch is 0
+    // (4-scanline_timing reload 0 = IRQ on the pre-render clock).
+    h.cart.clockIrq();
     EXPECT_TRUE(h.cart.irqLine());
     h.cart.cpuWrite(0xE000, 0); // acknowledge (also disables)
     h.cart.clockIrq();

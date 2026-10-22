@@ -83,6 +83,20 @@ The PPU analogue worked because PPU dots are 1/3 CPU cycle. Fixing 5-len require
 the sequencer scheduled in master ticks (L9) plus the frame-IRQ recalibration that
 L5/L6 showed is entangled with it. That is the remaining scoped task.
 
+## RESOLVED: T069 MMC3 scanline IRQ (2026-10-22)
+
+| # | Change | Result |
+|---|--------|--------|
+| M9 | Revision B counter rule (from M8): reload-or-decrement, then assert whenever the counter is 0 with IRQ enabled — including the $C001 reload clock with latch 0 | `4.Scanline_timing` and `6.MMC3_rev_B` PASS; 1/2/3 stay green; gated as playtest entries |
+
+Notes: the reload value in test 4 is the scanline count, and the first counter clock
+is the pre-render sprite-fetch A12 rise ("blargg scanline 0"), so reload 0 must assert
+on that very clock — the old rule waited one extra clock = one scanline late ("too
+late"). M8's earlier "test 6 still failed" result was read from a stale probe binary;
+with a freshly linked probe both ROMs pass. `5.MMC3_rev_A` fails by design: the core
+targets revision B (Mega Man 3 / SMB3); the two revision tests are mutually exclusive.
+The zero-latch unit test was updated to the revision B rule.
+
 ## RESOLVED: 5-len_timing — ALL known failures fixed (2026-10-21)
 
 Final model (completes L11):

@@ -198,7 +198,7 @@ independently testable increment. Paths follow plan.md's source tree.
 - [x] T063 [P] Write consumer documentation in `README.md` + `docs/core-usage.md`: CMake consumption (FetchContent + find_package), sink implementation example, save-state/SRAM handling, linking to contracts/
 - [x] T064 Clean cross-cutting warnings: `-Wconversion` clean, UBSan job clean, warnings-as-errors on all 3 toolchains (`.github/workflows/build.yml` + `core/CMakeLists.txt`)
 - [ ] T065 Final determinism audit: cross-platform golden-hash equality on all 3 CI OSes for the T028 baseline titles; tag `core-v0.1.0`
-- [ ] T069 Fix MMC3 scanline-IRQ timing so `mmc3_irq_tests/4.Scanline_timing` and `6.MMC3_rev_B` pass, and gate them (`expect-text` playtest entries exist for 1-3 already). Decision recorded: the core targets MMC3 revision B (Mega Man 3 / Super Mario Bros. 3 boards), so `5.MMC3_rev_A` fails by design and stays ungated. Counter rules are unit-tested; the remaining gap is A12 edge delivery timing from the PPU (same master-clock event approach that fixed the APU sequencer; see `analysis/FIX_ATTEMPTS.md` M7/M8 and `analysis/TIMING_MODEL.md`).
+- [x] T069 Fix MMC3 scanline-IRQ timing so `mmc3_irq_tests/4.Scanline_timing` and `6.MMC3_rev_B` pass, and gate them (`expect-text` playtest entries exist for 1-3 already). Decision recorded: the core targets MMC3 revision B (Mega Man 3 / Super Mario Bros. 3 boards), so `5.MMC3_rev_A` fails by design and stays ungated. Counter rules are unit-tested; the remaining gap is A12 edge delivery timing from the PPU (same master-clock event approach that fixed the APU sequencer; see `analysis/FIX_ATTEMPTS.md` M7/M8 and `analysis/TIMING_MODEL.md`).
 
 
 ---
