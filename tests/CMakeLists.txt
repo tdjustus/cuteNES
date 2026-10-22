@@ -62,17 +62,16 @@ set(TIER1_ROMS
     apu_test/rom_singles/4-jitter.nes
     apu_test/rom_singles/6-irq_flag_timing.nes
     apu_reset/4015_cleared.nes
-    apu_reset/irq_flag_cleared.nes)
-
-# Real hardware sub-test failures found by the standalone ROMs (not yet
-# fixed). Registered under the known-failing label, which CI excludes, so
-# they stay visible without blocking merges. Tracked in tasks.md (T068).
-set(KNOWN_FAILING_ROMS
+    apu_reset/irq_flag_cleared.nes
     ppu_vbl_nmi/rom_singles/03-vbl_clear_time.nes
-    apu_test/rom_singles/1-len_ctr.nes
-    apu_test/rom_singles/5-len_timing.nes
     apu_test/rom_singles/7-dmc_basics.nes
-    apu_test/rom_singles/8-dmc_rates.nes)
+    apu_test/rom_singles/8-dmc_rates.nes
+    apu_test/rom_singles/1-len_ctr.nes
+    apu_test/rom_singles/5-len_timing.nes)
+
+# All formerly known-failing ROMs have been fixed and promoted to tier 1
+# (see specs/001-emulation-core/analysis/FIX_ATTEMPTS.md).
+set(KNOWN_FAILING_ROMS)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/other/nestest.nes")
     add_test(NAME nestest-golden-log
         COMMAND rom_harness nestest
@@ -112,3 +111,9 @@ foreach(rom IN LISTS HM_ROMS)
         COMMAND rom_harness settle ${rom})
     set_tests_properties("tier2-${name}" PROPERTIES LABELS "tier2")
 endforeach()
+
+# Scripted game checks (T059/T046). Commercial titles in roms-local/ are
+# skipped, not failed, when absent.
+add_test(NAME playtest
+    COMMAND rom_harness playtest --list ${CMAKE_CURRENT_SOURCE_DIR}/playtest/playtest.txt)
+set_tests_properties(playtest PROPERTIES LABELS "playtest")

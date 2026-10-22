@@ -9,6 +9,7 @@
 #include "cutenes/cpu/cpu.hpp"
 
 #include "cutenes/serialize/save_state.hpp"
+#include "cutenes/system/timing.hpp"
 
 #include <array>
 #include <utility>
@@ -313,7 +314,7 @@ Cpu::Cpu(Bus& bus, Scheduler& scheduler, Tickable* ppu, Tickable* apu)
 
 void Cpu::tickHalf(bool /*phi2*/)
 {
-    m_sched.advanceMaster(m_sched.cpuCycleToMaster(1) / 2);
+    m_sched.advanceMaster(m_sched.cpuCycleToMaster(1) / timing::kCpuHalvesPerCycle);
     const std::uint64_t now = m_sched.now();
     if (m_ppu != nullptr) {
         m_ppu->runTo(now);

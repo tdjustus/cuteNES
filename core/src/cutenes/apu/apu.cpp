@@ -9,8 +9,10 @@
 #include "cutenes/apu/apu.hpp"
 
 #include "cutenes/serialize/save_state.hpp"
+#include "cutenes/system/timing.hpp"
 
 #include <cmath>
+#include <cstdlib>
 
 namespace cutenes {
 
@@ -183,7 +185,9 @@ void Apu::saveState(StateWriter& w) const
     w.w(m_dmcIrq);
     w.w<std::uint64_t>(m_frameIrqAt);
     w.w<std::uint64_t>(m_frameIrqAssertUntil);
-    w.w<std::uint64_t>(m_sequenceCycle);
+    w.w<std::uint64_t>(m_seqBaseMaster);
+    w.w<std::uint64_t>(m_seqClockBase);
+    w.w<std::uint8_t>(m_irqFiredThisPeriod ? 1 : 0);
     w.w<std::uint32_t>(m_sequenceStep);
     w.w<std::uint64_t>(m_apuCycles);
     w.w<std::uint64_t>(m_nextOutNum);
@@ -275,7 +279,9 @@ void Apu::loadState(StateReader& r)
     m_dmcIrq = r.get<std::uint8_t>() != 0;
     m_frameIrqAt = r.get<std::uint64_t>();
     m_frameIrqAssertUntil = r.get<std::uint64_t>();
-    m_sequenceCycle = r.get<std::uint64_t>();
+    m_seqBaseMaster = r.get<std::uint64_t>();
+    m_seqClockBase = r.get<std::uint64_t>();
+    m_irqFiredThisPeriod = r.get<std::uint8_t>() != 0;
     m_sequenceStep = r.get<std::uint32_t>();
     m_apuCycles = r.get<std::uint64_t>();
     m_nextOutNum = r.get<std::uint64_t>();
@@ -312,7 +318,7 @@ void Apu::reset(bool cold)
     m_frameIrqAt = 0;
     m_frameIrqAssertUntil = 0;
     m_dmcIrq = false;
-    m_sequenceCycle = 0;
+    m_seqBaseMaster = m_sched.now();
     m_sequenceStep = 0;
     m_native.clear();
     m_nextOutNum = 0;
@@ -368,7 +374,7 @@ std::uint8_t Apu::statusRead()
     // (6-irq_flag_timing test 4). Reads while not visible change nothing.
     if (frameVisible) {
         if (m_sched.now() < m_frameIrqAssertUntil) {
-            m_frameIrqAt = m_sched.now() + 6;
+            m_frameIrqAt = m_sched.now() + timing::kFrameIrqReassertTicks;
         } else {
             m_frameIrqAt = 0;
         }
@@ -436,6 +442,7 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
             m_pulse2.length =
                 m_pulse2.enabled ? kLengthTable[value >> 3] : 0;
             m_pulse2.envStart = true;
+            m_pulse2.dutyIndex = 0;
             break;
         }
     } else if (addr >= 0x4008 && addr <= 0x400B) { // triangle
@@ -479,6 +486,9 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
             m_dmc.irqEnabled = (value & 0x80) != 0;
             m_dmc.loop = (value & 0x40) != 0;
             m_dmc.rateIndex = value & 0x0F;
+            if (!m_dmc.irqEnabled) {
+                m_dmcIrq = false;
+            }
             break;
         case 1:
             m_dmc.deltaCounter = value & 0x7F;
@@ -491,10 +501,30 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
             break;
         }
     } else if (addr == 0x4015) {
-        m_pulse1.enabled = (value & 1) != 0;
-        m_pulse2.enabled = (value & 2) != 0;
-        m_triangle.enabled = (value & 4) != 0;
-        m_noise.enabled = (value & 8) != 0;
+        if (!(value & 1)) {
+            m_pulse1.enabled = false;
+            m_pulse1.length = 0;
+        } else {
+            m_pulse1.enabled = true;
+        }
+        if (!(value & 2)) {
+            m_pulse2.enabled = false;
+            m_pulse2.length = 0;
+        } else {
+            m_pulse2.enabled = true;
+        }
+        if (!(value & 4)) {
+            m_triangle.enabled = false;
+            m_triangle.length = 0;
+        } else {
+            m_triangle.enabled = true;
+        }
+        if (!(value & 8)) {
+            m_noise.enabled = false;
+            m_noise.length = 0;
+        } else {
+            m_noise.enabled = true;
+        }
         const bool dmcOn = (value & 0x10) != 0;
         if (!dmcOn) {
             m_dmc.bytesRemaining = 0;
@@ -503,9 +533,13 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
                 + m_dmc.addrReg * 64);
             m_dmc.bytesRemaining = static_cast<std::uint16_t>(
                 m_dmc.lenReg * 16 + 1);
+            m_dmc.bitsRemaining = 8;
         }
         m_dmc.enabled = dmcOn;
         m_dmcIrq = false;
+        if (dmcOn && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0) {
+            dmcFetchByte();
+        }
     } else if (addr == 0x4017) {
         m_frameMode5 = (value & 0x80) != 0;
         m_inhibitIrq = (value & 0x40) != 0;
@@ -513,7 +547,9 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
             m_frameIrqAt = 0;
             m_frameIrqAssertUntil = 0;
         }
-        m_sequenceCycle = 0;
+        m_seqBaseMaster = m_sched.now();
+        m_seqClockBase = m_seqBaseMaster + 3 * m_profile.cpuDivisor;
+        m_irqFiredThisPeriod = false;
         m_sequenceStep = 0;
         if (m_frameMode5) {
             // 5-step mode: the reset clocks quarter+half after ~3 cycles;
@@ -644,29 +680,6 @@ void Apu::halfFrame()
 
 // Frame-counter CPU-cycle steps: 4-step 7457/14913/22371/29829(+IRQ+reset),
 // 5-step 7457/14913/22371/29829/37281.
-static void sequencePoint(std::uint32_t step, bool mode5,
-    bool& quarter, bool& half, bool& irqReset)
-{
-    quarter = false;
-    half = false;
-    irqReset = false;
-    if (mode5) {
-        switch (step) {
-        case 1: case 3: quarter = true; break;
-        case 2: quarter = half = true; break;
-        case 4: break; // idle
-        case 5: quarter = half = irqReset = true; break;
-        default: break;
-        }
-    } else {
-        switch (step) {
-        case 1: case 3: quarter = true; break;
-        case 2: quarter = half = true; break;
-        case 4: quarter = half = irqReset = true; break;
-        default: break;
-        }
-    }
-}
 
 // --- DMC -----------------------------------------------------------------------------
 
@@ -699,8 +712,7 @@ void Apu::advanceDmcAddress()
 void Apu::clockDmcTimer()
 {
     if (m_dmc.timer == 0) {
-        m_dmc.timer = static_cast<std::uint16_t>(kDmcRates[m_dmc.rateIndex]
-            / 2); // APU cycles between output clocks
+        m_dmc.timer = static_cast<std::uint16_t>(kDmcRates[m_dmc.rateIndex] / 2 - 1);
         if (!m_dmc.silence) {
             if ((m_dmc.shiftReg & 1) != 0) {
                 m_dmc.deltaCounter = static_cast<std::uint8_t>(
@@ -783,51 +795,112 @@ void Apu::stepApuCycle()
     clockDmcTimer();
 
     mixNativeSample();
+}
 
-    m_sequenceCycle += 2;
-    // Frame-counter sequence checkpoints (CPU cycles: 2 per APU cycle).
-    static const std::uint64_t k4[4] = {7457, 14913, 22371, 29830};
-    static const std::uint64_t k5[5] = {7457, 14913, 22371, 29829, 37281};
-    const std::uint64_t next = m_sequenceStep < 4
-        ? (m_frameMode5 ? k5[m_sequenceStep] : k4[m_sequenceStep])
-        : 0;
-    if (m_sequenceCycle >= next && next != 0) {
-        ++m_sequenceStep;
-        bool quarter = false, half = false, irqReset = false;
-        sequencePoint(static_cast<std::uint32_t>(m_sequenceStep),
-            m_frameMode5, quarter, half, irqReset);
-        if (quarter) quarterFrame();
-        if (half) halfFrame();
-        if (irqReset) {
-            if (!m_inhibitIrq && !m_frameMode5) {
-                // The flag becomes visible one CPU cycle after the APU
-                // boundary (the hardware's odd/even parity, calibrated to
-                // blargg's windows: clear at 29830, set at 29831).
-                // Timestamp from THIS APU step (the scheduler may be far
-                // ahead after a bulk advance), then +2 CPU cycles for the
-                // flag's visibility parity.
-                const std::uint64_t stepMaster = (m_apuCycles + 1)
-                    * static_cast<std::uint64_t>(m_profile.cpuDivisor) * 2;
-                // Calibration (6-irq_flag_timing, mid-cycle read sampling):
-                // visible-from = fire + half a CPU cycle; condition active
-                // until fire + 2 CPU cycles; re-armed flag visible half a
-                // cycle after the clearing read.
-                m_frameIrqAt = stepMaster + 24;
-                m_frameIrqAssertUntil = m_frameIrqAt + 30;
-            }
-            m_sequenceCycle = 0;
-            m_sequenceStep = 0;
+// Frame-sequencer checkpoints fire at exact master times derived from the
+// sequence base (the $4017 write time), so odd CPU-cycle offsets are
+// reachable (TIMING_MODEL.md; the 5-len_timing window is 1 CPU cycle wide).
+// Clock events (quarter/half frames) per mode with their CPU-cycle offsets.
+// The IRQ flag set (mode 0, cycle 29830) is scheduled separately so the
+// restart skew cannot reorder the merged stream.
+namespace {
+struct SeqEvent {
+    std::uint16_t cpu;
+    bool quarter, half, wrap;
+};
+const SeqEvent kClocks0[4] = {
+    {7457, true, false, false},
+    {14913, true, true, false},
+    {22371, true, false, false},
+    {29829, true, true, true},
+};
+const SeqEvent kClocks5[4] = {
+    {7457, true, false, false},
+    {14913, true, true, false},
+    {22371, true, false, false},
+    {37281, true, true, true},
+};
+}
+
+std::uint64_t Apu::nextSequenceEvent() const
+{
+    std::uint64_t best = ~static_cast<std::uint64_t>(0);
+    if (m_sequenceStep < 4) {
+        const SeqEvent& e = m_frameMode5 ? kClocks5[m_sequenceStep]
+                                         : kClocks0[m_sequenceStep];
+        best = m_seqClockBase + e.cpu * m_profile.cpuDivisor;
+    }
+    const std::uint64_t period = (m_frameMode5 ? 37281u : 29830u)
+        * m_profile.cpuDivisor + (m_frameMode5 ? 6u : 0u);
+    if (!m_frameMode5 && !m_irqFiredThisPeriod) {
+        const std::uint64_t irq =
+            m_seqBaseMaster + 29830u * m_profile.cpuDivisor;
+        if (irq < best) {
+            best = irq;
         }
     }
+    // The period wraps at its end, AFTER the IRQ event, so a free-running
+    // sequencer (power-on, no write) keeps its IRQ.
+    if (m_sequenceStep == 4) {
+        const std::uint64_t wrapAt = m_seqBaseMaster + period;
+        if (wrapAt < best) {
+            best = wrapAt;
+        }
+    }
+    return best;
+}
+
+void Apu::fireSequenceEvent(std::uint64_t eventMaster)
+{
+    const std::uint64_t irqAt =
+        m_seqBaseMaster + 29830u * m_profile.cpuDivisor;
+    if (!m_frameMode5 && !m_irqFiredThisPeriod && eventMaster == irqAt) {
+        m_irqFiredThisPeriod = true;
+        if (!m_inhibitIrq) {
+            // The flag set quantizes up to the APU's cycle grid: a 1-cycle
+            // write shift flips which side of the grid a read lands on
+            // (4-jitter tests 4/5).
+            const std::uint64_t apuPeriod =
+                static_cast<std::uint64_t>(m_profile.cpuDivisor) * 2;
+            m_frameIrqAt =
+                (eventMaster + timing::kFrameIrqVisibleTicks + apuPeriod - 1)
+                / apuPeriod * apuPeriod;
+            m_frameIrqAssertUntil = m_frameIrqAt + timing::kFrameIrqAssertTicks;
+        }
+        return;
+    }
+    const std::uint64_t period = (m_frameMode5 ? 37281u : 29830u)
+        * m_profile.cpuDivisor + (m_frameMode5 ? 6u : 0u);
+    if (eventMaster == m_seqBaseMaster + period) {
+        // Period wrap: an event of its own, after the IRQ.
+        m_seqBaseMaster += period;
+        m_seqClockBase += period;
+        m_sequenceStep = 0;
+        m_irqFiredThisPeriod = false;
+        return;
+    }
+    const SeqEvent& e = m_frameMode5 ? kClocks5[m_sequenceStep]
+                                     : kClocks0[m_sequenceStep];
+    ++m_sequenceStep;
+    if (e.quarter) quarterFrame();
+    if (e.half) halfFrame();
 }
 
 void Apu::runTo(std::uint64_t masterClock)
 {
-    const std::uint64_t target =
-        masterClock / (m_profile.cpuDivisor * 2); // APU = CPU/2
-    while (m_apuCycles < target) {
-        stepApuCycle();
-        ++m_apuCycles;
+    const std::uint64_t apuPeriod =
+        static_cast<std::uint64_t>(m_profile.cpuDivisor) * 2; // APU = CPU/2
+    while (true) {
+        const std::uint64_t evt = nextSequenceEvent();
+        const std::uint64_t limit = evt < masterClock ? evt : masterClock;
+        while ((m_apuCycles + 1) * apuPeriod <= limit) {
+            stepApuCycle();
+            ++m_apuCycles;
+        }
+        if (evt > masterClock) {
+            break;
+        }
+        fireSequenceEvent(evt);
     }
 }
 

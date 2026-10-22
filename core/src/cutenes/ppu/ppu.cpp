@@ -10,6 +10,7 @@
 
 
 #include "cutenes/serialize/save_state.hpp"
+#include "cutenes/system/timing.hpp"
 
 #include "cutenes/cartridge/cart.hpp"
 
@@ -72,7 +73,7 @@ void Ppu::reset(bool /*cold*/)
     // Writes to $2000/$2001/$2005/$2006 are ignored for ~29658 CPU cycles
     // after reset (research.md D4).
     m_ignoreWritesUntil =
-        m_sched.now() + 29658ULL * m_profile.cpuDivisor;
+        m_sched.now() + timing::kPostResetWriteIgnoreCpuCycles * m_profile.cpuDivisor;
 }
 
 // --- Register file ---------------------------------------------------------
@@ -83,22 +84,23 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
     switch (addr) {
     case 0x2002:
         // Open-bus low 5 bits decay into the returned status byte.
-        value = static_cast<std::uint8_t>((m_status & 0xE0) | (m_decay & 0x1F));
+        value = static_cast<std::uint8_t>((m_statusLag & 0xE0) | (m_decay & 0x1F));
         // Race: reading at (or within a CPU clock of) the set dot returns
         // the flag clear and suppresses it for the rest of the frame
         // (nesdev PPU_registers; exercised by 02-vbl_set_time).
-        if (m_scanline == kVblankLine && m_dot <= 2) {
+        if (m_scanline == kVblankLine && m_dot <= timing::kVblRaceDotMax) {
             // Reading at the set dot: the flag reads clear; the phi2 sample
             // after this read sees the line low, so this cycle is covered.
             value &= static_cast<std::uint8_t>(~0x80);
         }
-        if (m_scanline == kVblankLine && m_dot >= 1 && m_dot <= 4) {
+        if (m_scanline == kVblankLine && m_dot >= timing::kNmiKillDotMin && m_dot <= timing::kNmiKillDotMax) {
             // Read within ~2 PPU clocks of the set: cancel this frame's NMI
             // even if a phi2 sample already latched the edge (rows 5-6).
             m_nmiKilled = true;
             m_status &= static_cast<std::uint8_t>(~0x80);
         }
         m_status &= static_cast<std::uint8_t>(~0x80); // reading clears VBlank
+        m_statusLag = m_status; // a read's side effects are visible to the next read
         m_w = 0;
         break;
     case 0x2004:
@@ -615,6 +617,7 @@ void Ppu::renderPixel(std::uint32_t x)
 
 void Ppu::stepDot()
 {
+    m_statusLag = m_status; // the read path sees the previous dot's status
     // Pre-render line uses index 261; wrap dot/scanline with the odd-frame
     // dot skip when rendering.
     if (m_scanline == kPreRenderLine && m_dot == 339 && m_oddFrame
@@ -689,13 +692,12 @@ void Ppu::stepDot()
     if (m_scanline == kVisibleLines - 1 && m_dot == 256) {
         m_frameComplete = true; // final visible pixel emitted (239,255)
     }
-    if (m_scanline == kVblankLine && m_dot == 1) {
+    if (m_scanline == kVblankLine && m_dot == timing::kVblSetDot) {
         m_status |= 0x80; // NMI line rises; the CPU samples at phi2
     }
-    if (m_scanline == kPreRenderLine && m_dot == 1) {
+    if (m_scanline == kPreRenderLine && m_dot == timing::kVblClearDot) {
         m_status &= static_cast<std::uint8_t>(~0xE0); // clear V/S0/O
         m_suppressSet = false;
-    m_nmiKilled = false;
         m_nmiKilled = false;
         m_oddFrame = !m_oddFrame;
     }
@@ -796,6 +798,7 @@ void Ppu::saveState(StateWriter& w) const
     w.w(m_ctrl);
     w.w(m_mask);
     w.w(m_status);
+    w.w(m_statusLag);
     w.w(m_v);
     w.w(m_t);
     w.w(m_fineX);
@@ -847,6 +850,7 @@ void Ppu::loadState(StateReader& r)
     m_ctrl = r.get<std::uint8_t>();
     m_mask = r.get<std::uint8_t>();
     m_status = r.get<std::uint8_t>();
+    m_statusLag = r.get<std::uint8_t>();
     m_v = r.get<std::uint16_t>();
     m_t = r.get<std::uint16_t>();
     m_fineX = r.get<std::uint8_t>();

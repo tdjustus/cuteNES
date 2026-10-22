@@ -146,3 +146,18 @@ one-to-one, which is how the contract stays enforceable in review.
 
 No constitution violations to justify — no violations were identified in
 either constitution check. Table intentionally empty.
+
+## UI Architecture (Future)
+
+An embeddable Qt 6 emulation view is planned for future implementation. See [ui-embeddable-design.md](ui-embeddable-design.md) for:
+- Embeddable `EmulationView` widget design with strict core/UI separation
+- Hardware-accelerated rendering (OpenGL) with raster fallback
+- QtMultimedia audio integration via `IAudioSink`
+- Flexible input mapping for keyboard/gamepad
+- Library-first architecture (`cutenes-qt`) with find_package support
+- Multiple instance support and DPI awareness
+
+The UI layer will consume only the public core API, maintaining compliance with Constitution Principle II.
+
+### Debugging Support
+- Add `Machine::dumpMemory()` to write timestamped `.dmp` files to a debug directory with memory snapshots for analysis.

@@ -119,6 +119,10 @@ private:
 
     // Register file + scroll latches.
     std::uint8_t m_ctrl = 0, m_mask = 0, m_status = 0;
+    // $2002 bit 7 as of the previous dot: the read path observes the
+    // VBL flag one dot behind the live level the NMI sees (03-vbl_clear_time
+    // vs 07-nmi_on_timing; timing.hpp item 3/4).
+    std::uint8_t m_statusLag = 0;
     std::uint16_t m_v = 0, m_t = 0;
     std::uint8_t m_fineX = 0, m_w = 0, m_readBuffer = 0;
     std::uint8_t m_decay = 0; // open-bus latch for $2002 low bits

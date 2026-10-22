@@ -128,6 +128,8 @@ private:
     };
 
     void stepApuCycle();
+    std::uint64_t nextSequenceEvent() const;
+    void fireSequenceEvent(std::uint64_t eventMaster);
     void quarterFrame();
     void halfFrame();
     void clockEnvelope(Pulse& p);
@@ -156,7 +158,10 @@ private:
     // condition-active-until (half-cycle parity + read re-assert).
     std::uint64_t m_frameIrqAt = 0;
     std::uint64_t m_frameIrqAssertUntil = 0;
-    std::uint64_t m_sequenceCycle = 0; // CPU cycles since sequence start
+    std::uint64_t m_seqBaseMaster = 0; // master time of the sequence base
+    // Clock-event base: carries the one-time 3-cycle restart skew.
+    std::uint64_t m_seqClockBase = 0;
+    bool m_irqFiredThisPeriod = false;
     std::uint32_t m_sequenceStep = 0;
 
     std::uint64_t m_apuCycles = 0;
