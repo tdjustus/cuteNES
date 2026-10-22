@@ -1,7 +1,7 @@
 // MMC3 (mapper 4) — task T056.
 //
-// PRG: 8K windows — $8000 = R6 or R7 by mode bit 6, $A000 = R7, $C000 =
-// the other of R6/R7. CHR: 2Kx4 or 1Kx8 by mode bit 7. A12-rise IRQ
+// PRG: 8K windows — $8000/$C000 = R6 and second-last swapped by mode bit 6,
+// $A000 = R7, $E000 = last bank (fixed). CHR: 2Kx4 or 1Kx8 by mode bit 7. A12-rise IRQ
 // clocking (PPU-driven); IRQ counter with reload/enable/acknowledge.
 // Battery WRAM with protect bit.
 
@@ -37,13 +37,20 @@ public:
             return static_cast<std::size_t>(mPrg[reg])
                 & (banks > 0 ? banks - 1 : 0);
         };
+        // PRG mode (bit 6): 0 => $8000=R6, $C000=second-last;
+        // 1 => $8000=second-last, $C000=R6. $A000=R7; $E000=last (fixed).
+        const bool mode1 = (mBankMode & 0x40) != 0;
+        const std::size_t last = banks > 0 ? banks - 1 : 0;
+        const std::size_t second = banks > 1 ? banks - 2 : 0;
         std::size_t bank;
         if (addr < 0xA000) {
-            bank = (mBankMode & 0x40) == 0 ? bankOf(0) : bankOf(1);
+            bank = mode1 ? second : bankOf(0);
         } else if (addr < 0xC000) {
             bank = bankOf(1);
+        } else if (addr < 0xE000) {
+            bank = mode1 ? bankOf(0) : second;
         } else {
-            bank = (mBankMode & 0x40) == 0 ? bankOf(1) : bankOf(0);
+            bank = last;
         }
         return m_cart.prg[(bank * 0x2000 + (addr & 0x1FFF))
             % m_cart.prg.size()];
@@ -63,13 +70,14 @@ public:
             if (even) {
                 mBankMode = value;
             } else {
+                // The register index comes from the earlier $8000 write.
                 const std::uint8_t reg = static_cast<std::uint8_t>(
-                    value & 7);
+                    mBankMode & 7);
                 if (reg < 6) {
                     mChr[reg] = value;
                 } else {
                     mPrg[reg - 6] = static_cast<std::uint8_t>(
-                        value & 0x0F);
+                        value & 0x3F);
                 }
             }
             break;

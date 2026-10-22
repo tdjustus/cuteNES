@@ -147,3 +147,147 @@ TEST(Mmc1, ControlBitsSelectVerticalOrHorizontalMirroring)
     h.serialWrite(0x8000, 0x03);
     EXPECT_EQ(h.cart.mirroring(), cutenes::Mirroring::Horizontal);
 }
+
+// --- MMC3 PRG banking ---------------------------------------------------------
+
+namespace {
+
+// MMC3 board: 256 KiB PRG (32 x 8K, each bank's first byte = its index),
+// 8 KiB CHR.
+std::vector<std::uint8_t> makeMmc3Rom()
+{
+    std::vector<std::uint8_t> rom{
+        'N', 'E', 'S', 0x1A, 16, 1,
+        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    const std::size_t prgSize = 32 * 8192;
+    const std::size_t chrSize = 8192;
+    rom.resize(16 + prgSize + chrSize, 0);
+    for (std::size_t bank = 0; bank < 32; ++bank) {
+        rom[16 + bank * 8192] = static_cast<std::uint8_t>(bank);
+    }
+    return rom;
+}
+
+struct Mmc3Harness {
+    std::vector<std::uint8_t> rom = makeMmc3Rom();
+    cutenes::Cartridge cart;
+
+    Mmc3Harness()
+    {
+        const auto result = cutenes::Cartridge::load(rom.data(), rom.size(), cart);
+        EXPECT_EQ(result.error, cutenes::LoadError::Ok);
+    }
+
+    void select(std::uint8_t reg, std::uint8_t data)
+    {
+        cart.cpuWrite(0x8000, reg);
+        cart.cpuWrite(0x8001, data);
+    }
+
+    std::uint8_t prgAt(std::uint16_t addr) { return cart.cpuRead(addr); }
+};
+
+} // namespace
+
+TEST(Mmc3, ModeZeroFixesSecondLastAndLastBanks)
+{
+    Mmc3Harness h;
+    h.select(6, 5);
+    h.select(7, 9);
+    EXPECT_EQ(h.prgAt(0x8000), 5) << "$8000 = R6";
+    EXPECT_EQ(h.prgAt(0xA000), 9) << "$A000 = R7";
+    EXPECT_EQ(h.prgAt(0xC000), 30) << "$C000 = second-last (fixed)";
+    EXPECT_EQ(h.prgAt(0xE000), 31) << "$E000 = last (fixed)";
+}
+
+TEST(Mmc3, ModeOneSwapsFirstAndThirdWindows)
+{
+    Mmc3Harness h;
+    h.cart.cpuWrite(0x8000, 0x40 | 6);
+    h.cart.cpuWrite(0x8001, 5);
+    EXPECT_EQ(h.prgAt(0x8000), 30) << "$8000 = second-last in mode 1";
+    EXPECT_EQ(h.prgAt(0xC000), 5) << "$C000 = R6 in mode 1";
+    EXPECT_EQ(h.prgAt(0xE000), 31);
+}
+
+TEST(Mmc3, DataWriteUsesRegisterIndexFromBankSelect)
+{
+    Mmc3Harness h;
+    // Data byte 7 must not select R7: the register is the last $8000 write.
+    h.cart.cpuWrite(0x8000, 6);
+    h.cart.cpuWrite(0x8001, 7);
+    EXPECT_EQ(h.prgAt(0x8000), 7) << "R6 should hold the data";
+    EXPECT_EQ(h.prgAt(0xA000), 31) << "R7 must be untouched";
+}
+
+TEST(Mmc3, PrgRegisterKeepsSixBits)
+{
+    Mmc3Harness h;
+    // 0x35 = bits 0-5 are 53; on a 32-bank ROM that is bank 21. Masking to
+    // four bits would give bank 5.
+    h.select(6, 0x35);
+    EXPECT_EQ(h.prgAt(0x8000), 21);
+}
+
+// --- MMC3 scanline IRQ -----------------------------------------------------------
+
+TEST(Mmc3Irq, FiresOnTheClockAfterTheLatchCountsDown)
+{
+    Mmc3Harness h;
+    h.cart.cpuWrite(0xC000, 3); // latch
+    h.cart.cpuWrite(0xC001, 0); // reload on next clock
+    h.cart.cpuWrite(0xE001, 0); // enable
+    h.cart.clockIrq();          // reload: counter = 3
+    h.cart.clockIrq();          // 2
+    h.cart.clockIrq();          // 1
+    EXPECT_FALSE(h.cart.irqLine()) << "fired before the counter reached 0";
+    h.cart.clockIrq();          // 0 -> assert
+    EXPECT_TRUE(h.cart.irqLine());
+}
+
+TEST(Mmc3Irq, DisableAcknowledgesAndBlocksFurtherAssertion)
+{
+    Mmc3Harness h;
+    h.cart.cpuWrite(0xC000, 1);
+    h.cart.cpuWrite(0xC001, 0);
+    h.cart.cpuWrite(0xE001, 0);
+    h.cart.clockIrq();
+    h.cart.clockIrq();
+    h.cart.clockIrq();          // counter hits 0 and asserts
+    ASSERT_TRUE(h.cart.irqLine());
+    h.cart.cpuWrite(0xE000, 0); // disable: acknowledges
+    EXPECT_FALSE(h.cart.irqLine());
+    h.cart.cpuWrite(0xC001, 0);
+    h.cart.clockIrq();
+    h.cart.clockIrq();
+    EXPECT_FALSE(h.cart.irqLine()) << "asserted while disabled";
+}
+
+TEST(Mmc3Irq, EnableAloneDoesNotAssertUntilCounterReachesZero)
+{
+    Mmc3Harness h;
+    h.cart.cpuWrite(0xC000, 5);
+    h.cart.cpuWrite(0xC001, 0);
+    h.cart.cpuWrite(0xE001, 0);
+    EXPECT_FALSE(h.cart.irqLine());
+    h.cart.clockIrq();
+    EXPECT_FALSE(h.cart.irqLine());
+}
+
+TEST(Mmc3Irq, ZeroLatchAssertsEveryClockWhenEnabled)
+{
+    Mmc3Harness h;
+    h.cart.cpuWrite(0xC000, 0);
+    h.cart.cpuWrite(0xC001, 0);
+    h.cart.cpuWrite(0xE001, 0);
+    h.cart.clockIrq();          // the $C001 reload itself does not assert
+    EXPECT_FALSE(h.cart.irqLine());
+    h.cart.clockIrq();          // counter is 0: reloads 0 and asserts
+    EXPECT_TRUE(h.cart.irqLine());
+    h.cart.cpuWrite(0xE000, 0); // acknowledge (also disables)
+    h.cart.clockIrq();
+    EXPECT_FALSE(h.cart.irqLine()) << "disabled: no assertion";
+    h.cart.cpuWrite(0xE001, 0); // re-enable
+    h.cart.clockIrq();          // counter 0 again: asserts once more
+    EXPECT_TRUE(h.cart.irqLine());
+}
