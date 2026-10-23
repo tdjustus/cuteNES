@@ -332,3 +332,31 @@ away from hardware's. This is a sync-exit phase issue (which iteration of the
 RustyNES's sync-exit iteration boundary (its $4015-write timing inside @sync)
 and align our load-DMA completion so the exit iteration matches; then verify
 row 0 = 527 and the drift reproduces rows 1-15.
+
+## T037 session 6 (2026-10-22): sync-exit divergence root-caused
+
+Side-by-side write traces (sta $4015/$4014 with cycle stamps; reference via
+sprdma_writes bin, ours via instruction trace at the same ROM sites):
+- The post-sync delay calibration matches EXACTLY: [last $4015=$10 pair ->
+  $4014] gap = 3006 cycles in BOTH engines. The test machinery after sync is
+  aligned.
+- The reference's fine @sync loop runs ~7 iterations (writes 433 cycles
+  apart: e.g. 1228888..1231053) before exiting; OURS writes no $1F loop
+  writes at all near the DMA — our sync exits immediately.
+- Mechanism: each @sync iteration restarts a 1-byte sample and reads $4015
+  bit 4 ~7-9 cycles later. The loop continues while rem>0 (fetch not yet
+  done). Hardware's load DMA completes at ~write+10 — just PAST the read —
+  so the loop continues until 1-cycle/iteration drift (433 vs 432) walks the
+  completion under the read boundary (~7 iterations). Ours completes at
+  ~write+6-7 — BEFORE the read — so bit 4 reads clear on iteration one.
+- Consequence: our sync exits at a DMC-timer phase ~190 cycles away from
+  hardware's, which propagates to the coarse counter (~12 iterations = 192
+  cycles) and produces our ~3767 table vs the reference ~525.
+
+Next fix (precisely scoped): the load-DMA halt scheduling must include the
+write-cycle retry (Disch: a halt attempt landing on a CPU write cycle is
+delayed, not stolen; the sta $4015 write itself occupies the cycles where the
+halt would land) so that in this alignment the fetch completes ~3 cycles
+later (~write+10). Constraint to preserve: 7-dmc_basics #19 (whose read
+lands in a different alignment and passes with the current +3 due — the
+alignment dependence is exactly the write-retry effect).
