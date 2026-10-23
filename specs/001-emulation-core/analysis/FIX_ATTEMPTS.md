@@ -274,3 +274,25 @@ Searches run (all against the validated pipeline):
 3. (running) DFS with affine CRC composition: base 3650-3850, parity modes
    {alternating, none}, up to 3 segments with per-segment deltas {-3..+3}
    (captures the ±2 tail structure seen in the _512 table).
+
+## T037 session 5 (2026-10-22): search machinery corrected; magnitude question
+
+Two bugs found and fixed in the hypothesis search (the failures were ours, not
+the model's):
+1. aff_bytes composed byte steps in reverse order (old∘step instead of
+   step∘old) — single-byte tests passed because identity commutes.
+2. The parity term only modeled odd-high tables; real tables alternate with
+   even rows high (odd = base−1). Three parity modes now.
+After the fixes the machinery is fully validated: the chain reproduces our
+known _512 compare state (0x5064D644) byte-exactly, and the self-search
+recovers our own _512 table.
+
+Searches against the ROM constants (all with validated machinery):
+- 3 segments, base 3650-3850: 22.16M — no match (either ROM).
+- 4 segments, base 3650-3850: 681M — no match (main ROM).
+- (running) 3 segments, base 2400-4200: the magnitude assumption. The
+  end_dmc_timer primitive (coarse 16-cycle loop + fine 3423-cycle loop, mod
+  3424) need not produce values near our ~3767; hardware's base may sit
+  anywhere in the mod-3424 fold.
+Next escalations if empty: 4 segments wide-base, then free-delta
+meet-in-the-middle (affine inversion join, ~43M×43M per (base,mode)).
