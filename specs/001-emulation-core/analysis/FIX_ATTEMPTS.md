@@ -246,3 +246,31 @@ Root cause chain for the sprdma hang, now understood and fixed:
   end cases on the transition rows); (2) the write-slip 3-vs-4 rule for
   clean rows; (3) the tail cases in the OAM engine for boundaries near
   cycle 513.
+
+## T037 session 4 (2026-10-22): exact expected-value recovery machinery
+
+Goal: recover hardware's 16-row table without a reference emulator, by inverting
+the ROM's own check (expected CRC $FBADA48D, embedded in the ROM at $EE13).
+
+Validated pipeline (every step cross-checked against the ROM itself):
+- update_crc at $E78A (ON path via pha at $E78E), reset_crc at $E77B (seed
+  $FFFFFFFF). The shipped ROM differs from the pinky source: lsr/bcc (standard
+  reflected CRC-32, poly $EDB88320, no final XOR) instead of ror/bcs, and
+  print_crc ($E7BF) INVERTS each checksum byte before printing — the on-screen
+  "CRC" line is the complement of the compared value (our compare state
+  $0B1E4084 prints as F4E1BF7B).
+- Stream structure (4195 bytes at compare): 19-byte title + 16 x [label byte
+  $00-$0F, $8F, $FFx... 255x $83, 4 digit chars]. Verified: per-event zp state
+  matches zlib.crc32(stream)^$FFFFFFFF exactly at every one of 4196 events.
+- sprdma_and_dmc_dma_512: expected $F1A58F55; our table there ALREADY shows
+  non-monotonic tail structure (rows 8-14: -2 then +2), proving the DMA-tail
+  sub-cases are live in our engine but calibrated differently from hardware.
+
+Searches run (all against the validated pipeline):
+1. Contiguous collision run, deltas {0..-4}, base 3600-3850, 2 phases,
+   edge specials: 6.9M hypotheses — no match (machinery verified by finding
+   our own table).
+2. 3-segment step function, deltas {0..-4}: 9.6M — no match.
+3. (running) DFS with affine CRC composition: base 3650-3850, parity modes
+   {alternating, none}, up to 3 segments with per-segment deltas {-3..+3}
+   (captures the ±2 tail structure seen in the _512 table).
