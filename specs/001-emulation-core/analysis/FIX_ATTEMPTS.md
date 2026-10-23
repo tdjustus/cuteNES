@@ -296,3 +296,39 @@ Searches against the ROM constants (all with validated machinery):
   anywhere in the mod-3424 fold.
 Next escalations if empty: 4 segments wide-base, then free-delta
 meet-in-the-middle (affine inversion join, ~43M×43M per (base,mode)).
+
+## T037 BREAKTHROUGH (2026-10-22): reference tables recovered; the FBADA48D red herring
+
+Method (approved by the project owner; GPL compatibility analysis on record):
+RustyNES (GPL-3.0-or-later, passes both ROMs per its committed oracle) was used
+purely as a MEASUREMENT ORACLE — a 30-line bin built against its public API ran
+the vendored blargg ROMs and dumped nametable text + the update_crc byte stream.
+No RustyNES code enters this repository; values are facts. Rust toolchain:
+user-level rustup.
+
+REFERENCE TABLES (RustyNES, "Passed" on both):
+- sprdma_and_dmc_dma:      527 528 527 528 527 526 525 526 525 526 525 526 525 526 525 526
+- sprdma_and_dmc_dma_512:  525 526 525 526 524 525 526 527 527 528 526 527 527 528 527 528
+
+THE RED HERRING: the shipped ROM's check constant is 0x04525B72, NOT $FBADA48D.
+The full-run capture shows check_crc_ comparing zp = 04525B72 and PASSING;
+$FBADA48D sits at $EE13 but is not this build's compared value (the pinky
+source is a different build — its CRC routine also differs: ror/bcs vs the
+ROM's lsr/bcc). Every structured search (1.1B+ hypotheses) targeted the wrong
+constant; with 0x04525B72 the reference table's structure (base 525, 2
+segments, deltas +2/0, odd-high parity) is squarely inside the 3-digit search
+space and would have been found immediately.
+
+Stream facts (from the reference capture, cross-validated: the 4179-byte
+segment CRCs to 04525B72 and the ROM passes):
+- 16 iterations x 260 bytes: [label $00-$0F][0x8F][0x83 x255][3 digit chars]
+- Title 19 bytes; 3-digit values (reference magnitude ~525).
+
+THE REAL GAP: our engine measures ~3767 vs reference ~525. The value is
+256*coarse + fine; ours has coarse count ~12 iterations (192 cycles) different
+from the reference — our sync_dmc exit leaves the DMC timer phase ~190 cycles
+away from hardware's. This is a sync-exit phase issue (which iteration of the
+433-cycle fine loop exits), not a 1-2 cycle cost error. Next session: capture
+RustyNES's sync-exit iteration boundary (its $4015-write timing inside @sync)
+and align our load-DMA completion so the exit iteration matches; then verify
+row 0 = 527 and the drift reproduces rows 1-15.
