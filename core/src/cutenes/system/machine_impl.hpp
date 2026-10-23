@@ -124,8 +124,10 @@ struct ApuIoBridge final : CpuBusDevice {
                 }
                 continue;
             }
-            // Get cycle: the DMC takes priority over the OAM read.
-            if (apu->dmcFetchPending()) {
+            // Get cycle: the DMC takes priority over the OAM read. The
+            // halt-parity gate is CPU-path only; the steal happens at the
+            // next get cycle once the byte is wanted.
+            if (apu->dmcGetWanted()) {
                 dmcGetCycle();
                 continue;
             }
@@ -136,7 +138,7 @@ struct ApuIoBridge final : CpuBusDevice {
         }
         // A fetch that became pending in the final pairs extends past the
         // DMA: its dummy/align overlapped the tail, leaving the get owed.
-        if (apu->dmcFetchPending()) {
+        if (apu->dmcGetWanted()) {
             dmcGetCycle();
         }
     }

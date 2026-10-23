@@ -55,6 +55,9 @@ public:
     virtual bool consumeNmiKill() { return false; }
     // CPU-serviced DMC memory fetch (APU only; task T037).
     virtual bool dmcFetchPending() const { return false; }
+    // Same fetch without the CPU halt-parity gate: the OAM DMA engine
+    // steals the next get cycle once the byte is wanted (wiki overlap).
+    virtual bool dmcGetWanted() const { return false; }
     virtual std::uint16_t dmcFetchAddress() const { return 0; }
     virtual void dmcDeliver(std::uint8_t) {}
 };

@@ -74,6 +74,11 @@ public:
             && m_sched.now() >= m_dmcDueMaster
             && ((m_sched.now() / 12) % 2 == 1) == m_dmcHaltOnPut;
     }
+    bool dmcGetWanted() const override
+    {
+        return m_dmc.enabled && m_dmc.bufferEmpty
+            && m_dmc.bytesRemaining > 0 && m_sched.now() >= m_dmcDueMaster;
+    }
     std::uint16_t dmcFetchAddress() const override
     {
         return m_dmc.currentAddr;

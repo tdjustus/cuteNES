@@ -222,3 +222,27 @@ Root cause chain for the sprdma hang, now understood and fixed:
    phase exactly (the final iteration's load-DMA completion vs the `bit $4015`
    read at write+7..9), then the OAM collision cost (+2 common per wiki).
    Current computed CRC 8D018086, target FBADA48D.
+
+## T037 session 3 (2026-10-22): collisions firing
+
+- Bug found by measurement: the halt-parity gate made dmcFetchPending() false
+  exactly at the get cycles where the OAM engine checks it. Added
+  Tickable::dmcGetWanted() (same conditions minus the parity gate) for the OAM
+  steal; rd() keeps the gated pending.
+- Result: the table now varies — measured boundary offsets show the byte
+  boundary at DMA+375..381 for ~10 rows (collision, -2 via the overlap
+  discount) and DMA+3412..3424 for the rest (clean). CRC F4E1BF7B (target
+  FBADA48D). Gate 139/139.
+- Disch's forum rules (t=14120, retrieved via search) confirm the model and add
+  the write-slip nuance: a put-parity halt landing on a CPU write slips to the
+  next get cycle and the DMA costs 3, not 4 (RMW double-writes: 4 if it lands
+  on the 2nd write). Also: a DMC halt succeeds on any OAM DMA cycle, and a
+  dummy/align/OAM cycle must sit between halt and get.
+- Remaining calibration (next session): (1) the sync-exit phase — cycle-exact
+  accounting of the @sync exit iteration's load DMA (halt-on-get at +3/+4,
+  halt+dummy+get) versus the `bit $4015` read at write+7..9; a 1-2 cycle
+  difference rotates the collision set and shifts the boundary cluster
+  (currently mid-DMA at ~378; hardware likely exercises the DMA-tail +1/+3
+  end cases on the transition rows); (2) the write-slip 3-vs-4 rule for
+  clean rows; (3) the tail cases in the OAM engine for boundaries near
+  cycle 513.
