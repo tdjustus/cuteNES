@@ -321,8 +321,44 @@ void Cpu::tickHalf(bool /*phi2*/)
     }
     if (m_apu != nullptr) {
         m_apu->runTo(now);
+        // Per-cycle DMC DMA (task T037): the DMA unit is independent of the
+        // instruction stream — when a fetch comes due (buffer drained at a
+        // DMC tick during catch-up), it halts the CPU NOW and takes the bus:
+        // halt, dummy, optional align, get, charged as real cycles.
+        if (!m_inDmcDma && m_apu->dmcFetchPending()) {
+            m_inDmcDma = true;
+            serviceDmcDma();
+            m_inDmcDma = false;
+        }
     }
-    (void)0;
+}
+
+// The DMC DMA sequence: halt, dummy, optional align to a get cycle, get.
+// Called from tickHalf at the drain instant (per-cycle engine, T037).
+void Cpu::serviceDmcDma()
+{
+    advanceDmcCycle(); // halt cycle
+    advanceDmcCycle(); // dummy
+    if ((m_sched.now() / 12) % 2 != 0) {
+        advanceDmcCycle(); // align to a get cycle
+    }
+    const std::uint16_t dmcAddr = m_apu->dmcFetchAddress();
+    const std::uint8_t byte = rawRead(dmcAddr); // the get
+    m_apu->dmcDeliver(byte);
+}
+
+// One stalled CPU cycle of a DMC DMA: advance a full cycle with PPU/APU
+// catch-up, bypassing rd()/wr() (no bus access on halt/dummy/align).
+void Cpu::advanceDmcCycle()
+{
+    m_sched.advanceMaster(m_sched.cpuCycleToMaster(1));
+    const std::uint64_t now = m_sched.now();
+    if (m_ppu != nullptr) {
+        m_ppu->runTo(now);
+    }
+    if (m_apu != nullptr) {
+        m_apu->runTo(now);
+    }
 }
 
 void Cpu::sampleNmi()
@@ -353,21 +389,8 @@ std::uint8_t Cpu::rd(std::uint16_t addr)
     ++m_cycles;
     // A pending DMC fetch halts the CPU: ~3 stall cycles plus the clocked
     // memory read itself (task T037). Get-cycles here also stall sprite DMA.
-    while (m_apu != nullptr && m_apu->dmcFetchPending()) {
-        // DMC DMA (nesdev wiki DMA): halt cycle (the halted read repeats),
-        // then a dummy cycle, an optional alignment to a get cycle, and
-        // the get — 3 or 4 cycles total. Get is the even CPU cycle, the
-        // same power-on alignment the OAM DMA engine uses.
-        tick(); // halt cycle (the repeated read)
-        tick(); // dummy
-        if ((m_sched.now() / 12) % 2 != 0) {
-            tick(); // align to get
-        }
-        const std::uint16_t dmcAddr = m_apu->dmcFetchAddress();
-        const std::uint8_t byte = rawRead(dmcAddr); // the get
-        m_apu->dmcDeliver(byte);
-        break; // one fetch per halt
-    }
+    // DMC DMA service moved to tickHalf (per-cycle engine, task T037):
+    // fetches are served at the drain instant, not at the next read.
     // Pre-access NMI sample: the silicon edge detector is continuous, so
     // the line must be observed after catch-up but BEFORE a $2002 read
     // clears the flag — a tight poll loop otherwise never latches the

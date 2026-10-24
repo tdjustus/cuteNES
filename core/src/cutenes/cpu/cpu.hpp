@@ -72,6 +72,9 @@ private:
     std::uint8_t rd(std::uint16_t addr);
     void wr(std::uint16_t addr, std::uint8_t value);
     void tickHalf(bool phi2);
+    void advanceDmcCycle(); // one stalled CPU cycle of a DMC DMA
+    void serviceDmcDma(); // halt/dummy/[align]/get at the drain instant
+    bool m_inDmcDma = false; // re-entrancy guard
     std::uint8_t rawRead(std::uint16_t addr); // clocked read, no DMC re-entry
     void sampleNmi();
     void tick() { tickHalf(false); tickHalf(false); sampleNmi(); }

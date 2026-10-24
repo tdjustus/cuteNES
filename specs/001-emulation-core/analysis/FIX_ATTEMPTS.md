@@ -597,3 +597,22 @@ per-cycle engine delivers at ~+1. Matching requires the reload fetch to be
 served from the drain instant with proper per-cycle accounting (the unified
 per-cycle DMA engine — the same conclusion as session 11's reconciliation,
 now at ±1 cycle scale instead of ±433).
+
+## T037 session 16 (2026-10-24): per-cycle DMC DMA engine — HALF the rows exact
+
+Implemented: the DMC DMA now fires from tickHalf at the drain instant
+(Cpu::serviceDmcDma: halt, dummy, [align], get as real cycles; re-entrancy
+guard m_inDmcDma; the old rd()-based service removed). All 139 tests green.
+
+sprdma tables vs reference:
+- main: ours [?]528 528 528 528 528 | 526 526 526 526 526 526 526 526 526 526
+        ref 527 528 527 528 527 | 526 525 526 525 526 525 526 525 526 525 526
+  rows 1,3 and all tail-odd rows EXACT; rows 0,2,4 and tail-even rows +1.
+- _512: similar — flat 526/528 vs ref's alternating 525/526/527/528.
+Residue: a pure ROW-PARITY 1-cycle offset — ours is flat where hardware
+alternates. Cause candidate: the exit-state quantization now lands at a
+fixed drain-rel per row; hardware's alternates (the fine loop's 433-cycle
+iteration vs the 432 grid leaves a ±0.5 remainder that flips per row).
+Next: inspect our per-row exit drain-rel (expect constant; hardware
+alternates between two adjacent values) — likely the halt parity gate
+(reloads halt on put only) quantizing our exits onto one phase.
