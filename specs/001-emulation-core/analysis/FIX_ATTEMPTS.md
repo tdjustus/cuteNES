@@ -398,3 +398,29 @@ bit4-clear timing after the very first $4015 enable at boot, then walk
 forward iteration by iteration. Tools are in place: /tmp/our_writes (pc-site
 tracer, correct sites), /tmp/rustynes target/release/sprdma_writes (same for
 the reference), /tmp/flow_ours (instruction-stream window dump).
+
+## T037 session 8 (2026-10-23): bit-4 timelines — first divergence localized
+
+Tooling: sprdma_bit4 bin (reference; `bit $4015` sites + post-instruction Z
+flag) and a temporary statusRead hook (ours; removed after capture). Both
+timelines record (cycle, bit4) for every $4015 poll; runs separated by >20c.
+
+Result (offset-corrected, ours=ref+5 from boot):
+- Run 0 = sync_dmc_fast poll: reference exits (bit4 clear) after 57 polls
+  (1228476); ours after 95 (1228747) — 266 cycles longer, 38 extra polls.
+- Runs 1-5 (fine @sync): identical decisions (set), delta constant 266.
+- Run 6 = the fine-loop exit race: reference reads CLEAR (exits); ours reads
+  SET (continues) — ours takes 14 iterations total vs 6.
+- Run 12+ (coarse): the 266-cycle phase error compounds to ~13.8k cycles.
+
+Conclusion: the ONLY upstream divergence is the DMC timer phase at sync
+entry. No DMC activity occurs during boot (no bit4 reads between the boot
+enable at ~103770 and 1228080), so the free-running DMC output-unit timer
+accumulated a 266-cycle (532 APU-cycle) phase difference silently since
+power-on. Next: compare the DMC timer counter value in both engines at the
+$4010=$0F rate write (~1228055) — candidates: whether the timer free-runs
+while idle (ours: yes, clockDmcTimer is unconditional), the rate-write
+effect on the current counter, and APU-cycle accounting during the boot
+delay's DMC stalls (the boot $4015=$00 at ~103770 clears rem but the DMC was
+never started — no stalls — so the phase difference must originate in the
+idle-timer model itself).
