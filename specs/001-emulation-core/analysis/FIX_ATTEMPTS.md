@@ -736,3 +736,18 @@ phase. Candidate: serve the reload fetch from the drain instant without
 the boundary wait (the drain IS a whole-cycle event in the APU clock —
 the gate's boundary check may be redundant for reloads and cost the extra
 cycle). Verify against rows 1-15 (must stay exact) and 7-dmc_basics.
+
+Session 20 (2026-10-24): reload boundary-bypass tested and reverted — the
+deliver latency is the SPAN, not the wait. Deliver remains drain+5 (halt+
+dummy+align+get). Hardware's same-cycle refill (their consume trace shows
+full_after=1 AT the consume cycle) implies the fetch completes BEFORE the
+consume edge exposes it — i.e., the reference model arms and performs the
+reload fetch while the last byte is still playing (needs_dma is level-
+held, the per-cycle engine opportunistically serves it during the tail of
+the byte period, overlapping the sync loop's own cycles). Modeling THAT
+is the true row-0 fix: the reload fetch must be servicable BEFORE the
+buffer drains (arm on rem>0 + buffer-will-drain, serve during the tail),
+not after. That is a semantic change to dmcFetchPending (arm earlier,
+serve when the shifter takes the last bit). SCOPED for the next session;
+all guardrails in place (rows 1-15 exact must be preserved; 7-dmc_basics;
+139 gate).
