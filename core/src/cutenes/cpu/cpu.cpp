@@ -340,9 +340,8 @@ void Cpu::serviceDmcDma()
 {
     advanceDmcCycle(); // halt cycle
     advanceDmcCycle(); // dummy
-    if ((m_sched.now() / 12) % 2 != 0) {
-        advanceDmcCycle(); // align to a get cycle
-    }
+    advanceDmcCycle(); // align (constant 4-cycle span: the blargg fine-sync
+                       // loop counts a fixed 4-cycle DMC DMA per iteration)
     const std::uint16_t dmcAddr = m_apu->dmcFetchAddress();
     const std::uint8_t byte = rawRead(dmcAddr); // the get
     m_apu->dmcDeliver(byte);

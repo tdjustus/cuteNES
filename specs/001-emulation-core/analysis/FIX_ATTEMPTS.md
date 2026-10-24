@@ -643,3 +643,18 @@ the poll read's sampling of $4015 bit 4 across DMA-halted cycles (the
 repeated-read semantics) or the fine loop's own drift arithmetic. The sync
 machinery is DONE; the remaining work is one quantization detail in the
 measurement loop, not the DMA engine.
+
+Session 17 addendum — the shape is solved:
+- Constant 4-cycle DMC DMA span (serviceDmcDma always halt+dummy+align+get;
+  the blargg source's fine-sync comment counts a fixed 4-cycle DMA per
+  iteration) makes our alternation EXACTLY hardware's: ours
+  528 529 528 529 528 | 527 526 527 526... vs ref 527 528 527 528 527 |
+  526 525 526 525... — identical pattern, every row +1.
+- due=+4 rejected (breaks 7-dmc_basics #19; the whole-cycle gate quantizes
+  the due offset away anyway).
+REMAINING: one global 1-cycle shift. The exit drain-rel is +5 (ours) vs
++13/+14 (hardware) — a constant, normalized offset that nonetheless lands
+the final measured value 1 cycle high. Next: the end_dmc_timer COARSE loop
+(ldy #-$45; 16-cycle iterations) — its exit boundary is where the +1
+enters; check our coarse iteration length and the poll read position vs
+the reference's (their 155-poll run vs ours).
