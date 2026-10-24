@@ -360,8 +360,9 @@ std::uint8_t Cpu::rd(std::uint16_t addr)
         // same power-on alignment the OAM DMA engine uses.
         tick(); // halt cycle (the repeated read)
         tick(); // dummy
-        if ((m_sched.now() / 12) % 2 != 0) {
-            tick(); // align to get
+        if (m_apu->dmcHaltOnPutForAlign()
+            && (m_sched.now() / 12) % 2 != 0) {
+            tick(); // align to get (reload DMAs only; loads span 3)
         }
         const std::uint16_t dmcAddr = m_apu->dmcFetchAddress();
         const std::uint8_t byte = rawRead(dmcAddr); // the get

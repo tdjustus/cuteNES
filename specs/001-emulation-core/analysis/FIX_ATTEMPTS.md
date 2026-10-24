@@ -424,3 +424,28 @@ effect on the current counter, and APU-cycle accounting during the boot
 delay's DMC stalls (the boot $4015=$00 at ~103770 clears rem but the DMC was
 never started — no stalls — so the phase difference must originate in the
 idle-timer model itself).
+
+## T037 session 9 (2026-10-23): load-DMA entry model corrected; reload chain isolated
+
+Landed (all tests green, 139/139):
+- Load DMAs no longer parity-gated: a load refused by the triggering write
+  enters on the next READ cycle whichever half it is (wiki DMA / Disch
+  t=14120). Reloads keep the put-parity halt gate.
+- Load DMAs skip the alignment cycle (span 3: halt, dummy, get); reloads
+  keep span 4. Exposed via Tickable::dmcHaltOnPutForAlign().
+- Table shifted one row (collision boundary moved) — the fixes are real but
+  the decisive poll (run 6) still reads SET in ours vs CLEAR in reference.
+
+Remaining gap, now isolated to the RELOAD chain: after the output unit's
+byte-boundary wrap (bufferEmpty), ours takes ~8 cycles longer than the
+reference to bring rem to 0 (fine-loop exit 14 vs 6 iterations = 8 cycles of
+drift). Candidates, in order:
+1. Our reload service can only start at an rd() of the poll (up to 7 cycles
+   after the wrap; put-parity gate can add up to 14). The reference halts on
+   the scheduled put CYCLE (cycle-level, not read-level, entry for the halt
+   attempt — read-level only for the write-refusal case).
+2. Their reload arm has a +1-cycle promotion (pending_dmc_dma_next) and a
+   "cannot run within 2 cycles of a previous GET" exclusion — ours has
+   neither; net length differences of a few cycles each.
+3. The 266-cycle initial fast-sync phase (run 0) is absorbed by the sync and
+   NOT the blocker; run 6 is.

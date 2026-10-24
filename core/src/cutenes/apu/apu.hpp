@@ -68,11 +68,14 @@ public:
         // DMA halts on a get cycle during the 2nd APU cycle after the
         // $4015 write; reload DMAs as soon as the buffer empties (nesdev
         // wiki DMA). Before that the byte is not yet wanted.
-        // The halt is scheduled on a specific cycle parity: reload DMAs
-        // halt on put cycles, load DMAs on get cycles (nesdev wiki DMA).
+        // Reload DMAs halt on put cycles (parity-gated). A load DMA
+        // refused by the triggering write enters on the next READ cycle
+        // whichever half it is (nesdev wiki DMA; Disch t=14120) — no
+        // parity gate.
         return m_dmc.enabled && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0
             && m_sched.now() >= m_dmcDueMaster
-            && ((m_sched.now() / 12) % 2 == 1) == m_dmcHaltOnPut;
+            && (!m_dmcHaltOnPut
+                || ((m_sched.now() / 12) % 2 == 1));
     }
     bool dmcGetWanted() const override
     {
@@ -83,6 +86,9 @@ public:
     {
         return m_dmc.currentAddr;
     }
+    // True when the pending fetch is a reload DMA (parity-gated halt,
+    // alignment cycle in the CPU stall). Loads enter on the first read.
+    bool dmcHaltOnPutForAlign() const override { return m_dmcHaltOnPut; }
     void dmcDeliver(std::uint8_t byte) override
     {
         m_dmc.sampleBuffer = byte;
