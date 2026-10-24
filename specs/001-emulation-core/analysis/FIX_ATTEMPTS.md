@@ -774,3 +774,26 @@ different relative to the DMC grid, which the 16-cycle coarse loop
 quantizes onto a different bucket. Fresh-eyes comparison of the ENTIRE
 boot-to-first-END-pair event chain against the reference (both probe
 suites are in place) is the recommended next step.
+
+## T037 session 22 (2026-10-24): boot chain diffed; row-0 residue = boot APU phase
+
+Full boot-to-row-0 event diff (ours vs reference), findings:
+- exit->$10-pair gap: +53 cycles in BOTH engines (the code path matches).
+- $4010 rate write: both engines carry over the countdown (no reset) —
+  semantics verified against the reference source (write_ctrl touches
+  timer_period only).
+- Power-on DMC state: both initialize timer=0, bits_remaining=0.
+- REMAINING: the APU-vs-master-clock phase at boot. Ours: Apu::runTo
+  advances to floor(master/(cpuDiv*2)) — the APU's step boundary lags the
+  reference's end-of-CPU-cycle tick by up to one APU cycle. This half-cycle
+  semantic shifts the whole DMC grid by ~1-2 CPU cycles, changing the first
+  fine-sync's iteration count (ours 3 vs ref 6 — the same normalized exit,
+  but the subsequent rate-switch lands on a different wrap: pair+2996 vs
+  +3000). Later rows resync (exact 15/15); only row 0 carries the boot
+  phase.
+- Next: align the APU step boundary to end-of-CPU-cycle semantics (advance
+  the APU to ceil or restructure runTo's target by one APU cycle) and check
+  row 0 + the full gate. This is sub-cycle scheduling work — the same class
+  as the frame-IRQ quantization already in the codebase.
+Also this session: committed inert session-20 backdate remnant removed
+(gate-verified 139/139 before commit).
