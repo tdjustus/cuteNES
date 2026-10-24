@@ -77,6 +77,8 @@ public:
             && (!m_dmcHaltOnPut
                 || ((m_sched.now() / 12) % 2 == 1));
     }
+    // True when the pending fetch is a reload (4-cycle span); loads span 3.
+    bool dmcIsReloadFetch() const override { return m_dmcHaltOnPut; }
     bool dmcGetWanted() const override
     {
         return m_dmc.enabled && m_dmc.bufferEmpty

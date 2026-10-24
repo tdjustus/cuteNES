@@ -548,7 +548,10 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
             // Load DMA (wiki DMA): the halt is scheduled for a get cycle
             // during the 2nd APU cycle after this write — never fetched
             // inline (the fine-sync loops count the 4-cycle DMA).
-            m_dmcDueMaster = m_sched.now() + 3 * m_profile.cpuDivisor;
+            m_dmcDueMaster = m_sched.now(); // loads: due at the write; the
+            // whole-cycle gate starts the DMA at the next cycle boundary
+            // and the 3-cycle span (halt/dummy/get) totals 4 from the
+            // write — the cost blargg's sync loops count.
             m_dmcHaltOnPut = false; // load DMA halts on a get cycle
         }
     } else if (addr == 0x4017) {

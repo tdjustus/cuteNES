@@ -670,3 +670,16 @@ span (with align) for reloads. Constraint: 7-dmc_basics #19 (the +3 due was
 tuned for it; with the whole-cycle gate the effective start is the same
 boundary, so retest). This is the last free parameter before both ROMs
 match.
+
+## T037 session 18 (2026-10-24): 15/16 rows EXACT
+
+The load DMA now totals 4 cycles from the $4015 write (due at the write;
+the whole-cycle gate starts the span at the next boundary; loads span 3
+halt/dummy/get, reloads 4 with align — Tickable::dmcIsReloadFetch).
+MAIN ROM: rows 1-15 = 527 528 527 528 527 526 525 526 525 526 525 526 525
+526 525 — the reference table EXACTLY. Row 0 = 528 vs ref 527 (+1) — the
+only mismatch. Row 0 is the first sync after boot (unique entry phase).
+_512: mid-table rows differ (different delay constants shift its phase);
+same class of residue. Next: row-0 entry phase — the first sync's entry
+inherits the power-on DMC phase (the 264-cycle difference measured in
+session 10); all later rows re-sync from the previous row's end state.
