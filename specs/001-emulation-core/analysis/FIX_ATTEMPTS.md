@@ -693,3 +693,17 @@ boundary differently. Hardware's ROM is power-on-phase independent (fixed
 CRC), so our row-0 +1 is a real residue, not phase luck. Next: compare our
 row-0 coarse-loop iteration count with the reference's (~155 polls, session
 13 data) — a one-bucket difference at the coarse exit is the last bug.
+
+Session 18 final: row-0 differential pinned. Coarse-loop exits (read of
+$4015 returning bit4 clear at the sample end):
+- REF: fine exit -> coarse exit = 9913 cycles (155 iterations).
+- OURS: 9898 (153 iterations) — 15 cycles earlier.
+The 15-cycle entry difference (pair->drain phase, i.e., the boot residue
+the coarse loop quantizes) shifts the fine loop's entry by ~1 bucket;
+its 3423-vs-3424 resolution then lands X+1 instead of exact. Later rows
+re-sync from the previous row's steady state and match exactly (15/15).
+Fix direction: the coarse entry phase — our end_dmc_timer restart pair
+lands ~15 cycles different relative to the DMC grid on the FIRST test
+only; suspects: the begin_dmc_timer rate-switch ($4010=$00 write timing
+vs the last drain) and the fast-sync exit residue feeding the first END
+pair. This is the last 1 cycle of the last row of the last test.
