@@ -360,3 +360,27 @@ halt would land) so that in this alignment the fetch completes ~3 cycles
 later (~write+10). Constraint to preserve: 7-dmc_basics #19 (whose read
 lands in a different alignment and passes with the current +3 due — the
 alignment dependence is exactly the write-retry effect).
+
+## T037 session 7 (2026-10-23): corrected traces; divergence chain quantified
+
+CORRECTION to session 6: its "ours exits the fine loop immediately" conclusion
+was an artifact — both tracers used a WRONG site list (an earlier regex matched
+lda#imm+sta patterns at the match start, 3 bytes before the real sta). Real
+sta $4015 sites: E20B,E210,E214,E234,E282,E286,E29A,E36E,E373,E8B5,E8DC,EB14,
+EB3E; sta $4014 at E500. With correct sites both engines run IDENTICAL
+machinery per iteration:
+  fast pair ($1F x2 at E210/E214) -> fine @sync loop (E234, 433-cycle spacing)
+  -> exit -> test_ $10 pair (E36E/E373) -> $4014 OAM DMA -> end_dmc_timer
+  restarts (E282/E286) -> coarse/fine loop (E29A).
+Invariants that match EXACTLY: exit->$10-pair gap 53, $10-pair->$4014 gap 3006.
+
+The divergence chain (first iteration, reference vs ours):
+1. fast-sync poll exits 266 cycles later in ours (fine loop entry +821 vs
+   +1087 after the fast pair);
+2. fine loop runs 14 iterations vs 6 (exit phase ~8 cycles apart);
+3. compounds to ~12 coarse-counter iterations (~192 cycles) -> table ~3767
+   vs reference ~525.
+Calibration targets, in order: the fast-sync poll exit (bit4-clear timing
+after the double-restart), then the fine-loop exit count. Tuning knob: the
+load-DMA halt scheduling in these contexts (halt-parity/write-retry), with
+7-dmc_basics #19 as the constraint.
