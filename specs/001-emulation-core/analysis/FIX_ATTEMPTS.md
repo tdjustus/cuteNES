@@ -724,3 +724,15 @@ Session 19 (2026-10-24): row-0 chain traced to the rate switch.
   now totaling 4 (session 18), our deliver lands drain+? vs hardware
   drain+~0 — recheck the exit iteration's deliver position; suspect the
   whole-cycle gate admits the DMA one boundary early in the exit iteration.
+
+Session 19 addendum: exit geometry re-confirmed constant across ALL rows
+(drain_rel=+5, deliv=+10) vs hardware (+13/+14, deliver ~+1). The 9-cycle
+exit-state difference is engine-wide but benign for rows 1-15 (each row
+resyncs from steady state); only row 0 inherits it through the rate-switch
+phase (4-cycle consume offset). The endgame knob: our deliver latency
+after drain (5 cycles: 1 boundary wait + 4 span) vs hardware ~1 — closing
+it shifts the exit window 4-8 cycles later, aligning row 0's rate-switch
+phase. Candidate: serve the reload fetch from the drain instant without
+the boundary wait (the drain IS a whole-cycle event in the APU clock —
+the gate's boundary check may be redundant for reloads and cost the extra
+cycle). Verify against rows 1-15 (must stay exact) and 7-dmc_basics.
