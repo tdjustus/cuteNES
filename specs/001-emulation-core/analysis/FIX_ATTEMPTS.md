@@ -819,3 +819,33 @@ pragmatic close: accept 15/16 + the _512 residue, gate BOTH ROMs as
 XFAIL-with-reference-table (documenting our values vs hardware's), and
 finish T037's OAM/DMA deliverables (which are complete and spec-correct).
 The alternative — a boot-phase-matching campaign — is open-ended.
+
+## T037 session 24 (2026-10-25): the +7 is a REAL PPU bug — user's call validated
+
+The boot-phase "residue" is NOT benign. Bisection: instruction-stream diff
+of the [update_crc call 19 -> call 20] window (402k instructions, both
+engines) found the FIRST divergence at instruction 22952:
+- OURS: the EA48 vblank poll (bit $2002; bmi, 7 cycles/iter) runs ONE MORE
+  iteration — exits at 206088; REFERENCE exits at 206081.
+- I.e., at this vblank our $2002 flag reads CLEAR one poll longer: our
+  vblank flag becomes visible ~1 PPU clock LATER than the reference at
+  this alignment. All prior instructions identical.
+- Root: the m_statusLag mechanism (installed for 03-vbl_clear_time: reads
+  see the PREVIOUS dot's bit 7) delays flag-set visibility by 1 dot; this
+  poll's read lands exactly on the set boundary (last read ~206081+4=sample
+  at ~206084; the vblank set lands within 1 dot of it). The reference
+  resolves this boundary for the SET the other way (visible at the set
+  dot, lagged at the clear — or a mid-read race resolution we model
+  differently).
+- IMPACT (answering the owner's question): any game polling $2002 in a
+  loop can see vblank up to 1 PPU clock (~1/3 CPU cycle) later than
+  hardware at this alignment -> one extra 7-cycle poll iteration per
+  affected frame. Games resync downstream, but mid-frame poll loops
+  (splits) shift 7 cycles. REAL accuracy bug; the ppu_vbl_nmi suite
+  passes because none of its tests probe the set dot at this exact
+  read-phase alignment (03 probes the CLEAR side).
+- NEXT: model the set-dot read race explicitly (nesdev PPU_registers:
+  reading one PPU clock before the set -> 0 + NMI suppressed; at the set
+  -> race). Our statusLag is global; the hardware behavior is asymmetric
+  (lag applies at the clear side; the set side has the suppression race).
+  The sprdma row-0 +1 is downstream of this single poll iteration.
