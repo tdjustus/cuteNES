@@ -797,3 +797,25 @@ Full boot-to-row-0 event diff (ours vs reference), findings:
   as the frame-IRQ quantization already in the codebase.
 Also this session: committed inert session-20 backdate remnant removed
 (gate-verified 139/139 before commit).
+
+## T037 session 23 (2026-10-24): row-0 root = ~6-cycle boot-phase divergence
+
+Measurement conventions reconciled (ours prints mid-write, the reference at
+instruction start): the real divergence is ~0 cycles at the boot's first
+$4015 write and ~+6 by the first $4015=$0F after the 1.1M-cycle boot
+preamble. The boot is pure CPU + PPU $2002 vblank polling — a ~6-cycle
+accumulation is consistent with a handful of vblank-poll iterations exiting
+one cycle differently (each poll iteration is 12 cycles; our PPU VBL read
+timing passes every ppu_vbl_nmi test, as does theirs — the difference is
+below test-observable resolution but shifts the absolute boot phase).
+That phase propagates: DMC grid phase at the first sync -> exit edge
+(+5 vs +14) -> rate-switch wrap (pair+2996 vs +3000) -> row 0 = 528 vs 527.
+Rows 1-15 resync and are exact.
+
+DECISION POINT (documented for the owner): matching row 0 exactly requires
+bit-identical absolute boot timing — chasing single PPU-clock differences
+in vblank-poll exits that both engines' test suites consider correct. The
+pragmatic close: accept 15/16 + the _512 residue, gate BOTH ROMs as
+XFAIL-with-reference-table (documenting our values vs hardware's), and
+finish T037's OAM/DMA deliverables (which are complete and spec-correct).
+The alternative — a boot-phase-matching campaign — is open-ended.
