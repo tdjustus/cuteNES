@@ -707,3 +707,20 @@ lands ~15 cycles different relative to the DMC grid on the FIRST test
 only; suspects: the begin_dmc_timer rate-switch ($4010=$00 write timing
 vs the last drain) and the fast-sync exit residue feeding the first END
 pair. This is the last 1 cycle of the last row of the last test.
+
+Session 19 (2026-10-24): row-0 chain traced to the rate switch.
+- Instrumented $4010 (the begin_dmc_timer rate switch to $00): ours fires
+  31 cycles after the fine exit; the first post-$10-pair consume lands at
+  pair+2996 vs the reference's pair+3000 — 4 cycles early on ROW 0 ONLY
+  (later rows' consume offsets match: the 3424 grid resyncs each row).
+- RATE_RESET (reload the countdown at the rate write) rejected: collapses
+  the table and breaks a unit test — carry-over is correct.
+- The 4-cycle residue propagates from the fine-sync exit drain-rel
+  difference (+5 ours vs +13/14 ref): the grid phase at the switch differs,
+  and the first 3424-wrap lands 4 earlier. Because later rows resync from
+  steady state, only row 0 carries it. Fix direction: the fine-sync exit
+  window — our exit condition admits drain_rel=+5; hardware's admits
+  +13/+14. The window edge is the deliver-vs-poll race: with the load DMA
+  now totaling 4 (session 18), our deliver lands drain+? vs hardware
+  drain+~0 — recheck the exit iteration's deliver position; suspect the
+  whole-cycle gate admits the DMA one boundary early in the exit iteration.
