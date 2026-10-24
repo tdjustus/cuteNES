@@ -658,3 +658,15 @@ the final measured value 1 cycle high. Next: the end_dmc_timer COARSE loop
 (ldy #-$45; 16-cycle iterations) — its exit boundary is where the +1
 enters; check our coarse iteration length and the poll read position vs
 the reference's (their 155-poll run vs ours).
+
+Session 17 final note: the immediate-fetch path was already removed (only
+the due-scheduling remains), so the +1 is the load DMA's TOTAL cost from
+the $4015 write: our [wait-until-due (1-2) + span (4)] = 5-6 cycles where
+blargg's loops count EXACTLY 4 (both his sync loops: 429/3419 code + 4 =
+433/3423). The fix: the load DMA must total 4 cycles from the write —
+service starts at the write's next whole cycle (due effectively +1) with a
+3-cycle span (halt, dummy, get — Disch's load span), reserving the 4-cycle
+span (with align) for reloads. Constraint: 7-dmc_basics #19 (the +3 due was
+tuned for it; with the whole-cycle gate the effective start is the same
+boundary, so retest). This is the last free parameter before both ROMs
+match.

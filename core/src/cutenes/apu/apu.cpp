@@ -546,7 +546,8 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         m_dmcIrq = false;
         if (dmcOn && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0) {
             // Load DMA (wiki DMA): the halt is scheduled for a get cycle
-            // during the 2nd APU cycle after this write — not immediate.
+            // during the 2nd APU cycle after this write — never fetched
+            // inline (the fine-sync loops count the 4-cycle DMA).
             m_dmcDueMaster = m_sched.now() + 3 * m_profile.cpuDivisor;
             m_dmcHaltOnPut = false; // load DMA halts on a get cycle
         }
