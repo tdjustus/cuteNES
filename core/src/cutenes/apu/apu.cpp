@@ -537,7 +537,10 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
                 + m_dmc.addrReg * 64);
             m_dmc.bytesRemaining = static_cast<std::uint16_t>(
                 m_dmc.lenReg * 16 + 1);
-            m_dmc.bitsRemaining = 8;
+            // NOTE: the output unit's bit counter is FREE-RUNNING — a
+            // restart must NOT re-anchor its phase (the buffered byte is
+            // taken at the next wrap whenever that falls; observed via the
+            // reference DMC state traces, session 14).
         }
         m_dmc.enabled = dmcOn;
         m_dmcIrq = false;

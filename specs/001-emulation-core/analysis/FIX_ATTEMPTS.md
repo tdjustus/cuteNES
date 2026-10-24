@@ -562,3 +562,20 @@ was missed at 1243390 (bits_remaining phase?) or the immediate-fetch path
 disturbs the output unit's bookkeeping. Next: trace bits_remaining/timer
 around 1240929-1244246; also suspect the $4015-immediate-fetch (which
 bypasses DMA accounting) interacting with the buffer/bits state.
+
+## T037 BREAKTHROUGH 2 (2026-10-24): the bits-counter re-anchor — table at reference magnitude
+
+Root cause found by continuous WRAP2 tracing (timer==213 logs): between the
+takes at 1240824 (bits=6) and 1241252 (bits=7) the bit counter went UP —
+our $4015 restart path set bitsRemaining=8 (the old 7-dmc_basics #19 fix),
+re-anchoring the output unit's phase at every restart. The reference's bits
+counter is free-running (a restart must NOT reset it; the buffered byte is
+taken at whichever wrap follows).
+
+FIX: removed the bitsRemaining=8 reset from the $4015 restart. 7-dmc_basics
+still passes without it. RESULT: the table collapsed from ~3767 to the
+reference magnitude — ours now 527/529/527/529/525/527/525... vs reference
+527/528/527/528/527/526/525/526... (within 1-2 cycles per row; CRC
+C174E79B vs the expected 04525B72). The _512 variant similarly lands at
+~525-529. Remaining: the ±1-2/row calibration — the fine-loop exit-state
+difference (+3 ours vs +14 ref) is exactly this scale.
