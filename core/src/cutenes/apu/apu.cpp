@@ -745,7 +745,14 @@ void Apu::clockDmcTimer()
                 m_dmc.silence = false;
                 m_dmc.shiftReg = m_dmc.sampleBuffer;
                 m_dmc.bufferEmpty = true;
-                m_dmcDueMaster = m_sched.now(); // reload DMA halt
+                // Row-0 model (T037 session 20): the reload fetch is
+                // served during the byte's tail so the refill is present
+                // AT the consume edge (hardware full_after=1 same-cycle).
+                // Arm one timer period early: at the take, the fetch has
+                // already been serviced by the per-cycle engine.
+                m_dmcDueMaster = m_sched.now() > (m_dmc.timer + 1) * 24
+                    ? m_sched.now() - (m_dmc.timer + 1) * 24
+                    : 0; // due in the previous period (already serviceable)
                 m_dmcHaltOnPut = true;
             }
         }

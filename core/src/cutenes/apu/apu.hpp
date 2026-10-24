@@ -64,14 +64,14 @@ public:
     // for 4 cycles while it reads its next sample byte (task T037).
     bool dmcFetchPending() const override
     {
-        // A fetch is only *due* once its DMA halt is scheduled: the load
-        // DMA halts on a get cycle during the 2nd APU cycle after the
-        // $4015 write; reload DMAs as soon as the buffer empties (nesdev
-        // wiki DMA). Before that the byte is not yet wanted.
+        // A fetch is due once its DMA halt is scheduled: loads at the
+        // $4015 write, reloads at the buffer drain — and, critically, at
+        // the LAST-BIT wrap of the playing byte (tail arm): the DMA runs
+        // during the byte's final timer period so the refill is present
+        // AT the consume edge (hardware same-cycle full_after=1; T037).
         // Reload DMAs halt on put cycles (parity-gated). A load DMA
         // refused by the triggering write enters on the next READ cycle
-        // whichever half it is (nesdev wiki DMA; Disch t=14120) — no
-        // parity gate.
+        // whichever half it is (wiki DMA; Disch t=14120).
         return m_dmc.enabled && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0
             && m_sched.now() >= m_dmcDueMaster
             && (!m_dmcHaltOnPut

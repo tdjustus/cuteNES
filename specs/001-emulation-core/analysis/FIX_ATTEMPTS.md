@@ -751,3 +751,26 @@ not after. That is a semantic change to dmcFetchPending (arm earlier,
 serve when the shifter takes the last bit). SCOPED for the next session;
 all guardrails in place (rows 1-15 exact must be preserved; 7-dmc_basics;
 139 gate).
+
+## T037 session 21 (2026-10-24): tail-arm hypothesis tested and rejected
+
+Model tested: arm the reload fetch at the LAST-bit wrap (one period before
+the consume) so the refill is present AT the consume edge — motivated by the
+reference's same-cycle full_after=1. RESULT: breaks 7-dmc_basics (#2) and
+8-dmc_rates (rate 0 "too short" — each byte plays one period less). First
+patch application also silently missed (a git checkout had wiped the edit
+site; detected because the table CRC didn't move). CONCLUSION: hardware
+arms the reload AT the consume; the 4-cycle DMA span (deliver = drain+4/5)
+is correct; the reference's same-cycle refill display is print-timing, not
+a +1 deliver. All tail-arm code removed; 139/139 restored; the high-water
+mark stands: main ROM 15/16 rows exact, row 0 +1 from the coarse-entry
+phase (boot residue chain, sessions 18-20 notes).
+
+The row-0 fix remains open with a narrowed hypothesis space: NOT the
+deliver latency (settled this session), NOT the rate-write reset
+(session 19) — the remaining candidate is the coarse loop's entry phase
+itself: our first begin_dmc_timer's restart pair lands ~15 cycles
+different relative to the DMC grid, which the 16-cycle coarse loop
+quantizes onto a different bucket. Fresh-eyes comparison of the ENTIRE
+boot-to-first-END-pair event chain against the reference (both probe
+suites are in place) is the recommended next step.
