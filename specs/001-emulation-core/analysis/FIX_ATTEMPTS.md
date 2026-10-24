@@ -544,3 +544,21 @@ exactly this interval.
 
 Next: log OUR rd()-serviced fetches (dmcDeliver, not dmcFetchByte) around
 the pair and reconcile the 856-cycle stretch.
+
+Session 13 correction: with fetches logged via dmcDeliver (the rd()-served
+path; dmcFetchByte only covers the $4015-immediate path), the full ours
+sequence is:
+  CONSUME 1239966 (post-DMA byte taken; silence after)
+  END pair 1240921/1240931; DELIV 1240929 (first $1F byte into buffer,
+    rem->0 — via the $4015-write IMMEDIATE fetch path)
+  CONSUME 1244246, DELIV 1244253 (buffer drained at wrap, second $1F's
+    deferred fetch delivers, rem->0 -> CLEAR; coarse exits; fine loop
+    writes from 1244272)
+REF: pair 1238490 -> drain+fetch at 1240960/67 (+2477). OURS: +3315.
+OPEN QUESTION (precise): the byte delivered at 1240929 should be taken at
+the next byte boundary on the 3424-grid from 1239966 = 1243390, but the
+take printed at 1244246 (+856 = two byte periods later). Either the take
+was missed at 1243390 (bits_remaining phase?) or the immediate-fetch path
+disturbs the output unit's bookkeeping. Next: trace bits_remaining/timer
+around 1240929-1244246; also suspect the $4015-immediate-fetch (which
+bypasses DMA accounting) interacting with the buffer/bits state.
