@@ -384,3 +384,17 @@ Calibration targets, in order: the fast-sync poll exit (bit4-clear timing
 after the double-restart), then the fine-loop exit count. Tuning knob: the
 load-DMA halt scheduling in these contexts (halt-parity/write-retry), with
 7-dmc_basics #19 as the constraint.
+
+Session 7 addendum — fast-sync poll mechanism (why 266 cycles):
+Both engines' sync_dmc_fast polls run ~100+ iterations (~800 cycles), not
+1-2: after the double $1F restart, rem>0 while the fetch waits for the sample
+buffer to empty — the output unit must first consume the buffered byte (up to
+432 cycles at rate $0F). The poll duration therefore measures the DMC timer
+phase itself, i.e. the fast-sync exit difference (266 cycles) IS a DMC timer
+phase difference inherited from before the loop (boot + $4010 rate-switch
+timing + prior state), not a load-DMA cost error. Calibration must therefore
+start from the first DMC divergence between the engines — diff the
+bit4-clear timing after the very first $4015 enable at boot, then walk
+forward iteration by iteration. Tools are in place: /tmp/our_writes (pc-site
+tracer, correct sites), /tmp/rustynes target/release/sprdma_writes (same for
+the reference), /tmp/flow_ours (instruction-stream window dump).
