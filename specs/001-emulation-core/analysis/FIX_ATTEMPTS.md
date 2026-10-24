@@ -499,3 +499,23 @@ iteration-1 event timelines captured for both engines (sync exit, consumes,
 $10 pair, $4014, end_dmc_timer) — the alignment corpus for the final push,
 which is the per-cycle DMA engine where halt/dummy/align/get are charged as
 real bus cycles (matching both Disch's spans and the 433-cycle loop).
+
+## T037 session 12 (2026-10-24): measurement stretch matched; coarse count is the gap
+
+Full first-iteration event diff (both engines, all events): the measurement
+stretch MATCHES — pair->$4014 = 3006 in both; pre-DMA consume at pair+3000
+(ref) vs +2994 (ours) — a 6-cycle DMC timer phase difference from the
+fine-loop exit state (+14 ref vs +3 ours); the reload DMA accounting absorbs
+the rest identically. Our fine loop took ~6 more iterations (entry phase),
+exit states equivalent within ~11 cycles.
+
+Calibration experiment: a timer phase bump at the $4010 rate write sweeps
+the first-row value over ~3743..4069 (2 CPU cycles per APU cycle of bump)
+but can NEVER reach the reference magnitude ~527: ref row0 = 256*2+15
+(coarse X=2), ours 256*14+167 (X=14). The ~12-iteration coarse-count
+difference is STRUCTURAL in end_dmc_timer's coarse loop (16-cycle polls of
+the 1-byte sample's end after the END pair), not a phase offset. Next:
+compare the END-pair -> sample-end -> coarse-exit event sequence between
+the engines (our END pair lands post-consume +955 vs ref +948 — start
+there); suspects: 1-byte sample end semantics (last-byte rem->0 timing)
+and the coarse poll's read position.
