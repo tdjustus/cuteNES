@@ -579,3 +579,21 @@ reference magnitude — ours now 527/529/527/529/525/527/525... vs reference
 C174E79B vs the expected 04525B72). The _512 variant similarly lands at
 ~525-529. Remaining: the ±1-2/row calibration — the fine-loop exit-state
 difference (+3 ours vs +14 ref) is exactly this scale.
+
+## T037 session 15 (2026-10-24): exit-geometry quantified — deliver latency is the last knob
+
+Post-bits-fix geometry (both engines, fine-loop exit iteration):
+- OURS: restart W; DRAIN (buffer empties) at W+5; DELIV (deferred reload
+  fetch, rem->0) at W+10; the poll read at W+13 reads CLEAR -> exit.
+  Exit condition: drain+5 <= poll -> drain-rel <= +8.
+- REF: restart W; their consume at W+14 with rem already 0 AT the poll cycle
+  (their refetch lands ~drain+0/1). Exit drain-rel <= +13.
+- Net: our exit state sits ~5-9 cycles earlier than theirs = the observed
+  +-1-2/row table residue (ours 527/529/.../525/527 vs ref 527/528/.../526/525).
+
+THE LAST KNOB: our deferred reload after DRAIN delivers at +5 (waits for the
+next rd() in the loop code, then halt+dummy+align+get); the reference's
+per-cycle engine delivers at ~+1. Matching requires the reload fetch to be
+served from the drain instant with proper per-cycle accounting (the unified
+per-cycle DMA engine — the same conclusion as session 11's reconciliation,
+now at ±1 cycle scale instead of ±433).
