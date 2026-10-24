@@ -683,3 +683,13 @@ _512: mid-table rows differ (different delay constants shift its phase);
 same class of residue. Next: row-0 entry phase — the first sync's entry
 inherits the power-on DMC phase (the 264-cycle difference measured in
 session 10); all later rows re-sync from the previous row's end state.
+
+Session 18 addendum: row 0 also exits the sync at drain_rel=+5 (identical
+geometry to rows 1-15) — the +1 enters at the end_dmc_timer COARSE-loop
+entry: row 0's coarse exit leaves a different 16-cycle sub-phase (boot
+residue: the first sync runs from the power-on DMC state, later rows from
+the previous row's end state), and the fine loop's exit lands one iteration
+boundary differently. Hardware's ROM is power-on-phase independent (fixed
+CRC), so our row-0 +1 is a real residue, not phase luck. Next: compare our
+row-0 coarse-loop iteration count with the reference's (~155 polls, session
+13 data) — a one-bucket difference at the coarse exit is the last bug.
