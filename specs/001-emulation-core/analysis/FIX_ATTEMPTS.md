@@ -629,3 +629,17 @@ alternation is 9/11 where hardware's is 13/14 — same span, different
 phase). Next: align the alternation CENTER (suspect: which parity the
 reload-halt gate admits first after the drain — currently the first
 whole-cycle boundary; hardware halts on the put cycle specifically).
+
+## T037 session 17 (2026-10-24): alternation localized INSIDE end_dmc_timer
+
+Per-row exit geometry with the whole-cycle gate: EVERY row exits at
+drain_rel=+5, deliv_rel=+10, drain parity even — perfectly constant. The
+sync normalizes the phase exactly as designed. Therefore the +-1/2 cycle
+table alternation (ours 527/529 vs hardware 527/528) originates DOWNSTREAM:
+inside end_dmc_timer's own coarse (16-cycle) / fine (3423-cycle) loops,
+whose quantization depends on sub-cycle parity at the poll. Our fine loop
+resolves alternate rows 2 cycles apart where hardware resolves 1 — suspect
+the poll read's sampling of $4015 bit 4 across DMA-halted cycles (the
+repeated-read semantics) or the fine loop's own drift arithmetic. The sync
+machinery is DONE; the remaining work is one quantization detail in the
+measurement loop, not the DMA engine.
