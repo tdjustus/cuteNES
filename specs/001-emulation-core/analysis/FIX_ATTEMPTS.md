@@ -449,3 +449,29 @@ drift). Candidates, in order:
    neither; net length differences of a few cycles each.
 3. The 266-cycle initial fast-sync phase (run 0) is absorbed by the sync and
    NOT the blocker; run 6 is.
+
+## T037 session 10 (2026-10-23): sync internals fully decoded (both engines)
+
+New tooling: sprdma_dmcstate (reference DMC state machine via their public
+diagnostics: consume edges, buffer state, polls, restarts).
+
+DECODED MECHANISMS (event-verified both engines):
+- Fast-sync exit = the first output-unit CONSUME (byte-timer wrap) after the
+  double $1F restart: the wrap's reload clears rem, poll reads CLEAR. Ref's
+  first consume at 1228476, ours 1228740 — the 264-cycle power-on DMC timer
+  phase difference, now measured at the state-machine level.
+- Fine loop: restarts are IGNORED (rem=1 at the writes); each iteration the
+  poll (restart+10) reads SET while the consume sits past restart+14; the
+  consume drifts -1/iteration (433 vs 432) until consume+chain <= poll ->
+  exit. Ref: entry +19, exits iteration 6 at the razor edge (consume exactly
+  at the poll cycle). Ours: chain = consume+3 (deliver), enters at -44, so
+  must wrap the full 432 period (~390 extra iterations) before exiting.
+- Our reload chain measured: wrap -> rem=0 in a constant 3 cycles (matches).
+
+REMAINING QUESTION (sharpened): the fine-loop exit STATE is engine-independent
+(same wrap-relative window), so the sync should normalize the initial phase —
+yet the tables differ by ~3242 (= 3424-182), implying a ~182-cycle phase
+difference survives into the measurement (end_dmc_timer). Next: mechanical
+event-by-event alignment of ONE full test iteration (sync exit -> $4010 rate
+switch -> delay -> OAM DMA -> end_dmc_timer coarse/fine) between the engines;
+the divergence must be in that stretch, not the sync loops.
