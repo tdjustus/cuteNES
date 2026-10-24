@@ -519,3 +519,28 @@ compare the END-pair -> sample-end -> coarse-exit event sequence between
 the engines (our END pair lands post-consume +955 vs ref +948 — start
 there); suspects: 1-byte sample end semantics (last-byte rem->0 timing)
 and the coarse poll's read position.
+
+## T037 session 13 (2026-10-24): END-pair mechanism decoded; interval gap found
+
+Both engines' END sequences captured (restart pair, buffer/fetch events,
+coarse-loop polls, fine-loop writes):
+
+MECHANISM (decoded, matches the ROM source comment): after the end_dmc_timer
+restart pair — first $1F's load fetch fills the buffer (~+7); the second $1F
+restarts (rem=1) but its fetch is DEFERRED (buffer full) until the output
+unit's next timer-wrap consumes the byte; only then does the fetch deliver
+(rem->0) and bit4 reads CLEAR — the coarse loop (16-cycle polls) measures
+exactly this interval.
+
+- REF: pair 1238490 -> CLEAR ~1240967 = +2477 (wrap at +2470, fetch +7).
+- OURS: pair 1240931 -> CLEAR ~1244250 = +3319. Both engines' coarse loops
+  then hand off to the 3423-cycle fine loop.
+- ANOMALY in ours: the timer wraps around the pair are at 1239966+3424k =
+  1243390, 1246814... yet our consumes print 1244246, 1247670 (856 later,
+  then 3424-spaced). One wrap interval stretched by 856 cycles — needs
+  explanation before anything else (suspects: our reload fetch service
+  during the coarse loop interacting with timer accounting; the FETCHD hook
+  gap meant fetches via rd() were invisible in this capture).
+
+Next: log OUR rd()-serviced fetches (dmcDeliver, not dmcFetchByte) around
+the pair and reconcile the 856-cycle stretch.
