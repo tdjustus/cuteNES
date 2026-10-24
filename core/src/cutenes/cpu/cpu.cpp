@@ -325,7 +325,8 @@ void Cpu::tickHalf(bool /*phi2*/)
         // instruction stream — when a fetch comes due (buffer drained at a
         // DMC tick during catch-up), it halts the CPU NOW and takes the bus:
         // halt, dummy, optional align, get, charged as real cycles.
-        if (!m_inDmcDma && m_apu->dmcFetchPending()) {
+        if (!m_inDmcDma && (now % m_sched.cpuCycleToMaster(1)) == 0
+            && m_apu->dmcFetchPending()) {
             m_inDmcDma = true;
             serviceDmcDma();
             m_inDmcDma = false;

@@ -616,3 +616,16 @@ iteration vs the 432 grid leaves a ±0.5 remainder that flips per row).
 Next: inspect our per-row exit drain-rel (expect constant; hardware
 alternates between two adjacent values) — likely the halt parity gate
 (reloads halt on put only) quantizing our exits onto one phase.
+
+Session 16 addendum: whole-cycle gating of the DMA service start
+((now % cpuDivisor)==0) restored the per-row alternation. Main ROM now:
+ours 527 529 527 529 527 | 527 525 527 525 527 525 527 525 527 525
+  ref 527 528 527 528 527 | 526 525 526 525 526 525 526 525 526 525 526
+ALL rows where hardware reads ODD (527/525) are EXACT; rows where hardware
+reads EVEN (528/526) are +1 — our alternation swings 2 where hardware
+swings 1. Our per-row exit drain-rel was constant +5 (pre-gating); the
+remaining asymmetry = the odd-row exit landing 1 cycle late (our deliver
+alternation is 9/11 where hardware's is 13/14 — same span, different
+phase). Next: align the alternation CENTER (suspect: which parity the
+reload-halt gate admits first after the drain — currently the first
+whole-cycle boundary; hardware halts on the put cycle specifically).
