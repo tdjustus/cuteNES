@@ -475,3 +475,27 @@ difference survives into the measurement (end_dmc_timer). Next: mechanical
 event-by-event alignment of ONE full test iteration (sync exit -> $4010 rate
 switch -> delay -> OAM DMA -> end_dmc_timer coarse/fine) between the engines;
 the divergence must be in that stretch, not the sync loops.
+
+## T037 session 11 (2026-10-23): regression caught and reverted; accounting insight
+
+Session 9's two experiments were re-examined after the sprdma ROM was found
+INFINITE-LOOPING (fine sync locked at exactly 432-cycle spacing — restart and
+consume both 432, drift dead, stuck at consume-rel -44 forever; no $4015=$10
+in 300 frames):
+- REVERTED: load-align removal. Empirically the per-iteration DMC stall must
+  total 4 cycles for the fine loop to run at 433 (hardware's period, per
+  blargg's source comment). With our rd()-based DMA accounting (halt+dummy+
+  [align]+get ticks + the rawRead cycle), loads WITH the align tick produce
+  the hardware loop period; Disch's span-3 loads with our accounting produce
+  432 and deadlock. RECONCILIATION: our tick-based service double-counts
+  relative to a per-cycle engine; a true span-3 load needs the unified
+  per-cycle DMA engine (T037's design), not a tick-count patch.
+- RESTORED: the reload halt parity gate (reloads halt on put). Removing it
+  (experiment A) also fed the lock.
+- KEPT: loads service on any read cycle (no parity gate) — doc-supported.
+
+State: sprdma completes again (CRC 6698DC67), all 139 tests green. Full
+iteration-1 event timelines captured for both engines (sync exit, consumes,
+$10 pair, $4014, end_dmc_timer) — the alignment corpus for the final push,
+which is the per-cycle DMA engine where halt/dummy/align/get are charged as
+real bus cycles (matching both Disch's spans and the 433-cycle loop).

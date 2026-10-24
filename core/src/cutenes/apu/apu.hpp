@@ -73,7 +73,9 @@ public:
         // whichever half it is (nesdev wiki DMA; Disch t=14120) — no
         // parity gate.
         return m_dmc.enabled && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0
-            && m_sched.now() >= m_dmcDueMaster;
+            && m_sched.now() >= m_dmcDueMaster
+            && (!m_dmcHaltOnPut
+                || ((m_sched.now() / 12) % 2 == 1));
     }
     bool dmcGetWanted() const override
     {
