@@ -1041,7 +1041,7 @@ before the set, and diff the stall counts per poll iteration. One cycle of
 stall difference per iteration = the row-0 bug. This is a pure DMC-timing
 diff, no $2002 involvement.
 
-## T037 session 30 (2026-10-25): THE ARBITER PARITY FLIP — main ROM 15/16
+## T037 session 31 (2026-10-25): THE ARBITER PARITY FLIP — main ROM 15/16
 
 ROOT CAUSE FOUND AND FIXED: the DMC DMA put/get arbiter phase was INVERTED.
 `(now/12)%2==1` (odd cycles = put) delayed every reload DMA exactly ONE
@@ -1105,6 +1105,12 @@ is the likely varying parameter) and diff the $4015-poll exit vs the
 reference event stream (/tmp/ref_4015.txt still has the full RD4015/W4010
 capture; ours was re-captured this session with the flip in place).
 
+NOTE: sessions 30 and 31 ran CONCURRENTLY on the same working tree (two
+agents); session 30's reverted probe code briefly collided with session
+31's restored probes (the 21:17 "mystery revert"). The E219-loop exit
+numbers in both entries independently agree (ours 14741118 vs reference
+14741716), cross-validating the traces.
+
 ## T037 session 30 (2026-10-24 late): row 0's seed isolated — the DMC transfer-grid phase
 
 Instrumented $4010/$4015/DMC-event traces on both engines (reference: log-2002
@@ -1144,3 +1150,11 @@ the first $F window's loop exit lands at the reference's master (14741716
 equivalent), then verify the $4010 write schedule converges (31 vs 33 writes)
 and the table's row 0 -> 527. Guardrails: 139 gate (7-dmc_basics/8-dmc_rates
 are phase-sensitive!), rows 1-15, _512.
+
+RESOLVED (see session 31, which ran concurrently and landed first): the
+wrap-grid lever was tested — a power-on grid shift of 0..984 masters moves
+the drain/loop-exit instants onto the reference's but does NOT change the
+table (the ROM's sync machinery re-derives the phase; the table is
+grid-invariant by design). The early E219 exit measured here is real but
+not causal. The causal seed was the put/get ARBITER PARITY (session 31),
+now fixed on this branch: main ROM 15/16, _512 10/16, corpus 139/139.
