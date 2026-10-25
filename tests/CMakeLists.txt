@@ -63,6 +63,10 @@ set(TIER1_ROMS
     apu_test/rom_singles/6-irq_flag_timing.nes
     apu_reset/4015_cleared.nes
     apu_reset/irq_flag_cleared.nes
+    apu_reset/4017_written.nes
+    apu_reset/4017_timing.nes
+    apu_reset/len_ctrs_enabled.nes
+    apu_reset/works_immediately.nes
     ppu_vbl_nmi/rom_singles/03-vbl_clear_time.nes
     apu_test/rom_singles/7-dmc_basics.nes
     apu_test/rom_singles/8-dmc_rates.nes

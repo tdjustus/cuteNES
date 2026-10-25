@@ -160,6 +160,7 @@ private:
     void fireSequenceEvent(std::uint64_t eventMaster);
     void quarterFrame();
     void halfFrame();
+    void write4017(std::uint8_t value);
     void clockEnvelope(Pulse& p);
     void clockSweep(Pulse& p, bool second);
     void clockLength(std::uint8_t& length, bool enabled);
@@ -183,6 +184,7 @@ private:
 
     // Frame counter.
     bool m_frameMode5 = false, m_inhibitIrq = false;
+    std::uint8_t m_last4017 = 0; // rewrite-at-reset source (nesdev APU)
     bool m_dmcIrq = false;
     // Frame IRQ as master-clock timestamps (0 = none): visible-from and
     // condition-active-until (half-cycle parity + read re-assert).

@@ -184,6 +184,7 @@ void Apu::saveState(StateWriter& w) const
     w.w(m_dmc.deltaCounter);
     w.w(m_frameMode5);
     w.w(m_inhibitIrq);
+    w.w(m_last4017);
     w.w(m_dmcIrq);
     w.w<std::uint64_t>(m_frameIrqAt);
     w.w<std::uint64_t>(m_frameIrqAssertUntil);
@@ -280,6 +281,7 @@ void Apu::loadState(StateReader& r)
     m_dmc.deltaCounter = r.get<std::uint8_t>();
     m_frameMode5 = r.get<std::uint8_t>() != 0;
     m_inhibitIrq = r.get<std::uint8_t>() != 0;
+    m_last4017 = r.get<std::uint8_t>();
     m_dmcIrq = r.get<std::uint8_t>() != 0;
     m_frameIrqAt = r.get<std::uint64_t>();
     m_frameIrqAssertUntil = r.get<std::uint64_t>();
@@ -312,18 +314,77 @@ void Apu::loadState(StateReader& r)
 
 void Apu::reset(bool cold)
 {
-    m_pulse1 = {};
-    m_pulse2 = {};
-    m_triangle = {};
-    m_noise = {};
-    m_dmc = {};
-    m_frameMode5 = false;
-    m_inhibitIrq = cold ? false : m_inhibitIrq;
+    if (cold) {
+        m_pulse1 = {};
+        m_pulse2 = {};
+        m_triangle = {};
+        m_noise = {};
+        m_dmc = {};
+        // Power-up state (nesdev APU DMC): 8 bits remaining — the output
+        // unit's first byte period is a normal 8-tick wrap. Initializing 0
+        // would underflow to 255 and stall the first sample for 256 ticks
+        // (blargg apu_reset/works_immediately #2).
+        m_dmc.bitsRemaining = 8;
+    } else {
+        // Warm reset: the register FILE (CPU-written configuration) is not
+        // in the reset domain and persists; only the enables, length
+        // counters, and dynamic state clear (blargg
+        // apu_reset/len_ctrs_enabled #3 — the triangle's $4008 control bit
+        // must survive so its linear counter keeps the length frozen).
+        const auto resetPulse = [](Pulse& p) {
+            const Pulse keep = p;
+            p = {};
+            p.duty = keep.duty;
+            p.envLoop = keep.envLoop;
+            p.envConstant = keep.envConstant;
+            p.envVol = keep.envVol;
+            p.sweepEnabled = keep.sweepEnabled;
+            p.sweepPeriod = keep.sweepPeriod;
+            p.sweepNegate = keep.sweepNegate;
+            p.sweepShift = keep.sweepShift;
+            p.timerReload = keep.timerReload;
+        };
+        resetPulse(m_pulse1);
+        resetPulse(m_pulse2);
+        {
+            const Triangle keep = m_triangle;
+            m_triangle = {};
+            m_triangle.control = keep.control;
+            m_triangle.linearReload = keep.linearReload;
+            m_triangle.timerReload = keep.timerReload;
+        }
+        {
+            const Noise keep = m_noise;
+            m_noise = {};
+            m_noise.mode = keep.mode;
+            m_noise.periodIndex = keep.periodIndex;
+            m_noise.timerReload = keep.timerReload;
+            m_noise.envLoop = keep.envLoop;
+            m_noise.envConstant = keep.envConstant;
+            m_noise.envVol = keep.envVol;
+        }
+        {
+            const Dmc keep = m_dmc;
+            m_dmc = {};
+            m_dmc.bitsRemaining = 8;
+            m_dmc.irqEnabled = keep.irqEnabled;
+            m_dmc.loop = keep.loop;
+            m_dmc.rateIndex = keep.rateIndex;
+            m_dmc.deltaCounter = static_cast<std::uint8_t>(keep.deltaCounter & 1);
+            m_dmc.addrReg = keep.addrReg;
+            m_dmc.lenReg = keep.lenReg;
+        }
+    }
+    // Reset rewrites $4017 with the last value written (a full write event:
+    // mode, inhibit, and the sequencer restart); at power it is as if $00
+    // were written (blargg apu_reset 4017_timing readme).
+    if (cold) {
+        m_last4017 = 0;
+    }
+    write4017(m_last4017);
     m_frameIrqAt = 0;
     m_frameIrqAssertUntil = 0;
     m_dmcIrq = false;
-    m_seqBaseMaster = m_sched.now();
-    m_sequenceStep = 0;
     m_native.clear();
     m_nextOutNum = 0;
     m_historyCount = 0;
@@ -555,6 +616,19 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
             m_dmcHaltOnPut = false; // load DMA halts on a get cycle
         }
     } else if (addr == 0x4017) {
+        write4017(value);
+    }
+}
+
+// The $4017 write, shared with the reset path: at reset the last value
+// written is written again (nesdev APU frame counter, "Reset"; blargg
+// apu_reset 4017_timing: "same as [power], except last value written to
+// $4017 is written again") — a full write event including the sequencer
+// restart and the 5-step immediate clocks.
+void Apu::write4017(std::uint8_t value)
+{
+    {
+        m_last4017 = value;
         m_frameMode5 = (value & 0x80) != 0;
         m_inhibitIrq = (value & 0x40) != 0;
         if (m_inhibitIrq) {

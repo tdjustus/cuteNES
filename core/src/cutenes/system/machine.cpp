@@ -170,9 +170,14 @@ void Machine::powerOn()
 
 void Machine::reset()
 {
-    m_impl->cpu->reset(/*cold=*/false);
+    // Reset order matters for the APU frame counter: the $4017 rewrite
+    // must be stamped at the RESET INSTANT, before the CPU's 8-cycle reset
+    // sequence advances the clock (blargg apu_reset/4017_written pins the
+    // sequencer restart to within a cycle of the reset assertion; the
+    // powerOn order below is the same for the same reason).
     m_impl->ppu->reset(/*cold=*/false);
     m_impl->apu->reset(/*cold=*/false);
+    m_impl->cpu->reset(/*cold=*/false);
 }
 
 void Machine::runFrames(std::uint32_t frames)
