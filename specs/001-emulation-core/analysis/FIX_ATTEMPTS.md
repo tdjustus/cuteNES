@@ -1099,11 +1099,23 @@ so they stop burning sessions):
 
 REMAINING (narrowed): main row 5 (+2); 512 rows 4,5 (+1) 6,7 (-2) A,B (+1).
 Rows 6-15 of the main ROM re-lock exactly after row 5, so the residue is a
-local razor edge in one measurement phase, not a chain shift. Next: trace
-row 5's measurement (frames ~68-75; the $4012/$4013 per-row sample config
-is the likely varying parameter) and diff the $4015-poll exit vs the
-reference event stream (/tmp/ref_4015.txt still has the full RD4015/W4010
-capture; ours was re-captured this session with the flip in place).
+local razor edge in one measurement phase, not a chain shift.
+
+ROW 5 CHARACTERIZED (post-flip, same session): the row-5 window (W4010 pair
+at ours 24720006->24758250) aligns with the reference at a constant +38
+masters — poll cadences, the E219 exit geometry, the 5184-master reload
+cadence, and the row-end offset all match EXACTLY. The one structural
+difference: our first reload DMA of the window lands 1002 masters later
+than the reference's (rel 6834 vs 5832 from the row-start W4010). A DMCBIAS
+grid sweep (mod-5184 equivalent of -1002) does NOT change the table — the
+sync re-derives the phase; the residue is therefore INSIDE the $4014 OAM-DMA
+window itself (the DMC-interleave count during the 513/514-cycle sprite DMA,
+or the fine-count loop after it), where our engine's per-row phase lands on
+a different interleave bucket than hardware's. Next session: dump the $4014
+write instant and the DMC DMA positions inside row 5's OAM window (ours
+already traced; the reference needs its unified_dma_cycle events for the
+same window from ref_dmc.txt), diff the interleaves, and compare against
+the OAM DMA get/put alignment model (513 vs 514 and the +4 DMC fetch).
 
 NOTE: sessions 30 and 31 ran CONCURRENTLY on the same working tree (two
 agents); session 30's reverted probe code briefly collided with session
