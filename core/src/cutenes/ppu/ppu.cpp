@@ -121,6 +121,10 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
         if (renderingEnabled() && m_scanline < kVisibleLines
             && m_dot >= 1 && m_dot <= 64) {
             value = 0xFF; // secondary-OAM clear phase reads $FF
+        } else if ((m_oamAddr & 3) == 2) {
+            // Attribute bytes: bits 2-4 are unimplemented in the OAM
+            // DRAM and read back as 0 (nesdev PPU OAM; blargg oam_stress).
+            value = static_cast<std::uint8_t>(value & 0xE3);
         }
         break;
     case 0x2007: {
@@ -162,6 +166,11 @@ void Ppu::cpuWrite(std::uint16_t addr, std::uint8_t value)
         m_oamAddr = value;
         break;
     case 0x2004:
+        if ((m_oamAddr & 3) == 2) {
+            // Attribute bytes: bits 2-4 have no DRAM cells (nesdev PPU
+            // OAM) — writes drop them so reads and save states match.
+            value = static_cast<std::uint8_t>(value & 0xE3);
+        }
         m_oam[m_oamAddr] = value;
         ++m_oamAddr;
         break;
@@ -238,6 +247,10 @@ void Ppu::trackA12(bool high)
 
 void Ppu::oamDmaWrite(std::uint8_t value)
 {
+    if ((m_oamAddr & 3) == 2) {
+        // Attribute bytes: bits 2-4 have no DRAM cells (nesdev PPU OAM).
+        value = static_cast<std::uint8_t>(value & 0xE3);
+    }
     m_oam[m_oamAddr] = value;
     ++m_oamAddr;
 }
