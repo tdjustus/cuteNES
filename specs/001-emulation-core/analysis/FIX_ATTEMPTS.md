@@ -1040,3 +1040,43 @@ advance points; theirs: unified_dma_cycle_impl) for the ~10 loop iterations
 before the set, and diff the stall counts per poll iteration. One cycle of
 stall difference per iteration = the row-0 bug. This is a pure DMC-timing
 diff, no $2002 involvement.
+
+## T037 session 30 (2026-10-24 late): row 0's seed isolated — the DMC transfer-grid phase
+
+Instrumented $4010/$4015/DMC-event traces on both engines (reference: log-2002
+feature extended in its bus; ours: env-gated probes, all reverted after
+capture). The complete causal chain for row 0:
+
+1. The ROM alternates DMC rate $0F / $00 windows (16+17 writes / 130 frames,
+   matching the reference's 31 — the schedules roughly track). Steady-state
+   fetch cadence is CORRECT in both engines: 432 cycles/byte at $F (54x8),
+   3424 at $0 (428x8) — the rate table and carry-over are right.
+2. THE SEED: the FIRST $0F window (write at ~14736.7k masters, same
+   instruction in both engines). The ROM then polls $4015 every 7 cycles
+   waiting for the DMC bytes-remaining bit to clear:
+   - reference loop exit (first $4015=00 read): master 14741716
+   - ours: 14741118 — 598 masters (~50 cycles) EARLY.
+3. The 50-cycle early exit traces to the DMC transfer-grid phase: the
+   buffer-empty -> shift-register transfer (which requests each reload DMA)
+   runs on a free-running 8-bit-wrap grid (~864 masters at $F). Measured
+   first GET-to-GET spacing after the restart: reference 404 cycles,
+   ours 345 — our wrap grid sits ~59 cycles (≈ one 54-cycle bit period)
+   earlier relative to the CPU grid.
+4. The early loop exit shifts the following rate-window writes; the schedule
+   drift compounds through the ROM's measurement phase (poll-schedule drift
+   confirmed frame-by-frame: phases match EXACTLY through frame 6, then a
+   2-cycle drift by frame ~49), landing the timing-table measurement one
+   7-cycle poll iteration off — row 0 = 528 vs 527.
+
+ROOT: the power-on/restart phase of the DMC bit-wrap grid vs the CPU master
+grid differs from hardware's by ~one bit period (the same class of absolute-
+phase difference as the measured +10 CPU-PPU access offset — tolerated by
+every calibrated test, exposed only by sprdma's uncalibrated drain-wait loop).
+
+NEXT (one lever): shift the DMC wrap-grid phase — either the power-on timer
+priming or the wrap-instant alignment in clockDmcTimer (the grid is free-
+running; a constant master offset at power-on moves every transfer). Target:
+the first $F window's loop exit lands at the reference's master (14741716
+equivalent), then verify the $4010 write schedule converges (31 vs 33 writes)
+and the table's row 0 -> 527. Guardrails: 139 gate (7-dmc_basics/8-dmc_rates
+are phase-sensitive!), rows 1-15, _512.
