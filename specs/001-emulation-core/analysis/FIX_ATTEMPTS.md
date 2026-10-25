@@ -1148,11 +1148,34 @@ re-run: the table is genuinely bias-invariant (0..4400, all 15/16) — the
 session-31 conclusion stands, now with valid data. RULE: probe scripts
 must assert every replace (the fixed /tmp/probes.patch.py does).
 
-NEXT (sharply scoped): (a) main row 5 — sub-cycle instrumentation of the
-reload get's delivery and the E239 poll's sample instants; the target is
+NEXT (sharply scoped): (a) main row 5 — sub-cycle instrumentation of
+the reload get's delivery and the E239 poll's sample instants; the target is
 the walk-residue threshold (R 54 vs ~48); (b) the _512's first-measurement
 machinery (rows 0-6) — same workflow as the main ROM's row 0 but without a
 reference trace; (c) then gate both ROMs.
+
+SESSION 32 ADDENDUM — the walk, the straddle, and the one-cycle floor:
+the fine loop's full sequence is now traced (restart writes 5196 masters
+apart, polls +72 after each write, the boundary walking 12 masters/iteration
+under the poll: poll+30, +18, +6, then -6 — the exit fires when the boundary
+crosses the poll's own cycle and the DMA stall pushes the read past the
+delivery). The exit residue R (poll sample − boundary) is 54 and is FORCED
+by the geometry: the previous iteration's poll sits 48 masters before the
+delivery, unreachable earlier. Hardware's effective geometry puts its next
+boundary ONE CYCLE before its $4014, so its reload DMA STRADDLES the $4014
+write cycle — the write completes (writes never stall), the DMA's get lands
+inside the OAM window's first cycles, and the window pays the steal (+2).
+Ours completes 4.5 cycles before the $4014 (no straddle). The difference
+decomposes as: +36 masters of print-path duration accounting (ours includes
+the boundary fetch's 48-master stall; the reference's doesn't — its fetch
+fell in the window) + ~6-12 masters of stamp-convention fuzz + ONE CYCLE
+(12 masters) of genuinely unexplained fixed-path timing (our unstalled
+path 36552 vs the reference's 36564). That one cycle is the floor of what
+stamp forensics can resolve without the reference's source; the next lever
+is either re-building the reference to instrument its print path, or
+accepting 15/16 + 10/16 as the gated state (the ROMs still FAIL their
+internal CRCs, so they cannot be gated as passing — they would be XFAIL
+entries with the tables documented).
 
 NOTE: sessions 30 and 31 ran CONCURRENTLY on the same working tree (two
 agents); session 30's reverted probe code briefly collided with session
