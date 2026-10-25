@@ -995,3 +995,48 @@ PPU pulled to the cycle-START boundary before the access and to cycle-end after
 (no pre/post sampleNmi in rd()). Then re-pin: PHASE, window, kill dots, clear
 edges, nestest renormalization, golden hashes, playtest. After that, T037's row 0
 (sync_dmc DMC exit phase) is the last item before the corpus-100% milestone.
+
+## T037 session 29 (2026-10-24 evening): row 0 root-caused to a DMC-stall poll divergence; $2002 ruled out
+
+MAJOR REFRAME (session 29): the committed model already passes ALL TEN vbl singles
+(it always did — it is the 139/139 gate). Sessions 27-28's sub-dot rewrite pursued
+reference-alignment and peaked at 9/10; it was never ahead of committed on the
+corpus. The sprdma row-0 hunt via $2002 was therefore over-weighted; row 0 is not
+a $2002 problem:
+
+DECISIVE MEASUREMENTS (traces preserved: /tmp/ours_sprdma_400.txt,
+/tmp/ref_sprdma_400.txt; reference instrumented with SETTICK in run_ppu_to):
+1. The reference's set completes at its label = OURS (identical grids). Its
+   read stamps run +10 at the same instruction (cycle-boundary pulls with the
+   access between — verified in their bus source).
+2. Frame-by-frame first-visible-poll comparison over 19 common frames:
+   - Frames 1-5: ours dm = theirs − 10 EXACTLY — the SAME poll iteration
+     returns V in both engines. The +10 is a stamp convention, not behavior.
+   - Frame R=17482392: ours firstVis=+42, theirs=+28 — THEIR poll (dm=28)
+     sees the flag; OURS (same instruction, dm=18) does NOT — a genuine
+     poll-iteration divergence.
+   - Later frames: their loop stops polling where ours still polls — the
+     measurement loop's poll schedules have DRIFTED — DMC DMA stalls differ.
+3. Confirmed the ten singles are EDGE-IMMUNE on the committed model: an
+   additive VBL visibility lead (0..16 masters, env sweep) changes NONE of
+   their outcomes (02/03/05/06/07/08/09/10 all pass at every lead).
+   The absolute edge cannot be pinned by the calibrated corpus at all.
+4. A complete access-timing port (sample=now+10, all anchors re-derived
+   verbatim: edge dmEff>=0, window [R-8,R-4), kill [R-8,R+4), restore) was
+   implemented and tested: 04 PASSES for the first time, but 02/05/06/07/
+   08/10 break — our polls sit 10 masters earlier, so the calibrated ROMs'
+   decisive reads land outside the ported windows. Without moving the real
+   access (scheduler restructure), the port is not landable. Parked.
+
+CONCLUSION: row 0 = the measurement loop's poll PHASE diverges because DMC
+DMA stall cycles differ between engines (the loop's lda/bpl cadence is
+stretched by stalls; a one-cycle-per-iteration-class difference accumulates
+to one full 84-master poll iteration over the run). The blargg DMC suites
+pass in both engines — the residual is sub-test granularity.
+
+NEXT (sharply scoped): at the divergent frame (R~17482392), dump both
+engines' DMC fetch/halt instants (ours: the existing per-cycle engine's
+advance points; theirs: unified_dma_cycle_impl) for the ~10 loop iterations
+before the set, and diff the stall counts per poll iteration. One cycle of
+stall difference per iteration = the row-0 bug. This is a pure DMC-timing
+diff, no $2002 involvement.
