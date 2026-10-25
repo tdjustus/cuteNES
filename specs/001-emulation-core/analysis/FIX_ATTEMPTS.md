@@ -901,3 +901,54 @@ NEXT (cleanly scoped): record the rise master as dots*4 in stepDot;
 suppress only when the read's effective sample master (now-12) lies within
 [set-4, set+8); re-add the asymmetric-lag branch (it reverted with the
 checkout — verify); guardrails: 02/03/05/06 + 139 gate + rows 1-15.
+
+## T037 session 27 (2026-10-25): the reference's read model decoded; two razor edges remain
+
+Rebuilt the $2002 path against the reference's model (read from their source,
+bus.rs `cpu_read_register`): VBL latched at READ-START (current status, no lag),
+race window = line-241 dot 0 ONLY, suppression via a per-frame latch
+(`suppress_vbl_this_frame`), $2002 read drops /NMI unconditionally (their
+comment), reads sample the PPU at the CYCLE-START pull with their dot grid
+16 master ticks ahead of our old grid (measured, session 26). Their nestest
+column therefore differs from ours by convention; our golden comparator now
+renormalizes the PPU column -4 dots (as CYC already is -1).
+
+Implemented (all in /tmp/ppu_session27_model.cpp + .hpp, cpu.cpp, machine.cpp,
+test_ppu.cpp — NOT committed; working tree reverted to 1bc3a87, gate re-verified
+139/139 after revert):
+1. PPU phase: runTo processes to master+4 (was -12) — matches the reference's
+   (line,dot)-at-master at every sampled point; nestest passes with the -4-dot
+   PPU-column renormalization in the two TracePoint fill sites (8991/8991).
+2. On-time reads: $2002 returns m_status (m_statusLag one-dot snapshot retired
+   from the read path); rise-edge mask + pre-rise side-effect skip (a read
+   before the rise must NOT retroactively clear the in-flight set — this was
+   eating frame-3 locks in 04); clear-edge restore window [C-8, C+4) for 03.
+3. Dot-keyed NMI-kill window (dots 1-4) REMOVED — obsolete under the sub-dot
+   race; it was eating legitimate sets (04's missing frame-3 lock).
+4. Set visible at now >= R-10 (cycle-start sampling + grid lead); suppress
+   window [R-18, R-4) or [R-18, R) depending on test.
+
+RESULTS with this model: 02,03,05,07,08,09,10 + 01 pass at one window edge
+(suppress [R-18,R)); 04,06 pass at the other ([R-18,R-4)). THE REMAINING
+TENSION: 04 needs the suppress window to END before R; 06 needs it to extend
+TO R. This is the reference's two-point intra-read sampling (their "Tier 1.1":
+VBL latched at read-START, bits 6/5 masked by read-END transitions) — the next
+step is porting that exact split, not another window sweep.
+
+ROW 0 CLARIFICATION (corrects session 26's framing): row 0 is NOT the boot
+poll. The screen table is written by the measurement routine (16 iterations of
+sync_dmc + timed loop); with the flag model now correct, the table content
+still reads 528 527 528 ... = hardware table SHIFTED BY ONE ROW — iteration 0
+measures one 7-cycle poll iteration more than hardware. Per the session-6
+notes this is the sync_dmc EXIT PHASE (which iteration of the 433-cycle fine
+loop exits), i.e. a DMC timer phase issue at the measurement's sync, NOT a
+$2002 race. The boot-poll fix was still correct (04 now passes; instruction
+streams align with the reference's poll iteration).
+
+Next session, in order:
+1. Port the reference's two-point read sampling (resolve 04-vs-06).
+2. Full 10/10 singles + 139 gate + golden-hashes/playtest reconciliation
+   (frame hashes WILL change: the PPU phase moved — regenerate with cause).
+3. Then the sync_dmc exit-iteration alignment for row 0 (DMC timer phase at
+   the timed loop's entry; compare our $4015 write cadence inside sync
+   against the reference's sprdma_writes capture at the same sites).
