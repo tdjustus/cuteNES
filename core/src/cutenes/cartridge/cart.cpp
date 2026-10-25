@@ -10,8 +10,11 @@ std::uint8_t Cartridge::cpuRead(std::uint16_t addr)
 {
     if (addr < 0x8000) {
         // $6000-$7FFF PRG-RAM (kept writable for blargg reporting, D11);
-        // below $6000 the bus never routes here.
-        if (addr < 0x6000 || prgRam.empty()) {
+        // below $6000 the bus never routes here. Boards with a disable bit
+        // (MMC1B $E000 bit 4) disconnect the RAM: reads return the
+        // floating-bus convention used for absent RAM.
+        if (addr < 0x6000 || prgRam.empty()
+            || (mapper && !mapper->prgRamReadable())) {
             return 0;
         }
         return prgRam[addr % prgRam.size()];

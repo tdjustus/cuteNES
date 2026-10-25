@@ -43,6 +43,11 @@ std::unique_ptr<Mapper> createMapper(std::uint16_t mapperId, Cartridge& cart)
         return std::make_unique<NromMapper>(cart);
     case 1:
         return makeMmc1(cart);
+    case 155: { // MMC1A revision (nesdev MMC1, "ASIC Revisions")
+        auto mmc1 = makeMmc1(cart);
+        mmc1->setRevisionA(true);
+        return mmc1;
+    }
     case 2:
         return makeUxrom(cart);
     case 3:

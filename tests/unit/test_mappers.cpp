@@ -1,4 +1,5 @@
 #include "cutenes/cartridge/cart.hpp"
+#include "cutenes/system/scheduler.hpp"
 
 #include <gtest/gtest.h>
 
@@ -7,18 +8,25 @@
 
 namespace {
 
-// MMC1 board: 128 KiB PRG (8 x 16K, each bank's first byte = its index),
+// MMC1 board: 128 KiB PRG default (each bank's first byte = its index),
 // 64 KiB CHR (16 x 4K pages, each page's first byte = its index), 8 KiB
-// PRG-RAM.
-std::vector<std::uint8_t> makeMmc1Rom()
+// PRG-RAM. Mapper and PRG bank count are parameterized for the revision
+// tests (mapper 155 = MMC1A; 16 banks = 256 KiB for the A17 bypass).
+std::vector<std::uint8_t> makeMmc1Rom(std::uint16_t mapper = 1,
+    int prgBanks = 8)
 {
     std::vector<std::uint8_t> rom{
-        'N', 'E', 'S', 0x1A, 8, 8,
+        'N', 'E', 'S', 0x1A,
+        static_cast<std::uint8_t>(prgBanks), 8,
         0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    const std::size_t prgSize = 8 * 16384;
+    // Mapper number: low nibble in byte 6 high, high nibble in byte 7 bits
+    // 7-4 (byte 7 bit 3 is the NES 2.0 flag — keep it clear).
+    rom[6] = static_cast<std::uint8_t>((rom[6] & 0x0F) | (mapper << 4));
+    rom[7] = static_cast<std::uint8_t>(mapper & 0xF0);
+    const std::size_t prgSize = static_cast<std::size_t>(prgBanks) * 16384;
     const std::size_t chrSize = 16 * 4096;
     rom.resize(16 + prgSize + chrSize, 0);
-    for (std::size_t bank = 0; bank < 8; ++bank) {
+    for (std::size_t bank = 0; bank < static_cast<std::size_t>(prgBanks); ++bank) {
         rom[16 + bank * 16384] = static_cast<std::uint8_t>(bank);
     }
     for (std::size_t page = 0; page < 16; ++page) {
@@ -28,21 +36,36 @@ std::vector<std::uint8_t> makeMmc1Rom()
 }
 
 struct Mmc1Harness {
-    std::vector<std::uint8_t> rom = makeMmc1Rom();
+    std::vector<std::uint8_t> rom;
     cutenes::Cartridge cart;
+    cutenes::Scheduler sched{cutenes::regionProfile(cutenes::Region::Ntsc)};
 
-    Mmc1Harness()
+    explicit Mmc1Harness(std::uint16_t mapper = 1, int prgBanks = 8)
+        : rom(makeMmc1Rom(mapper, prgBanks))
     {
         const auto result = cutenes::Cartridge::load(rom.data(), rom.size(), cart);
         EXPECT_EQ(result.error, cutenes::LoadError::Ok);
+        cart.attachScheduler(sched);
     }
 
     // The 5-bit serial protocol: five writes, LSB first, the fifth commits.
+    // Real serial writes are always at least two cycles apart (LDA/LSR/STA
+    // sequences), so the harness spaces them 24 master ticks — exercising
+    // the consecutive-write rule's non-consecutive side.
     void serialWrite(std::uint16_t addr, std::uint8_t value)
     {
         for (int bit = 0; bit < 5; ++bit) {
+            sched.advanceMaster(24);
             cart.cpuWrite(addr, static_cast<std::uint8_t>((value >> bit) & 1));
         }
+    }
+
+    // A raw serial-port write with explicit cycle spacing (default: not
+    // consecutive to the previous write).
+    void write(std::uint16_t addr, std::uint8_t bit0, std::uint64_t gap = 24)
+    {
+        sched.advanceMaster(gap);
+        cart.cpuWrite(addr, bit0);
     }
 
     std::uint8_t prgAt(std::uint16_t addr) { return cart.cpuRead(addr); }
@@ -56,13 +79,15 @@ TEST(Mmc1, FifthWriteCommitsNotBitZeroOfEachWrite)
 {
     Mmc1Harness h;
     // Value 2 = 0b00010: first four writes carry bit 0 = 0, so nothing
-    // may commit until the fifth write.
-    h.cart.cpuWrite(0xE000, 0);
-    h.cart.cpuWrite(0xE000, 1);
-    h.cart.cpuWrite(0xE000, 0);
-    h.cart.cpuWrite(0xE000, 0);
+    // may commit until the fifth write. h.write spaces the writes two
+    // cycles apart (real instruction spacing) so the consecutive-write
+    // rule does not apply.
+    h.write(0xE000, 0);
+    h.write(0xE000, 1);
+    h.write(0xE000, 0);
+    h.write(0xE000, 0);
     EXPECT_EQ(h.prgAt(0x8000), 0) << "committed before the fifth write";
-    h.cart.cpuWrite(0xE000, 0);
+    h.write(0xE000, 0);
     EXPECT_EQ(h.prgAt(0x8000), 2);
 }
 
@@ -134,7 +159,89 @@ TEST(Mmc1, PrgRamWriteProtectIsControlledByPrgBankRegisterBit4)
 
     h.serialWrite(0xE000, 0x10); // $E000 bit 4 set: WRAM disabled
     h.cart.cpuWrite(0x6000, 0x55);
+    // While disabled the RAM is disconnected (reads return the floating
+    // bus; this core's absent-RAM convention is 0) — verify the block by
+    // re-enabling: the 0x55 write must not have landed.
+    EXPECT_EQ(h.cart.cpuRead(0x6000), 0) << "disabled WRAM reads float";
+    h.serialWrite(0xE000, 0x00); // bit 4 clear again
     EXPECT_EQ(h.cart.cpuRead(0x6000), 0xAA) << "WRAM write must be blocked";
+}
+
+// --- MMC1 ASIC revisions (nesdev MMC1, "ASIC Revisions") -------------------
+
+TEST(Mmc1, RevisionBDisablesRamButRevisionAKeepsItEnabled)
+{
+    Mmc1Harness b;      // mapper 1 = MMC1B
+    Mmc1Harness a{155}; // mapper 155 = MMC1A
+    b.serialWrite(0xE000, 0x10); // $E000 bit 4: disable (B) / A17 bypass (A)
+    a.serialWrite(0xE000, 0x10);
+
+    b.cart.cpuWrite(0x6000, 0x5A);
+    a.cart.cpuWrite(0x6000, 0xA5);
+    EXPECT_EQ(b.cart.cpuRead(0x6000), 0) << "MMC1B: RAM disabled";
+    EXPECT_EQ(a.cart.cpuRead(0x6000), 0xA5) << "MMC1A: RAM always enabled";
+}
+
+TEST(Mmc1, RevisionABitFourBypassesFixedBankA17)
+{
+    // 256 KiB PRG (16 banks) so bank bit 3 maps to PRG A17; mode 3 fixes
+    // bank 15 at $C000. With the bypass bit set, register bit 3 drives A17
+    // of the fixed window: bank register 3 (bit 3 clear) -> $C000 reads
+    // bank 7; clearing the bypass restores bank 15.
+    Mmc1Harness h{155, 16};
+    h.serialWrite(0xE000, 0x03); // bank 3, bit 4 clear: no bypass
+    EXPECT_EQ(h.prgAt(0x8000), 3);
+    EXPECT_EQ(h.prgAt(0xC000), 15) << "fixed high bank unaffected";
+
+    h.serialWrite(0xE000, 0x13); // bit 4 set: A17 bypass, bank 3
+    EXPECT_EQ(h.prgAt(0x8000), 3) << "switchable bank unchanged";
+    EXPECT_EQ(h.prgAt(0xC000), 7) << "fixed bank A17 driven by reg bit 3";
+
+    h.serialWrite(0xE000, 0x1B); // bit 4 set, bank 11 (bit 3 set)
+    EXPECT_EQ(h.prgAt(0xC000), 15) << "A17=1 restores the fixed bank";
+
+    // The MMC1B ignores the bypass meaning: bit 4 only disables RAM.
+    Mmc1Harness b;
+    b.serialWrite(0xE000, 0x13);
+    EXPECT_EQ(b.prgAt(0xC000), 7) << "last bank fixed on 128K either way";
+}
+
+TEST(Mmc1, ConsecutiveCycleWriteDataBitIgnoredButResetNever)
+{
+    Mmc1Harness h;
+    h.serialWrite(0xE000, 3); // bank 3 in mode 3 (power-on default)
+    EXPECT_EQ(h.prgAt(0x8000), 3);
+
+    // RMW double write (INC $E000-style): $00 then $01 on back-to-back
+    // cycles. The first write applies (shifts a 0), the second is ignored,
+    // so reaching the fifth EFFECTIVE write takes six writes total.
+    h.write(0xE000, 0, 24); // data 0, not consecutive
+    h.write(0xE000, 1, 12); // next cycle: IGNORED (RMW's second write)
+    h.write(0xE000, 0, 24);
+    h.write(0xE000, 0, 24);
+    h.write(0xE000, 0, 24);
+    h.write(0xE000, 0, 24); // fifth effective write commits: value 0
+    EXPECT_EQ(h.prgAt(0x8000), 0) << "the consecutive data bit was ignored";
+
+    // Bill & Ted: reset via INC on a location holding $FF — the $FF write
+    // resets, the following-cycle $00 write must not disturb the register.
+    h.serialWrite(0x8000, 0x08); // mode 2: fix first bank at $8000
+    EXPECT_EQ(h.prgAt(0x8000), 0) << "mode 2 fixes bank 0 low";
+    h.write(0x8000, 0x80, 24);   // $80: bit-7 reset (mode forced to 3)
+    h.write(0x8000, 0x00, 12);   // next cycle: ignored
+    h.serialWrite(0xE000, 5);
+    // The reset forced mode 3: the low window is switchable again, and the
+    // ignored $00 must not have poisoned the fifth write's commit.
+    EXPECT_EQ(h.prgAt(0x8000), 5) << "reset forced mode 3: low bank switchable";
+    EXPECT_EQ(h.prgAt(0xC000), 7);
+
+    // Shinsenden: RRA's second write CARRIES bit 7 — the reset must apply
+    // even though the write is consecutive to the first.
+    h.write(0xE000, 0, 24);   // RRA write 1: old value, data bit applies
+    h.write(0xE000, 0x80, 12); // RRA write 2: bit-7 reset, never ignored
+    h.serialWrite(0xE000, 4);
+    EXPECT_EQ(h.prgAt(0x8000), 4) << "reset applied on a consecutive cycle";
+    EXPECT_EQ(h.prgAt(0xC000), 7);
 }
 
 // --- MMC1 mirroring --------------------------------------------------------

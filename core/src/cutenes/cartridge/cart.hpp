@@ -12,6 +12,8 @@
 
 namespace cutenes {
 
+class Scheduler;
+
 // A loaded cartridge: parsed ROM data plus its mapper instance. Implements
 // the CPU-bus cartridge slot; the PPU reaches pattern data via chrRead.
 struct Cartridge final : CpuBusDevice {
@@ -32,6 +34,14 @@ struct Cartridge final : CpuBusDevice {
     // A12-rise IRQ clocking (MMC3-class mappers; no-op otherwise).
     void clockIrq() { if (mapper) mapper->clockIrq(); }
     bool irqLine() const { return mapper && mapper->irqLine(); }
+
+    // Write-cycle context for mappers with consecutive-write rules.
+    void attachScheduler(Scheduler& scheduler)
+    {
+        if (mapper) {
+            mapper->attachScheduler(scheduler);
+        }
+    }
 
     CartridgeInfo info{};
     std::vector<std::uint8_t> prg;

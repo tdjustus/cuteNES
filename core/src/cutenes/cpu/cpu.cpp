@@ -321,8 +321,49 @@ void Cpu::tickHalf(bool /*phi2*/)
     }
     if (m_apu != nullptr) {
         m_apu->runTo(now);
+        // Per-cycle DMC DMA (task T037): the DMA unit is independent of the
+        // instruction stream — when a fetch comes due (buffer drained at a
+        // DMC tick during catch-up), it halts the CPU NOW and takes the bus:
+        // halt, dummy, optional align, get, charged as real cycles.
+        if (!m_inDmcDma && (now % m_sched.cpuCycleToMaster(1)) == 0
+            && m_apu->dmcFetchPending()) {
+            m_inDmcDma = true;
+            serviceDmcDma();
+            m_inDmcDma = false;
+        }
     }
-    (void)0;
+}
+
+// The DMC DMA sequence: halt, dummy, optional align to a get cycle, get.
+// Called from tickHalf at the drain instant (per-cycle engine, T037).
+void Cpu::serviceDmcDma()
+{
+    advanceDmcCycle(); // halt cycle
+    advanceDmcCycle(); // dummy
+    if (m_apu->dmcIsReloadFetch()) {
+        // Reloads span 4 (halt, dummy, align, get — blargg's fixed count).
+        advanceDmcCycle(); // align
+    }
+    // Loads span 3 (halt, dummy, get — Disch: a load halted on a read
+    // needs no alignment); with the next-boundary start that totals 4
+    // from the $4015 write.
+    const std::uint16_t dmcAddr = m_apu->dmcFetchAddress();
+    const std::uint8_t byte = rawRead(dmcAddr); // the get
+    m_apu->dmcDeliver(byte);
+}
+
+// One stalled CPU cycle of a DMC DMA: advance a full cycle with PPU/APU
+// catch-up, bypassing rd()/wr() (no bus access on halt/dummy/align).
+void Cpu::advanceDmcCycle()
+{
+    m_sched.advanceMaster(m_sched.cpuCycleToMaster(1));
+    const std::uint64_t now = m_sched.now();
+    if (m_ppu != nullptr) {
+        m_ppu->runTo(now);
+    }
+    if (m_apu != nullptr) {
+        m_apu->runTo(now);
+    }
 }
 
 void Cpu::sampleNmi()
@@ -353,15 +394,8 @@ std::uint8_t Cpu::rd(std::uint16_t addr)
     ++m_cycles;
     // A pending DMC fetch halts the CPU: ~3 stall cycles plus the clocked
     // memory read itself (task T037). Get-cycles here also stall sprite DMA.
-    while (m_apu != nullptr && m_apu->dmcFetchPending()) {
-        tick();
-        tick();
-        tick();
-        const std::uint16_t dmcAddr = m_apu->dmcFetchAddress();
-        const std::uint8_t byte = rawRead(dmcAddr);
-        m_apu->dmcDeliver(byte);
-        break; // one fetch per halt
-    }
+    // DMC DMA service moved to tickHalf (per-cycle engine, task T037):
+    // fetches are served at the drain instant, not at the next read.
     // Pre-access NMI sample: the silicon edge detector is continuous, so
     // the line must be observed after catch-up but BEFORE a $2002 read
     // clears the flag — a tight poll loop otherwise never latches the
@@ -668,8 +702,11 @@ void Cpu::reset(bool cold)
     m_nmiPending = false;
     m_jammed = false;
 
-    // 7-cycle reset sequence: five internal cycles then the vector fetch —
-    // CYC:7 / PPU (0,21) matches nestest.log (research.md D4).
+    // Reset sequence: internal cycles then the vector fetch. The absolute
+    // first-fetch cycle sets the CPU-vs-PPU/DMC phase for the whole run;
+    // 8 cycles (first fetch at CYC:8) matches the reference's
+    // hardware-validated alignment (T037 session 25); nestest re-check below.
+    tick();
     tick();
     tick();
     tick();

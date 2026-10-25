@@ -33,6 +33,29 @@ target_link_libraries(your_app PRIVATE cutenes-core::cutenes-core)
 
 Public API contract: `specs/001-emulation-core/contracts/core-api.md`.
 
+## MMC1 revision (mapper 1 vs 155)
+
+The MMC1 ASIC exists in behaviorally distinct revisions, and the difference
+is in the PRG-bank register's bit 4 (nesdev wiki, MMC1 — "ASIC
+Revisions"):
+
+- **MMC1B** ("normal", iNES mapper 1): bit 4 of `$E000` disables PRG-RAM —
+  reads float and writes are dropped while set. This is the behavior of
+  the vast majority of cartridges.
+- **MMC1A** (iNES mapper 155): PRG-RAM is always enabled. Bit 4 instead
+  makes register bit 3 drive PRG A17 directly across the entire
+  `$8000-$FFFF` range, bypassing the fixed-bank logic — visible only with
+  256 KiB PRG. Two known games rely on this (they write `$10-$1F` to the
+  PRG-bank register and expect WRAM to stay writable).
+
+Both revisions honor the consecutive-cycle write rule: a serial-port write
+on the cycle immediately after another contributes no data bit (the 6502
+read-modify-write double write), while the bit-7 reset is never ignored
+(*Bill & Ted's Excellent Adventure* and *Shinsenden* depend on this).
+
+Select the revision through the header: mapper 155 means MMC1A; mapper 1
+(or any plain iNES 1.0 header) means MMC1B.
+
 ## MMC3 revision (mapper 4 IRQ behavior)
 
 The MMC3 exists in two behaviorally distinct silicon revisions, and the
@@ -104,11 +127,18 @@ Release/Debug plus UBSan) passes.
 
 Feature 001 (emulation core): see `specs/001-emulation-core/tasks.md`.
 The tier-1 gate runs the standalone sub-test ROMs for ppu_vbl_nmi and
-apu_test, plus nestest, instr_test-v5, instr_timing, cpu_reset,
-oam_read, and apu_reset, and the six blargg mmc3_irq_tests ROMs. All
-formerly known-failing tests are fixed (T068/T069 closed; the MMC3
-revision A/B split is header-selectable, see above). Save states
-round-trip byte-identically; 600-frame determinism and
+apu_test, the full apu_reset and oam_stress suites, plus nestest,
+instr_test-v5, instr_timing, cpu_reset, oam_read, and the six blargg
+mmc3_irq_tests ROMs. All formerly known-failing tests are fixed (T068
+closed; the MMC3 revision A/B split and the MMC1A/B variants are
+header-selectable, see above). The one remaining known accuracy gap is
+the final cycle of `sprdma_and_dmc_dma` calibration (T037): the main ROM
+matches hardware's measured table on 15 of 16 rows (row 5 differs by 2
+cycles — a half-cycle sub-cycle razor in the DMC-vs-OAM-DMA interleave,
+fully characterized in
+`specs/001-emulation-core/analysis/FIX_ATTEMPTS.md` sessions 30-32), and
+`cpu_interrupts_v2` rom_singles 2-5 (interrupt hijacking, T070). Save
+states round-trip byte-identically; 600-frame determinism and
 instruction-stepping equivalence verified; ~592 fps single-threaded
 (9.9x real-time).
 

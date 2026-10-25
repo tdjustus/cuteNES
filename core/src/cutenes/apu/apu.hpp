@@ -64,12 +64,40 @@ public:
     // for 4 cycles while it reads its next sample byte (task T037).
     bool dmcFetchPending() const override
     {
-        return m_dmc.enabled && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0;
+        // A fetch is due once its DMA halt is scheduled: loads at the
+        // $4015 write, reloads at the buffer drain — and, critically, at
+        // the LAST-BIT wrap of the playing byte (tail arm): the DMA runs
+        // during the byte's final timer period so the refill is present
+        // AT the consume edge (hardware same-cycle full_after=1; T037).
+        // Reload DMAs halt on put cycles (parity-gated). A load DMA
+        // refused by the triggering write enters on the next READ cycle
+        // whichever half it is (wiki DMA; Disch t=14120).
+        //
+        // Arbiter phase: cycle 0 after reset is a PUT slot, so even CPU
+        // cycles are put and odd are get (T037 session 30). The previous
+        // sense delayed every reload DMA one cycle past the read it must
+        // stall — the sprdma row-0 chain — while the whole corpus passes
+        // either way; the hardware-validated sprdma tables pin this
+        // direction (the reference's reload halt lands on the even cycle).
+        return m_dmc.enabled && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0
+            && m_sched.now() >= m_dmcDueMaster
+            && (!m_dmcHaltOnPut
+                || ((m_sched.now() / 12) % 2 == 0));
+    }
+    // True when the pending fetch is a reload (4-cycle span); loads span 3.
+    bool dmcIsReloadFetch() const override { return m_dmcHaltOnPut; }
+    bool dmcGetWanted() const override
+    {
+        return m_dmc.enabled && m_dmc.bufferEmpty
+            && m_dmc.bytesRemaining > 0 && m_sched.now() >= m_dmcDueMaster;
     }
     std::uint16_t dmcFetchAddress() const override
     {
         return m_dmc.currentAddr;
     }
+    // True when the pending fetch is a reload DMA (parity-gated halt,
+    // alignment cycle in the CPU stall). Loads enter on the first read.
+    bool dmcHaltOnPutForAlign() const override { return m_dmcHaltOnPut; }
     void dmcDeliver(std::uint8_t byte) override
     {
         m_dmc.sampleBuffer = byte;
@@ -132,11 +160,14 @@ private:
     void fireSequenceEvent(std::uint64_t eventMaster);
     void quarterFrame();
     void halfFrame();
+    void write4017(std::uint8_t value);
     void clockEnvelope(Pulse& p);
     void clockSweep(Pulse& p, bool second);
     void clockLength(std::uint8_t& length, bool enabled);
     void clockDmcTimer();
     void dmcFetchByte();
+    std::uint64_t m_dmcDueMaster = 0; // earliest halt for the next fetch
+    bool m_dmcHaltOnPut = false; // reload DMAs halt on put, load on get
     void advanceDmcAddress();
     void mixNativeSample();
     std::uint8_t statusRead();
@@ -153,6 +184,7 @@ private:
 
     // Frame counter.
     bool m_frameMode5 = false, m_inhibitIrq = false;
+    std::uint8_t m_last4017 = 0; // rewrite-at-reset source (nesdev APU)
     bool m_dmcIrq = false;
     // Frame IRQ as master-clock timestamps (0 = none): visible-from and
     // condition-active-until (half-cycle parity + read re-assert).

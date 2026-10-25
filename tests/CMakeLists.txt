@@ -57,12 +57,17 @@ set(TIER1_ROMS
     ppu_vbl_nmi/rom_singles/10-even_odd_timing.nes
     cpu_reset/ram_after_reset.nes
     oam_read/oam_read.nes
+    oam_stress/oam_stress.nes
     apu_test/rom_singles/2-len_table.nes
     apu_test/rom_singles/3-irq_flag.nes
     apu_test/rom_singles/4-jitter.nes
     apu_test/rom_singles/6-irq_flag_timing.nes
     apu_reset/4015_cleared.nes
     apu_reset/irq_flag_cleared.nes
+    apu_reset/4017_written.nes
+    apu_reset/4017_timing.nes
+    apu_reset/len_ctrs_enabled.nes
+    apu_reset/works_immediately.nes
     ppu_vbl_nmi/rom_singles/03-vbl_clear_time.nes
     apu_test/rom_singles/7-dmc_basics.nes
     apu_test/rom_singles/8-dmc_rates.nes
