@@ -849,3 +849,32 @@ engines) found the FIRST divergence at instruction 22952:
   -> race). Our statusLag is global; the hardware behavior is asymmetric
   (lag applies at the clear side; the set side has the suppression race).
   The sprdma row-0 +1 is downstream of this single poll iteration.
+
+## T037 session 25 (2026-10-25): the reset-cycle bug — found, fixed, verified
+
+THE ROOT BUG (validating the owner's refusal to accept): our reset sequence
+was 7 cycles; the reference's is 8. Proven by instruction-stream diff from
+power-on: first divergence at INSTRUCTION 0 (E85F: ours CYC 7, ref CYC 8).
+One cycle at reset shifts every absolute CPU-PPU-DMC relationship.
+
+LANDED (all 139 green, verified before commit):
+- Reset = 8 cycles (six internal ticks; cpu.cpp).
+- PPU power-on lag: Ppu::runTo processes dots through master-12 (the
+  hardware reset synchronizer; with fetch@8 the first instruction shows
+  PPU (0,21) per nestest.log — the reference's documented PPU_OFFSET model).
+- trace.cpp: CYC column renormalized (-1) to the golden-log convention
+  (first fetch = 7); nestest 8991/8991.
+- Two unit tests' master targets +12 (the documented lag).
+- Asymmetric status lag (ppu.cpp): the CLEAR transition still reads back
+  set through its dot (03-vbl_clear_time), but a SET earlier in the same
+  dot is visible (the boot-poll alignment).
+RESULT: the boot instruction streams now match the reference EXACTLY for
+59,563 instructions — through the 500ms delay, to the single decisive poll
+at cpu 206079. The remaining difference is ONLY the race-window model:
+our dot<=2 forced-clear window swallows the reference's set-returning read;
+narrowing it to dot<=1 breaks 02/05/06 (the window is load-bearing for the
+suppression tests). The reference resolves the at-set race with sub-dot
+(master-clock) granularity that our dot-granular model cannot express.
+NEXT: sub-dot race window — suppress only when the read's master sample
+point is within ~1 PPU clock of the set's master instant (compute from
+m_sched.now() vs the set's master time), rather than by dot number.

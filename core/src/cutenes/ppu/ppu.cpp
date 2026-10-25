@@ -10,6 +10,8 @@
 
 
 #include "cutenes/serialize/save_state.hpp"
+#include <cstdio>
+#include <cstdlib>
 #include "cutenes/system/timing.hpp"
 
 #include "cutenes/cartridge/cart.hpp"
@@ -83,6 +85,8 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
     std::uint8_t value = m_decay;
     switch (addr) {
     case 0x2002:
+        if (std::getenv("RDDBG")) std::fprintf(stderr, "RD2002 master=%llu line=%d dot=%d lag=%02X st=%02X\n",
+            (unsigned long long)m_sched.now(), m_scanline, m_dot, m_statusLag, m_status);
         // Open-bus low 5 bits decay into the returned status byte.
         value = static_cast<std::uint8_t>((m_statusLag & 0xE0) | (m_decay & 0x1F));
         // Race: reading at (or within a CPU clock of) the set dot returns
@@ -92,6 +96,15 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
             // Reading at the set dot: the flag reads clear; the phi2 sample
             // after this read sees the line low, so this cycle is covered.
             value &= static_cast<std::uint8_t>(~0x80);
+        } else if ((m_status & 0x80) != 0 && (m_statusLag & 0x80) == 0
+            && m_scanline == kVblankLine) {
+            // Asymmetric lag (T037 session 25): the CLEAR transition reads
+            // back set through the end of its dot (03-vbl_clear_time), but
+            // a SET that landed earlier in THIS dot is already visible —
+            // the hardware flag rises mid-dot and a later phi2 sample in
+            // the same dot reads it (the sprdma boot poll: one fewer 7-
+            // cycle iteration per blargg's validated alignment).
+            value |= 0x80;
         }
         if (m_scanline == kVblankLine && m_dot >= timing::kNmiKillDotMin && m_dot <= timing::kNmiKillDotMax) {
             // Read within ~2 PPU clocks of the set: cancel this frame's NMI
@@ -694,6 +707,7 @@ void Ppu::stepDot()
     }
     if (m_scanline == kVblankLine && m_dot == timing::kVblSetDot) {
         m_status |= 0x80; // NMI line rises; the CPU samples at phi2
+        if (std::getenv("RDDBG")) std::fprintf(stderr, "VBLSET master=%llu\n", (unsigned long long)m_sched.now());
     }
     if (m_scanline == kPreRenderLine && m_dot == timing::kVblClearDot) {
         m_status &= static_cast<std::uint8_t>(~0xE0); // clear V/S0/O
@@ -722,6 +736,15 @@ void Ppu::evaluateSpritesForLine0()
 
 void Ppu::runTo(std::uint64_t masterClock)
 {
+    // PPU lags the CPU by one cycle at power-on (the hardware reset
+    // synchronizer): the PPU state reflects dots completed by
+    // master - 12 (T037 session 25; with the 8-cycle reset this yields
+    // first-fetch PPU (0,21) per nestest.log).
+    if (masterClock >= 12) {
+        masterClock -= 12;
+    } else {
+        masterClock = 0;
+    }
     const std::uint64_t targetDots = masterClock / m_profile.ppuDivisor;
     while (m_dots < targetDots) {
         stepDot();

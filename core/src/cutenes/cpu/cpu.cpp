@@ -702,8 +702,11 @@ void Cpu::reset(bool cold)
     m_nmiPending = false;
     m_jammed = false;
 
-    // 7-cycle reset sequence: five internal cycles then the vector fetch —
-    // CYC:7 / PPU (0,21) matches nestest.log (research.md D4).
+    // Reset sequence: internal cycles then the vector fetch. The absolute
+    // first-fetch cycle sets the CPU-vs-PPU/DMC phase for the whole run;
+    // 8 cycles (first fetch at CYC:8) matches the reference's
+    // hardware-validated alignment (T037 session 25); nestest re-check below.
+    tick();
     tick();
     tick();
     tick();

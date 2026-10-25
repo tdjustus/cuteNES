@@ -101,7 +101,7 @@ TEST(Ppu, VblankFlagAndNmiAtLine241Dot1)
     // Run THROUGH scanline 241, dot 1 of frame 2 — but past the 2-dot
     // read-suppression race window so the flag reads back set.
     const std::uint64_t targetTicks =
-        (kDotsPerFrame + 241 * kDotsPerLine + 4) * kDot;
+        (kDotsPerFrame + 241 * kDotsPerLine + 4) * kDot + kDot * 3; // +1 CPU: PPU lag
     h.scheduler.advanceMaster(targetTicks - h.scheduler.now());
     h.ppu.runTo(h.scheduler.now());
     EXPECT_NE(h.ppu.cpuRead(0x2002) & 0x80, 0);
@@ -114,7 +114,7 @@ TEST(Ppu, VblankFlagAndNmiAtLine241Dot1)
 TEST(Ppu, FrameReadyWhenVisibleAreaCompletes)
 {
     PpuHarness h;
-    h.scheduler.advanceMaster(kDotsPerFrame * kDot);
+    h.scheduler.advanceMaster(kDotsPerFrame * kDot + kDot * 3); // PPU lag
     h.ppu.runTo(h.scheduler.now());
     // Consume-once: the frame completed at scanline 239, dot 256.
     EXPECT_TRUE(h.ppu.takeFrameReady());
@@ -129,7 +129,7 @@ TEST(Ppu, OddFrameDotSkipOnlyWhenRendering)
     // Two frames minus one dot (absolute): the odd frame's skipped dot lets
     // the PPU wrap to (0,0) one dot early.
     rendering.scheduler.advanceMaster(
-        (2 * kDotsPerFrame - 1) * kDot - rendering.scheduler.now());
+        (2 * kDotsPerFrame - 1) * kDot + kDot * 3 - rendering.scheduler.now()); // +1 CPU: PPU lag
     rendering.ppu.runTo(rendering.scheduler.now());
     EXPECT_EQ(rendering.ppu.scanline(), 0);
     EXPECT_EQ(rendering.ppu.dot(), 0);
