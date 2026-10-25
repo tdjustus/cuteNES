@@ -380,6 +380,9 @@ void Cpu::sampleNmi()
         if (line && !m_nmiWasHigh) {
             m_nmiPending = true;
             m_edgeCycle = m_cycles; // 1-based index within the instruction
+            if (std::getenv("IRQTRC"))
+                std::fprintf(stderr, "EDGE master=%llu cyc=%d pc=%04X\n",
+                    (unsigned long long)m_sched.now(), m_edgeCycle, m_pc);
         }
         m_nmiWasHigh = line;
     }
@@ -684,6 +687,21 @@ void Cpu::doInterrupt(std::uint16_t vector, bool brk)
     push(static_cast<std::uint8_t>(m_pc & 0xFF));
     push(static_cast<std::uint8_t>(m_p | kU | (brk ? kB : 0)));
     m_p |= kI;
+    // NMI hijack (nesdev "CPU interrupts"; blargg cpu_interrupts_v2
+    // 2-nmi_and_brk / 3-nmi_and_irq): an NMI edge latched by the end of
+    // the status push redirects the vector fetch to the NMI vector — the
+    // pushed flags keep their B value (set for a hijacked BRK) and only
+    // one interrupt sequence runs. Edges latched during the vector fetch
+    // cycles themselves land after this check and are taken normally
+    // after the sequence.
+    if (vector != 0xFFFA && m_nmiPending) {
+        vector = 0xFFFA;
+        m_nmiPending = false;
+        m_nmiStale = false;
+    }
+    if (std::getenv("IRQTRC"))
+        std::fprintf(stderr, "INT master=%llu vector=%04X brk=%d pc=%04X\n",
+            (unsigned long long)m_sched.now(), vector, (int)brk, m_pc);
     const std::uint8_t lo = rd(static_cast<std::uint16_t>(vector));
     const std::uint8_t hi = rd(static_cast<std::uint16_t>(vector + 1));
     m_pc = static_cast<std::uint16_t>(lo | (hi << 8));
