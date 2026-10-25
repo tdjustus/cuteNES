@@ -114,3 +114,36 @@ rom ../roms/mmc3_irq_tests/5.MMC3_rev_A.nes
 run 1500 none
 expect-text PASSED
 end
+
+# Screen-verified suites (no $6000 protocol; result text/code on screen).
+# Found passing in the session-33/34 un-gated sweep.
+
+entry cpu-dummy-reads
+rom ../roms/cpu_dummy_reads/cpu_dummy_reads.nes
+run 300 none
+expect-text Passed
+end
+
+entry read-joy3-thorough
+rom ../roms/read_joy3/thorough_test.nes
+run 300 none
+expect-text Passed
+end
+
+entry ppu-palette-ram
+rom ../roms/blargg_ppu_tests_2005.09.15b/palette_ram.nes
+run 300 none
+expect-text $01
+end
+
+entry ppu-sprite-ram
+rom ../roms/blargg_ppu_tests_2005.09.15b/sprite_ram.nes
+run 300 none
+expect-text $01
+end
+
+entry ppu-vram-access
+rom ../roms/blargg_ppu_tests_2005.09.15b/vram_access.nes
+run 300 none
+expect-text $01
+end
