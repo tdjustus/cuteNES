@@ -696,22 +696,32 @@ void Ppu::stepDot()
             }
         }
         if (m_dot == 256) {
-            incrementY();
-        } else if (m_dot == 257) {
-            copyHorizontal();
-            loadSpriteUnits();
+            // The dot-256/257/280-304 scroll adjustments only occur while
+            // rendering; with rendering off v changes solely via CPU
+            // accesses (nesdev PPU scrolling — "Between dot 328... and
+            // 256 of the next scanline... if rendering is disabled, none
+            // of these scroll adjustments occur"). Exercised by blargg
+            // dmc_dma_during_read4's rendering-off delays.
             if (renderingEnabled()) {
-                m_oamAddr = 0; // OAMADDR resets during sprite fetches
+                incrementY();
             }
+        } else if (m_dot == 257) {
+            if (renderingEnabled()) {
+                copyHorizontal();
+                m_oamAddr = 0; // OAMADDR resets during sprite fetchs
+            }
+            loadSpriteUnits();
         }
     } else if (m_scanline == kPreRenderLine) {
         fetchCycle(static_cast<std::uint32_t>(m_dot));
-        if (m_dot == 256) {
-            incrementY();
-        } else if (m_dot == 257) {
-            copyHorizontal();
-        } else if (m_dot >= 280 && m_dot <= 304) {
-            copyVertical();
+        if (renderingEnabled()) {
+            if (m_dot == 256) {
+                incrementY();
+            } else if (m_dot == 257) {
+                copyHorizontal();
+            } else if (m_dot >= 280 && m_dot <= 304) {
+                copyVertical();
+            }
         }
     }
 
