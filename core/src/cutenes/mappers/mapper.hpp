@@ -48,6 +48,17 @@ public:
 
     // PRG-RAM write gate ($6000-$7FFF); boards with a protect bit override.
     virtual bool prgRamWritable() const { return true; }
+    // PRG-RAM read gate: false = the RAM is disconnected (reads return the
+    // floating-bus convention, writes dropped). MMC1B's $E000 bit 4.
+    virtual bool prgRamReadable() const { return true; }
+
+    // Write-cycle context (MMC1-class consecutive-write rules, T053): the
+    // machine wires the scheduler after load; mappers that must know the
+    // cycle spacing of back-to-back writes (RMW double writes) override.
+    virtual void attachScheduler(class Scheduler& scheduler)
+    {
+        (void)scheduler;
+    }
 
 protected:
     Cartridge& m_cart;

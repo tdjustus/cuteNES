@@ -33,6 +33,29 @@ target_link_libraries(your_app PRIVATE cutenes-core::cutenes-core)
 
 Public API contract: `specs/001-emulation-core/contracts/core-api.md`.
 
+## MMC1 revision (mapper 1 vs 155)
+
+The MMC1 ASIC exists in behaviorally distinct revisions, and the difference
+is in the PRG-bank register's bit 4 (nesdev wiki, MMC1 — "ASIC
+Revisions"):
+
+- **MMC1B** ("normal", iNES mapper 1): bit 4 of `$E000` disables PRG-RAM —
+  reads float and writes are dropped while set. This is the behavior of
+  the vast majority of cartridges.
+- **MMC1A** (iNES mapper 155): PRG-RAM is always enabled. Bit 4 instead
+  makes register bit 3 drive PRG A17 directly across the entire
+  `$8000-$FFFF` range, bypassing the fixed-bank logic — visible only with
+  256 KiB PRG. Two known games rely on this (they write `$10-$1F` to the
+  PRG-bank register and expect WRAM to stay writable).
+
+Both revisions honor the consecutive-cycle write rule: a serial-port write
+on the cycle immediately after another contributes no data bit (the 6502
+read-modify-write double write), while the bit-7 reset is never ignored
+(*Bill & Ted's Excellent Adventure* and *Shinsenden* depend on this).
+
+Select the revision through the header: mapper 155 means MMC1A; mapper 1
+(or any plain iNES 1.0 header) means MMC1B.
+
 ## MMC3 revision (mapper 4 IRQ behavior)
 
 The MMC3 exists in two behaviorally distinct silicon revisions, and the

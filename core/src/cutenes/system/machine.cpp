@@ -107,6 +107,7 @@ LoadResult Machine::loadCartridge(const std::uint8_t* data, std::size_t size)
         (void)again;
     }
     m_impl->ppu->attachCartridge(&m_impl->cart);
+    m_impl->cart.attachScheduler(m_impl->scheduler);
     applyMmc3Revision(); // header default or the stored manual override
     m_impl->runState = RunState::Paused;
     return result;
