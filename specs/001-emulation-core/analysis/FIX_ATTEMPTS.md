@@ -952,3 +952,46 @@ Next session, in order:
 3. Then the sync_dmc exit-iteration alignment for row 0 (DMC timer phase at
    the timed loop's entry; compare our $4015 write cadence inside sync
    against the reference's sprdma_writes capture at the same sites).
+
+## T037 session 28 (2026-10-26): 9/10 vbl singles; the 04 conflict root-caused to the read-cycle interleave
+
+Model rebuilt on the session-27 base (files preserved in /tmp/ppu_session28_9of10.cpp,
+ppu_session28.hpp, cpu_session28.cpp; working tree reverted, gate re-verified 139/139):
+
+1. NMI-kill restored WITHOUT the flag clear (the old kill's m_status clear was what
+   ate 04's sets; the kill's m_nmiPending cancellation is what 06 needs): 06 PASSED.
+   Trap: a python multi-edit died mid-script leaving the arming branch absent while
+   the plumbing looked present — verify grep counts, not just presence.
+2. Race window corrected to [R-4, R) — the read whose own cycle contains the set's
+   completion (02 row 4's "- -" row) — AND the racing read must RETRACT the set
+   (m_status bit withdrawn): the set lands during the read's own catch-up, so the
+   latch alone is too late. 02 PASSED.
+3. Full-gate inventory of the 9/10 model: 136/139 — only 04 (tier1), golden-hashes
+   (expected: the PPU phase moved), and playtest differ. nestest passes WITH the
+   -4-dot PPU-column renormalization. sprdma table unchanged (row 0 = 528; that is
+   the sync_dmc DMC-phase issue, confirmed independent of the $2002 path).
+
+THE 04 CONFLICT (root-caused, empirically pinned):
+- 04 test #10's begin->wait_vbl is a FREE-RUNNING poll (no sync recalibration).
+  Its poll lands at dm=-2 (dot 2) — inside the race window — and swallows the set,
+  delaying the lock exactly one frame; the enable then misses vblank -> 0 NMIs.
+- The reference passes because its reads sample at its own cycle-START boundary
+  (run_ppu_to called from Cpu::start_cycle AND end_cycle — the access sits BETWEEN
+  the pulls; sub_dot 0/2 pre/post). Its poll lands ~8-10 masters past the rise.
+- 02/06/08/etc. are IMMUNE to this offset (their syncs recalibrate into whatever
+  window the engine has — verified: our screen output matches the reference's
+  screen byte-for-byte on 02, including the "T+ 1 2" header which is NOT a failure
+  list; the suite's code-00 PASS is the truth).
+- Exhaustive sweeps pin our geometry UNIQUELY: PHASE=+4 grid (swept -12..+20),
+  visibility edge dm>=0, window [R-4,R), kill dots 1-4, and a uniform sampling
+  lead (all anchors shifted together, 0..12) breaks 7 tests at any nonzero value.
+  The corpus pins INTERNAL CONSISTENCY, not the absolute anchor; the reference's
+  internally-consistent point differs from ours and only 04's uncalibrated poll
+  can tell them apart.
+
+NEXT (the real fix, architectural): port the reference's read-cycle interleave —
+PPU pulled to the cycle-START boundary before the access and to cycle-end after
+(their run_ppu_to/start_cycle/end_cycle structure), NMI level read live by the CPU
+(no pre/post sampleNmi in rd()). Then re-pin: PHASE, window, kill dots, clear
+edges, nestest renormalization, golden hashes, playtest. After that, T037's row 0
+(sync_dmc DMC exit phase) is the last item before the corpus-100% milestone.
