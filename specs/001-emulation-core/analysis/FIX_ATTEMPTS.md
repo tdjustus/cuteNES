@@ -1101,21 +1101,58 @@ REMAINING (narrowed): main row 5 (+2); 512 rows 4,5 (+1) 6,7 (-2) A,B (+1).
 Rows 6-15 of the main ROM re-lock exactly after row 5, so the residue is a
 local razor edge in one measurement phase, not a chain shift.
 
-ROW 5 CHARACTERIZED (post-flip, same session): the row-5 window (W4010 pair
-at ours 24720006->24758250) aligns with the reference at a constant +38
-masters — poll cadences, the E219 exit geometry, the 5184-master reload
-cadence, and the row-end offset all match EXACTLY. The one structural
-difference: our first reload DMA of the window lands 1002 masters later
-than the reference's (rel 6834 vs 5832 from the row-start W4010). A DMCBIAS
-grid sweep (mod-5184 equivalent of -1002) does NOT change the table — the
-sync re-derives the phase; the residue is therefore INSIDE the $4014 OAM-DMA
-window itself (the DMC-interleave count during the 513/514-cycle sprite DMA,
-or the fine-count loop after it), where our engine's per-row phase lands on
-a different interleave bucket than hardware's. Next session: dump the $4014
-write instant and the DMC DMA positions inside row 5's OAM window (ours
-already traced; the reference needs its unified_dma_cycle events for the
-same window from ref_dmc.txt), diff the interleaves, and compare against
-the OAM DMA get/put alignment model (513 vs 514 and the +4 DMC fetch).
+ROW 5 CHARACTERIZED (post-flip, session 31) — DEEPENED (session 32): the
+OAM windows are now directly comparable: the reference's DMACYC stream
+contains its OAM DMA cycles as long runs, so its windows can be extracted
+without re-instrumenting it. THE SPAN TABLE (cycles, ours vs ref):
+  rows 0-4: 513/514/513/514/513 = EXACT match
+  row 5:    ours 514 (clean) vs ref 516 (one DMC steal) — the +2, exactly
+  rows 6-15: 515/516 alternating = EXACT match (our steal machinery works)
+So row 5's value is the OAM window itself: hardware's DMC fetch lands
+INSIDE the window (a steal), ours fires 54 masters (4.5 cycles) BEFORE the
+$4014 and the window runs clean.
+
+MECHANISM (fully quantified): the fine-sync loop (E22B-E23C, 433-cycle
+iterations) exits at the first poll that observes the reload DMA's
+delivery; the byte-period drift (432 vs 433) walks the boundary under the
+poll by 12 masters/iteration, so the exit lands at a RESIDUE R = poll −
+boundary (ours 54, the reference's ~48). The print-setup path from the
+poll to the $4014 is almost exactly one byte period (3050 cycles = 36600
+masters), so the NEXT boundary lands R masters before the $4014 — and the
+path is self-referential: if the boundary fires before the $4014 (R above
+the threshold), its 4-cycle DMA stalls the print path itself (the $4014
+moves later, no steal); if below, the boundary falls inside the OAM window
+(the steal). The threshold sits at R ≈ 48-54 — ours 54 (no steal),
+hardware's ~48 (steal): a HALF-CYCLE sub-cycle razor decides it. The DMC
+get's delivery instant (mid-get-cycle, halt+42) cannot move earlier within
+the whole-cycle model, so flipping our exit one walk-step earlier is not
+reachable by a simple knob — the next session needs sub-cycle
+instrumentation of the delivery-vs-poll instants (and the same class is
+likely behind the _512's residues; see below).
+
+_512 STRUCTURE DECODED (session 32): its table is one-row-shifted like the
+main ROM was before the arbiter flip — ours[1..6], [9,10], [13..15] equal
+the reference's [0..5], [8,9], [12..14] — with local breaks at rows 7-8
+and 11-12 (+1 each pair). The flip fixed the main ROM's shift but NOT the
+_512's: its first measurement (a 512-byte sample — a different fetch
+pattern through the sync) hits a different razor. No reference event trace
+exists for the _512 (all /tmp/ref_* captures are the main ROM); analyzing
+it needs either a re-capture from the reference (if it can be rebuilt) or
+first-principles work from the ROM source.
+
+METHODOLOGY (session 32 addition): a THIRD silent-failure trap — the probe
+patch script's str.replace anchors can silently no-op (the DMCBIAS anchor
+"m_dmc = {}; if (cold) {" never matched; session 31's "grid lever
+disproven" sweep ran with a DEAD KNOB). The knob was fixed and the sweep
+re-run: the table is genuinely bias-invariant (0..4400, all 15/16) — the
+session-31 conclusion stands, now with valid data. RULE: probe scripts
+must assert every replace (the fixed /tmp/probes.patch.py does).
+
+NEXT (sharply scoped): (a) main row 5 — sub-cycle instrumentation of the
+reload get's delivery and the E239 poll's sample instants; the target is
+the walk-residue threshold (R 54 vs ~48); (b) the _512's first-measurement
+machinery (rows 0-6) — same workflow as the main ROM's row 0 but without a
+reference trace; (c) then gate both ROMs.
 
 NOTE: sessions 30 and 31 ran CONCURRENTLY on the same working tree (two
 agents); session 30's reverted probe code briefly collided with session
