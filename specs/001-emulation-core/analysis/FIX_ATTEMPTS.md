@@ -878,3 +878,26 @@ suppression tests). The reference resolves the at-set race with sub-dot
 NEXT: sub-dot race window — suppress only when the read's master sample
 point is within ~1 PPU clock of the set's master instant (compute from
 m_sched.now() vs the set's master time), rather than by dot number.
+
+## T037 session 26 (2026-10-25): sub-dot race window — first attempt failed cleanly
+
+Attempted the master-clock race window (suppress only within ~2 PPU clocks
+of the rise). Two implementation traps found, both fixed or reverted:
+1. m_sched.now() inside stepDot is the CATCH-UP TARGET master, not the
+   dot's own master — a recorded "rise instant" would be wrong whenever
+   the PPU catches up in bulk. The correct rise master must be derived
+   from the dot counter (dots*4), and the comparison must account for the
+   read seeing PPU state through master-12.
+2. With the window replaced wholesale, 02/03/05/06 broke (the sync loops
+   depend on the current read behavior at more than just the race instant).
+REVERTED to the gate-green state (139/139; dot-based race; row 0 = 528).
+ALSO MEASURED this session: the reference's global PPU phase is exactly 4
+dots ahead of ours at every master (direct sampling); matching it
+(masterClock+4) does NOT fix row 0 — their win is the sub-dot race
+resolution alone, and their phase conflicts with nestest's golden (0,21)
+column, which pins ours. So the global phase is a CONVENTION difference
+(both pass nestest + all blargg tests); only the race window is behavioral.
+NEXT (cleanly scoped): record the rise master as dots*4 in stepDot;
+suppress only when the read's effective sample master (now-12) lies within
+[set-4, set+8); re-add the asymmetric-lag branch (it reverted with the
+checkout — verify); guardrails: 02/03/05/06 + 139 gate + rows 1-15.
