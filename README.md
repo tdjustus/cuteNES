@@ -130,8 +130,14 @@ The tier-1 gate runs the standalone sub-test ROMs for ppu_vbl_nmi and
 apu_test, plus nestest, instr_test-v5, instr_timing, cpu_reset,
 oam_read, and apu_reset, and the six blargg mmc3_irq_tests ROMs. All
 formerly known-failing tests are fixed (T068/T069 closed; the MMC3
-revision A/B split is header-selectable, see above). Save states
-round-trip byte-identically; 600-frame determinism and
+revision A/B split and the MMC1A/B variants are header-selectable, see
+above). The one remaining known accuracy gap is the final cycle of
+`sprdma_and_dmc_dma` calibration (T037): the main ROM matches hardware's
+measured table on 15 of 16 rows (row 5 differs by 2 cycles — a
+half-cycle sub-cycle razor in the DMC-vs-OAM-DMA interleave, fully
+characterized in
+`specs/001-emulation-core/analysis/FIX_ATTEMPTS.md` sessions 30-32).
+Save states round-trip byte-identically; 600-frame determinism and
 instruction-stepping equivalence verified; ~592 fps single-threaded
 (9.9x real-time).
 
