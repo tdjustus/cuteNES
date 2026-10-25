@@ -1154,7 +1154,35 @@ the walk-residue threshold (R 54 vs ~48); (b) the _512's first-measurement
 machinery (rows 0-6) — same workflow as the main ROM's row 0 but without a
 reference trace; (c) then gate both ROMs.
 
-SESSION 32 ADDENDUM — the walk, the straddle, and the one-cycle floor:
+## T037 session 33 (2026-10-25): pre-merge core sweep — five more real bugs
+
+Per the owner's directive (all core bugs resolved before other project
+parts), every un-gated suite in the ROM archive was run against the
+current core. Results: cpu_dummy_reads PASSES (gating candidate);
+cpu_timing_test6, blargg_ppu_tests, dmc_dma_during_read4, read2004,
+litewall, full_palette, scanline, read_joy3 = no $6000 protocol (screen
+or hash-based verification needed — future gate candidates); and FIVE
+real failures, all fixed this session:
+
+1-4. apu_reset family (see the fix commit): $4017 rewritten at reset,
+     the reset ORDER (PPU/APU/CPU — the CPU-first order stamped the APU
+     sequencer restart 8 cycles late), DMC power-up bitsRemaining=8 (the
+     0-init underflowed to 255 and stalled the first sample 256 ticks),
+     and warm-reset register-file persistence. All six apu_reset ROMs
+     pass; four promoted to tier 1.
+5.   oam_stress: OAM attribute bytes (offset 2 mod 4) have no DRAM cells
+     for bits 2-4 — mask $E3 at the $2004 read, $2004 write, and OAM DMA
+     write boundaries. Passes; promoted to tier 1.
+
+REMAINING from the sweep (T070, new task): cpu_interrupts_v2 rom_singles
+2-5 — interrupt hijacking (vector stealing mid-sequence) + the JMP-variant
+branch poll delay. 1-cli_latency passes. This is the only known-failing
+core suite left; it needs cycle-by-cycle interrupt-sequence modeling.
+
+The sprdma tables were re-verified unchanged after the DMC power-up grid
+shift (row 0 = 527/525; the DMCBIAS invariance holds). Gate: 147/147.
+
+## T037 session 32 addendum (continued) — the walk, the straddle, and the one-cycle floor:
 the fine loop's full sequence is now traced (restart writes 5196 masters
 apart, polls +72 after each write, the boundary walking 12 masters/iteration
 under the poll: poll+30, +18, +6, then -6 — the exit fires when the boundary
