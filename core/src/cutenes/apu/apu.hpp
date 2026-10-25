@@ -72,10 +72,17 @@ public:
         // Reload DMAs halt on put cycles (parity-gated). A load DMA
         // refused by the triggering write enters on the next READ cycle
         // whichever half it is (wiki DMA; Disch t=14120).
+        //
+        // Arbiter phase: cycle 0 after reset is a PUT slot, so even CPU
+        // cycles are put and odd are get (T037 session 30). The previous
+        // sense delayed every reload DMA one cycle past the read it must
+        // stall — the sprdma row-0 chain — while the whole corpus passes
+        // either way; the hardware-validated sprdma tables pin this
+        // direction (the reference's reload halt lands on the even cycle).
         return m_dmc.enabled && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0
             && m_sched.now() >= m_dmcDueMaster
             && (!m_dmcHaltOnPut
-                || ((m_sched.now() / 12) % 2 == 1));
+                || ((m_sched.now() / 12) % 2 == 0));
     }
     // True when the pending fetch is a reload (4-cycle span); loads span 3.
     bool dmcIsReloadFetch() const override { return m_dmcHaltOnPut; }

@@ -1041,6 +1041,70 @@ before the set, and diff the stall counts per poll iteration. One cycle of
 stall difference per iteration = the row-0 bug. This is a pure DMC-timing
 diff, no $2002 involvement.
 
+## T037 session 30 (2026-10-25): THE ARBITER PARITY FLIP — main ROM 15/16
+
+ROOT CAUSE FOUND AND FIXED: the DMC DMA put/get arbiter phase was INVERTED.
+`(now/12)%2==1` (odd cycles = put) delayed every reload DMA exactly ONE
+cycle past the read it must stall. The reference (hardware) halts reloads on
+the EVEN cycle. Flipping to `%2==0`:
+
+- sprdma_and_dmc_dma: 1/16 -> 15/16 rows exact. Row 0 = 527 (was 528) and
+  the whole one-row-shift artifact is gone; rows 6-15 EXACT. Only row 5 is
+  off (528 vs 526, +2).
+- sprdma_and_dmc_dma_512: 4/16 -> 10/16 (rows 4,5 +1; 6,7 -2; A,B +1).
+- Full corpus: 139/139 either way (the corpus never pinned the parity —
+  only the hardware-validated sprdma tables do; the reference's first
+  reload halt lands on the even cycle, ours now matches).
+
+EVIDENCE CHAIN (all measurements from clean rebuilds — see the traps below):
+1. CPU-side event streams (RD4015/W4010 masters) are index-aligned with the
+   reference at the constant -10 stamp offset through the boot phase and
+   into row 0's measurement (the boot $2002 poll exits of frames 6-7 also
+   diverge without the sampling lead, but the ROM's sync machinery absorbs
+   them — verified by sweeping a 0..16-master VBL read lead: the table does
+   not change).
+2. First real divergence: the E219 wait-loop poll (BIT $4015/BNE, 84-master
+   cadence) — our reload DMA delivers one bit-period EARLY relative to the
+   reference's grid (our first drain 14740992 vs theirs ~14741640 — a
+   ~648-master = one rate-15-bit grid offset). A DMCBIAS power-on grid
+   shift (swept 0..984) moves our drain onto theirs but does NOT change
+   the table (the sync re-derives the phase — the ROM is grid-invariant
+   by design; that is why it produces stable values on hardware).
+3. The decisive interleave is INSIDE the sync loops: at the coarse loop's
+   poll, our reload DMA's halt was parity-delayed to the cycle AFTER the
+   poll's read (halt 14772756 vs the read at 14772750), so our poll read
+   the PRE-fetch state ($4015 bit4=1 -> loop exits one iteration early)
+   while the reference's DMA preempts its read (post-fetch state, bit4=0,
+   loop continues). The one-iteration-early coarse exit shifts the whole
+   measurement chain -> row 0 +1 -> the one-row-shifted table.
+4. The parity flip puts the halt ON the read's cycle -> the read observes
+   the post-fetch state -> the chain aligns with hardware. A read-stall
+   (RDY) probe added on top of the flip changes nothing further (the flip
+   already resolves the interleave).
+
+TWO METHODOLOGY TRAPS (both bit this session AND previous ones — recorded
+so they stop burning sessions):
+- STALE INCREMENTAL BUILDS: editing a header (apu.hpp) does not reliably
+  trigger a rebuild of dependents in this build dir; several mid-session
+  "results" were stale-object mixtures. Session 21 hit the same class ("a
+  git checkout had wiped the edit site; detected because the table CRC
+  didn't move"). RULE: after any header edit, `rm -rf build` (or touch the
+  .cpp) and FULLY rebuild before measuring anything.
+- OUTPUT-PARSE OFFSET: `sed -n '3,18p' | awk '{print $3}'` on the screen
+  dump captures rows 01-0F, whose one-row-shifted values are IDENTICAL to
+  the hardware table's rows 00-0E — a shifted table masquerades as a
+  perfect one. RULE: always parse the row LABEL ("03|  00 527"), never a
+  bare line offset. Sessions 18-29's "15/16 rows EXACT" claims were read
+  from label-parsed output, but several of THIS session's probes weren't.
+
+REMAINING (narrowed): main row 5 (+2); 512 rows 4,5 (+1) 6,7 (-2) A,B (+1).
+Rows 6-15 of the main ROM re-lock exactly after row 5, so the residue is a
+local razor edge in one measurement phase, not a chain shift. Next: trace
+row 5's measurement (frames ~68-75; the $4012/$4013 per-row sample config
+is the likely varying parameter) and diff the $4015-poll exit vs the
+reference event stream (/tmp/ref_4015.txt still has the full RD4015/W4010
+capture; ours was re-captured this session with the flip in place).
+
 ## T037 session 30 (2026-10-24 late): row 0's seed isolated — the DMC transfer-grid phase
 
 Instrumented $4010/$4015/DMC-event traces on both engines (reference: log-2002
