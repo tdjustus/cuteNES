@@ -44,6 +44,8 @@ Ppu::Ppu(const RegionProfile& profile, Scheduler& scheduler)
     : m_profile(profile)
     , m_sched(scheduler)
 {
+    // ~0.5 s of master clock before the open-bus latch has bled to zero.
+    m_decayTicks = m_profile.masterClockNum / m_profile.masterClockDen / 2;
 }
 
 void Ppu::attachCartridge(Cartridge* cartridge) { m_cart = cartridge; }
@@ -80,15 +82,43 @@ void Ppu::reset(bool /*cold*/)
 
 // --- Register file ---------------------------------------------------------
 
+// The open-bus latch after RC decay: a bit reads back zero once its last
+// charge is stale (ppu_open_bus #3).
+std::uint8_t Ppu::decayedBusValue() const
+{
+    const std::uint64_t now = m_sched.now();
+    std::uint8_t value = 0;
+    for (int bit = 0; bit < 8; ++bit) {
+        const std::uint8_t mask = static_cast<std::uint8_t>(1u << bit);
+        if ((m_decay & mask) != 0 && now - m_decayMaster[bit] < m_decayTicks) {
+            value |= mask;
+        }
+    }
+    return value;
+}
+
+void Ppu::chargeBusBits(std::uint8_t mask, std::uint8_t value)
+{
+    const std::uint64_t now = m_sched.now();
+    m_decay = static_cast<std::uint8_t>(
+        (m_decay & ~mask) | (value & mask));
+    for (int bit = 0; bit < 8; ++bit) {
+        if ((mask & (1u << bit)) != 0) {
+            m_decayMaster[bit] = now;
+        }
+    }
+}
+
 std::uint8_t Ppu::cpuRead(std::uint16_t addr)
 {
-    std::uint8_t value = m_decay;
+    std::uint8_t value = decayedBusValue();
     switch (addr) {
     case 0x2002:
         if (std::getenv("RDDBG")) std::fprintf(stderr, "RD2002 master=%llu line=%d dot=%d lag=%02X st=%02X\n",
             (unsigned long long)m_sched.now(), m_scanline, m_dot, m_statusLag, m_status);
         // Open-bus low 5 bits decay into the returned status byte.
-        value = static_cast<std::uint8_t>((m_statusLag & 0xE0) | (m_decay & 0x1F));
+        value = static_cast<std::uint8_t>(
+            (m_statusLag & 0xE0) | (decayedBusValue() & 0x1F));
         // Race: reading at (or within a CPU clock of) the set dot returns
         // the flag clear and suppresses it for the rest of the frame
         // (nesdev PPU_registers; exercised by 02-vbl_set_time).
@@ -130,7 +160,11 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
     case 0x2007: {
         const std::uint16_t a = m_v & 0x3FFF;
         if (a >= 0x3F00) {
-            value = paletteRead(static_cast<std::uint8_t>(a & 0x1F));
+            // Palette reads are immediate and drive only bits 5-0; bits
+            // 7-6 stay open bus (ppu_open_bus #8; nesdev PPU registers).
+            value = static_cast<std::uint8_t>(
+                (paletteRead(static_cast<std::uint8_t>(a & 0x1F)) & 0x3F)
+                | (decayedBusValue() & 0xC0));
             m_readBuffer = m_vram[nametableIndex(a)];
         } else {
             value = m_readBuffer;
@@ -152,13 +186,23 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
     default:
         break; // $2000/$2001/$2003/$2005/$2006 are write-only
     }
-    m_decay = value;
+    // Only lines the register actually drives get recharged: $2002 drives
+    // bits 7-5 alone (the low 5 keep decaying, #7), a palette $2007 read
+    // drives bits 5-0 (#8), $2004 and normal $2007 drive all 8, and reads
+    // of write-only registers drive nothing (#5).
+    if (addr == 0x2002) {
+        chargeBusBits(0xE0, value);
+    } else if (addr == 0x2004) {
+        chargeBusBits(0xFF, value);
+    } else if (addr == 0x2007) {
+        chargeBusBits((m_v & 0x3FFF) >= 0x3F00 ? 0x3F : 0xFF, value);
+    }
     return value;
 }
 
 void Ppu::cpuWrite(std::uint16_t addr, std::uint8_t value)
 {
-    m_decay = value;
+    chargeBusBits(0xFF, value);
     const bool writable = addr == 0x2002 || addr == 0x2003 || addr == 0x2004
         || addr == 0x2007 || m_sched.now() >= m_ignoreWritesUntil;
     if (!writable) {
@@ -241,6 +285,33 @@ void Ppu::clockIfA12Rose()
 // background per ctrl bit 4 (pattern-fetch dots of 1-256 and 321-336).
 // Nametable/attribute fetches are $2xxx (bit 12 = 0). A guarded 0->1 rise
 // clocks mapper IRQ counters; the ~12-dot guard suppresses repeat rises.
+// The MMC3's filtered view of A12 (nesdev MMC3, Furrtek's schematic): a
+// rise reaches the IRQ counter only after the RAW line has stayed high for
+// kA12Rise dots, and the filter only falls after a sustained low — short
+// 4-dot nametable-fetch pulses never propagate, the 64-dot sprite-pattern
+// window does (the classic "counter decrements at dot ~260").
+void Ppu::trackA12Raw(bool high)
+{
+    if (high) {
+        ++mA12HighRun;
+        mA12LowRun = 0;
+        if (!mA12High && mA12HighRun >= kA12RiseDots && m_cart != nullptr) {
+            mA12High = true;
+            if (std::getenv("A12TRC") != nullptr) {
+                std::fprintf(stderr, "A12CLK line=%d dot=%d ctrl=%02X\n",
+                    m_scanline, m_dot, m_ctrl);
+            }
+            m_cart->clockIrq();
+        }
+    } else {
+        ++mA12LowRun;
+        mA12HighRun = 0;
+        if (mA12High && mA12LowRun >= kA12FallDots) {
+            mA12High = false;
+        }
+    }
+}
+
 void Ppu::trackA12(bool high)
 {
     if (high && !mA12High) {
@@ -400,15 +471,17 @@ void Ppu::fetchCycle(std::uint32_t dot)
                 break;
             }
             case 6: { // pattern low
+                // PPUCTRL bit 3 selects the BACKGROUND pattern table
+                // ($0000/$1000); bit 4 is the 8x8 SPRITE table.
                 const std::uint16_t addr = static_cast<std::uint16_t>(
-                    ((m_ctrl & 0x10) != 0 ? 0x1000 : 0)
+                    ((m_ctrl & 0x08) != 0 ? 0x1000 : 0)
                     + m_latchNT * 16 + ((m_v >> 12) & 7));
                 m_latchLo = ppuBusRead(addr);
                 break;
             }
             case 0: { // pattern high + horizontal advance
                 const std::uint16_t addr = static_cast<std::uint16_t>(
-                    ((m_ctrl & 0x10) != 0 ? 0x1000 : 0)
+                    ((m_ctrl & 0x08) != 0 ? 0x1000 : 0)
                     + m_latchNT * 16 + ((m_v >> 12) & 7) + 8);
                 m_latchHi = ppuBusRead(addr);
                 incrementX();
@@ -556,7 +629,8 @@ void Ppu::loadSpriteUnits()
     }
     const int line = m_scanline + 1;
     const bool tall = (m_ctrl & 0x20) != 0;
-    const bool spritePatternLeft = (m_ctrl & 0x08) != 0;
+    // PPUCTRL bit 4 selects the 8x8 SPRITE pattern table.
+    const bool spritePatternLeft = (m_ctrl & 0x10) != 0;
     m_unitCount = 0;
     m_spriteZeroActive = m_spriteZeroNext;
     for (int i = 0; i < 8; ++i) {
@@ -665,25 +739,32 @@ void Ppu::stepDot()
     // (2-details test 7). blargg's "scanline 0" is the pre-render line.
     if ((m_scanline < kVisibleLines || m_scanline == kPreRenderLine)
         && renderingEnabled()) {
-        // Per-dot A12 from the pattern-fetch bus (see trackA12).
+        // RAW PPU A12 per dot: nametable and attribute fetches are $2xxx
+        // (A12=1), pattern fetches follow their table select (nesdev MMC3:
+        // "if BG uses the left table and sprites the right, filtered A12
+        // stays low during nametable and BG fetches, high during sprite
+        // fetches"). The 8-dot fetch groups: NT(2) AT(2) then the two
+        // pattern bytes(4); the sprite window (257-320) interleaves garbage
+        // NT/AT fetches the same way; dots 337-340 are two NT fetches.
+        const bool bgTable = (m_ctrl & 0x08) != 0;  // bit 3
+        const bool sprTable = (m_ctrl & 0x10) != 0; // bit 4
         bool high;
-        if (m_dot >= 262 && m_dot <= 320) {
-            // Sprite pattern fetches begin at dot 257, but the MMC3's
-            // internal delay clocks the counter at ~dot 260 (the classic
-            // 3-dot offset; 4-scanline_timing boundaries).
-            high = (m_ctrl & 0x08) != 0; // sprite pattern table select
-        } else if ((m_dot >= 1 && m_dot <= 256)
-            || (m_dot >= 321 && m_dot <= 336)) {
-            // Within each 8-dot fetch group the last two dots fetch
-            // patterns; NT/AT fetches are $2xxx (bit 12 = 0).
-            // lo fetch at group dots 5-6, hi at 7-8 (dot & 7 == 0).
-            const int phase = m_dot & 7;
-            high = (phase >= 5)
-                && ((m_ctrl & 0x10) != 0);
+        if (m_dot == 0) {
+            high = false; // idle cycle
         } else {
-            high = false; // NT prefetches at 337-340 and dot 0
+            const int phase = m_dot & 7;
+            const bool patternDot = phase >= 5 || phase == 0;
+            if (m_dot <= 256) {
+                high = patternDot ? bgTable : true;
+            } else if (m_dot <= 320) {
+                high = patternDot ? sprTable : true;
+            } else if (m_dot <= 336) {
+                high = patternDot ? bgTable : true;
+            } else {
+                high = true; // NT fetches at 337-340
+            }
         }
-        trackA12(high);
+        trackA12Raw(high);
     }
 
     if (m_scanline < kVisibleLines) {
@@ -861,6 +942,9 @@ void Ppu::saveState(StateWriter& w) const
     w.w(m_w);
     w.w(m_readBuffer);
     w.w(m_decay);
+    for (int bit = 0; bit < 8; ++bit) {
+        w.w<std::uint64_t>(m_decayMaster[bit]);
+    }
     w.w(m_oamAddr);
     w.wBytes(m_vram.data(), m_vram.size());
     w.wBytes(m_palette.data(), m_palette.size());
@@ -913,6 +997,9 @@ void Ppu::loadState(StateReader& r)
     m_w = r.get<std::uint8_t>();
     m_readBuffer = r.get<std::uint8_t>();
     m_decay = r.get<std::uint8_t>();
+    for (int bit = 0; bit < 8; ++bit) {
+        m_decayMaster[bit] = r.get<std::uint64_t>();
+    }
     m_oamAddr = r.get<std::uint8_t>();
     r.getBytes(m_vram.data(), m_vram.size());
     r.getBytes(m_palette.data(), m_palette.size());

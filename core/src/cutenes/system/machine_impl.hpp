@@ -31,8 +31,16 @@ struct ApuIoBridge final : CpuBusDevice {
 
     std::uint8_t cpuRead(std::uint16_t addr) override
     {
+        // $4000-$4013, $4014 and $4018-$401F have no read drivers: they
+        // return the CPU data-bus open-bus latch (blargg
+        // cpu_exec_space_apu: write-only APU ports AND the unallocated
+        // $4018-$40FF I/O space). $4020-$40FF is handled by the Bus
+        // itself (also open bus).
         if (addr == 0x4015) {
             return apu->registerRead(addr);
+        }
+        if (addr != 0x4016 && addr != 0x4017) {
+            return bus != nullptr ? bus->openBusRead() : 0;
         }
         if (addr == 0x4016 || addr == 0x4017) {
             // Serial controller read: bit 0 carries the current button in

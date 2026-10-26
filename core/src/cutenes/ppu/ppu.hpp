@@ -48,6 +48,11 @@ public:
 
     // CpuBusDevice ($2000-$2007, pre-mirrored by the bus).
     std::uint8_t cpuRead(std::uint16_t addr) override;
+    // The decayed open-bus latch (0 once the last PPU-port access is stale).
+    std::uint8_t decayedBusValue() const;
+    // Charge the latch bits selected by `mask` with `value` (a no-op for
+    // undriven lines).
+    void chargeBusBits(std::uint8_t mask, std::uint8_t value);
     void cpuWrite(std::uint16_t addr, std::uint8_t value) override;
 
     // Advance dots to the given master clock.
@@ -77,7 +82,13 @@ public:
     // OAM DMA target: 256 bytes pushed by the $4014 engine.
     void oamDmaWrite(std::uint8_t value);
     void clockIfA12Rose(); // $2007 access: v++ and A12-rise IRQ
-    void trackA12(bool high); // shared guarded A12 edge
+    void trackA12(bool high); // shared guarded A12 edge ($2006/$2007 path)
+    // Raw-bus + filter model for the rendering fetch pattern (MMC3).
+    void trackA12Raw(bool high);
+    static constexpr int kA12RiseDots = 5; // dots high before a rise clocks
+    static constexpr int kA12FallDots = 2; // dots low before the filter falls
+    int mA12HighRun = 0;
+    int mA12LowRun = 0;
 
     // Frame completion flag: set once the final visible pixel is emitted
     // (scanline 239, dot 255); the machine consumes and clears it.
@@ -128,6 +139,14 @@ private:
     std::uint64_t m_lastVramReadMaster = ~0ull; // double-2007 quirk state
     std::uint8_t m_lastVramReadValue = 0;
     std::uint8_t m_decay = 0; // open-bus latch for $2002 low bits
+    // RC decay of the open-bus latch (blargg ppu_open_bus): each bit is a
+    // capacitor charged only when its register drives that bus line,
+    // bleeding to zero in well under a second (#3). $2002 drives ONLY
+    // bits 7-5 (the low 5 keep decaying, #7), a palette $2007 read drives
+    // only bits 5-0 (#8), and reads of write-only registers charge
+    // nothing (#5). Per-bit charge timestamps, one ~0.5 s time constant.
+    std::uint64_t m_decayMaster[8] = {};
+    std::uint64_t m_decayTicks = 0;
     std::uint8_t m_oamAddr = 0;
 
     // Memories.
