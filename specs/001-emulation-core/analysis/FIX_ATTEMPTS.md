@@ -1459,3 +1459,39 @@ REMAINING KNOWN GAPS (documented, un-gated):
 METHODOLOGY note: probe binaries must be RELINKED after every core
 rebuild — a stale scriptprobe produced one wasted round this session
 (the trap is already on record from session 34).
+
+## Session 40 (2026-10-26): T072 — sprite overflow and ppu_read_buffer both pass
+
+**sprite_overflow_tests 2-5** (three overflow-scan defects, all gated now):
+1. The per-line reset lived in stepDot's dot-0 block — never reached
+   during vblank or the pre-render line, so the overflow state leaked
+   across frames into ones that enable rendering late (2.Details #9's
+   false positive). The reset now runs in the secondary-clear phase
+   (dot 1), where hardware resets it, and also clears m_secSecondaryRead.
+2. The scan never stopped when n wrapped past sprite 63: it re-scanned
+   from sprite 0 and re-copied already-copied sprites, doubling secCount
+   ("8 found" on lines with four sprites). The comparison also always
+   uses the primary-OAM byte now (the m_oam2[0] always-in-range source
+   was a compensating accident).
+3. The buggy diagonal's increment at m==3 is +1 (4n+3 -> 4(n+1)+0),
+   not +5 (4.Obscure #5, 3.Timing #11).
+
+**ppu_read_buffer (bisqwit, 78 subtests)**: one defect — m_spriteZeroNext
+was never reset per line, so after any line where sprite 0 came in range,
+the FIRST in-range sprite of whatever table OAM later held was treated as
+sprite 0. Every no-hit DMA half reported a spurious hit. Cleared with the
+rest of the evaluation machine at dot 1. Now a tier-1 ROM (code 00).
+
+**4-scanline_timing mode-$08/#10 — new characterization, still open.**
+A one-clock bisection (suppress the natural mode-$08 clock, fire one at a
+tunable pre-render dot) pins hardware's mode-$08 first clock to pre-render
+dot 260 +/- 1 — the SAME dot as mode $10, i.e. the sprite-fetch window
+clocks in every table configuration (the garbage nametable fetches
+interleaving it are $2xxx-high in all modes). With the window at 260 and
+mode-independent, subtests #2-#8 of BOTH suites pass; #9+ (mode $10) then
+fail, and moving the mode-$10 window could not recover them because the
+background-pulse branch (bit 3 vs bit 4) changes which regions are
+continuously high, re-entering the calibrated-guard interaction. The
+guarded-edge model needs replacing with a real rise/fall filter whose
+thresholds are derived from the fetch pattern itself; left as T072's
+remaining item with this bisection on record.
