@@ -87,11 +87,12 @@ struct ApuIoBridge final : CpuBusDevice {
     }
 
     // Sprite DMA (task T037, nesdev wiki DMA): halt, optional align, then
-    // 256 get/put pairs. CPU cycles alternate get (read) / put (write);
-    // get is the even CPU cycle of this power-on alignment. A pending DMC
-    // fetch preempts an OAM get; its dummy/align cycles overlap the OAM
-    // stream (wiki: DMC DMA during OAM DMA), costing one stolen get plus
-    // one OAM realign. Every cycle advances PPU and APU catch-up.
+    // 256 get/put pairs. CPU cycles alternate get (read) / put (write); the
+    // first half of an APU cycle is a get, so CPU cycle 0 after reset is a
+    // get (even cycles get, odd put). A pending DMC fetch preempts an OAM
+    // get; its dummy/align cycles overlap the OAM stream (wiki: DMC DMA
+    // during OAM DMA), costing one stolen get plus one OAM realign. Every
+    // cycle advances PPU and APU catch-up.
     void dmaCycle()
     {
         sched->advanceMaster(12);
@@ -99,7 +100,13 @@ struct ApuIoBridge final : CpuBusDevice {
         apu->runTo(sched->now());
     }
 
-    bool onGetCycle() const { return (sched->now() / 12) % 2 == 0; }
+    // The cycle the next dmaCycle() would use, relative to the current
+    // half-step position. "now" sits at the middle of the cycle in flight,
+    // so the next cycle is now/12 + 1.
+    bool nextIsGet() const
+    {
+        return ((sched->now() / 12) + 1) % 2 == 0;
+    }
 
     // The DMC get: consumes this get cycle and refills the sample buffer.
     void dmcGetCycle()
@@ -111,15 +118,15 @@ struct ApuIoBridge final : CpuBusDevice {
     void oamDma(std::uint8_t page)
     {
         const std::uint16_t base = static_cast<std::uint16_t>(page << 8);
-        dmaCycle();                          // halt cycle
-        if (!onGetCycle()) {
-            dmaCycle();                      // align to a get cycle
+        dmaCycle();                          // halt cycle (the cycle after $4014)
+        if (!nextIsGet()) {
+            dmaCycle();                      // align: first get must follow
         }
         std::uint8_t pending = 0;
         bool haveByte = false;
         int i = 0;
         while (i < 256 || haveByte) {
-            if (haveByte || !onGetCycle()) {
+            if (haveByte || !nextIsGet()) {
                 // Put cycle: write the pending byte (or idle/realign when
                 // a DMC get stole the preceding get cycle).
                 dmaCycle();

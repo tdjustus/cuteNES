@@ -39,7 +39,7 @@ target_link_libraries(rom_harness PRIVATE
 
 # Tier-1 acceptance gate (constitution Principle III). Every ROM listed
 # here is green as of its registration; the set grows as remaining suites
-# pass (oam_stress, sprdma, remaining apu_reset, cpu_interrupts_v2 5).
+# pass (sprdma, cpu_interrupts_v2 2/3/5).
 # The ppu_vbl_nmi and apu_test entries are the standalone sub-test ROMs:
 # the multi-test builds can mask sub-test failures behind their bank layout.
 set(TIER1_ROMS
@@ -56,6 +56,7 @@ set(TIER1_ROMS
     ppu_vbl_nmi/rom_singles/09-even_odd_frames.nes
     ppu_vbl_nmi/rom_singles/10-even_odd_timing.nes
     cpu_reset/ram_after_reset.nes
+    cpu_interrupts_v2/rom_singles/4-irq_and_dma.nes
     oam_read/oam_read.nes
     oam_stress/oam_stress.nes
     apu_test/rom_singles/2-len_table.nes

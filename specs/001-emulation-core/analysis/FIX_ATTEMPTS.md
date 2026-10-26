@@ -1258,3 +1258,42 @@ table (the ROM's sync machinery re-derives the phase; the table is
 grid-invariant by design). The early E219 exit measured here is real but
 not causal. The causal seed was the put/get ARBITER PARITY (session 31),
 now fixed on this branch: main ROM 15/16, _512 10/16, corpus 139/139.
+
+## T070 session 35 (2026-10-26): cpu_interrupts_v2 test 4 passes — the arbiter phase was the whole offset
+
+Root cause of `4-irq_and_dma`'s constant +1 clock: the absolute get/put
+arbiter phase, not the $4017 restart parity. The emulator had cycle 0 after
+reset as a PUT slot (even put / odd get). Correct (and now baked): the first
+half of an APU cycle is a get, so cycle 0 is a GET — even CPU cycles get,
+odd put. A DMC *reload* DMA therefore waits for a put (odd) cycle.
+
+Two sites must move together:
+- `machine_impl.hpp`: OAM arbiter (`nextIsGet()` = the cycle the next
+  `dmaCycle()` will use is even).
+- `apu.hpp`: `dmcFetchPending()` reload halt parity (`% 2 == 1`).
+
+Why not the APU parity: the previous session's hypothesis (the sync_apu exit
+parity shifts the $4017 restart by one clock) is not falsifiable through the
+table — both phase senses give the same test-4 DMA window lengths up to the
+last four rows, and the APU flag instants themselves (29830, ceil grid,
+visible=0) are pinned by `6-irq_flag_timing`/`4-jitter`.
+
+Evidence:
+- 2x2 sweep (OAMPHASE x DMCPHASE): only the JOINT flip yields
+  `8 +524, 8 +525, 8 +526, 9 +527` and keeps sprdma's table. Either phase
+  alone breaks sprdma rows 0-4 or leaves test 4 at `8,8,9,9`.
+- Under the joint flip test 4's full table (including +0..+13) matches the
+  ROM's expected hardware table and prints `Passed`.
+- Regression: phase 0 vs phase 1 output is IDENTICAL for every
+  apu_test/rom_singles, apu_reset, dmc_tests, dmc_dma_during_read4, oam_read,
+  sprdma_and_dmc_dma (main + _512) and cpu_interrupts_v2 singles 2/3/5.
+  The flip is a global relabel that only test 4 can see.
+- Full clean rebuild + ctest: 147/147 (tier1 32, tier2 22, unit 92,
+  playtest 24, golden hashes).
+- All env probes (`OAMPHASE`/`DMCPHASE`/`W4017`/`GRID12`/`IRQK`/`IRQVIS`/
+  `IRQTRC`/`IRQPOLL`/`T070TRC`) removed; `seqIrqEventMaster()` dead code
+  removed.
+
+Still failing, unchanged by the flip: test 2 (9/10 rows; last SEC row off by
+one), test 3 (hijack rows engaged; NMI grid 1-2 late), test 5 (`test_jmp`
+table). sprdma row 5 (528 vs 526) and the _512 rows also unchanged.

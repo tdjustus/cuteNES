@@ -29,6 +29,10 @@ void Machine::Impl::buildComponents(Region region)
     ppu = std::make_unique<Ppu>(*profile, scheduler);
     apu = std::make_unique<Apu>(*profile, scheduler, bus);
     cpu = std::make_unique<Cpu>(bus, scheduler, ppu.get(), apu.get());
+    cpu->setIrqLineSource([this] {
+        return apu->frameIrqLine() || apu->dmcIrqPending()
+            || cart.irqLine();
+    });
 
     ppu->setVideoOutput(framebuffer.data());
     apu->setOutputRate(config.audioSampleRate);
