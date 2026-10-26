@@ -82,13 +82,7 @@ public:
     // OAM DMA target: 256 bytes pushed by the $4014 engine.
     void oamDmaWrite(std::uint8_t value);
     void clockIfA12Rose(); // $2007 access: v++ and A12-rise IRQ
-    void trackA12(bool high); // shared guarded A12 edge ($2006/$2007 path)
-    // Raw-bus + filter model for the rendering fetch pattern (MMC3).
-    void trackA12Raw(bool high);
-    static constexpr int kA12RiseDots = 5; // dots high before a rise clocks
-    static constexpr int kA12FallDots = 2; // dots low before the filter falls
-    int mA12HighRun = 0;
-    int mA12LowRun = 0;
+    void trackA12(bool high); // shared guarded A12 edge
 
     // Frame completion flag: set once the final visible pixel is emitted
     // (scanline 239, dot 255); the machine consumes and clears it.

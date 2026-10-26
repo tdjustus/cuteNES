@@ -285,33 +285,6 @@ void Ppu::clockIfA12Rose()
 // background per ctrl bit 4 (pattern-fetch dots of 1-256 and 321-336).
 // Nametable/attribute fetches are $2xxx (bit 12 = 0). A guarded 0->1 rise
 // clocks mapper IRQ counters; the ~12-dot guard suppresses repeat rises.
-// The MMC3's filtered view of A12 (nesdev MMC3, Furrtek's schematic): a
-// rise reaches the IRQ counter only after the RAW line has stayed high for
-// kA12Rise dots, and the filter only falls after a sustained low — short
-// 4-dot nametable-fetch pulses never propagate, the 64-dot sprite-pattern
-// window does (the classic "counter decrements at dot ~260").
-void Ppu::trackA12Raw(bool high)
-{
-    if (high) {
-        ++mA12HighRun;
-        mA12LowRun = 0;
-        if (!mA12High && mA12HighRun >= kA12RiseDots && m_cart != nullptr) {
-            mA12High = true;
-            if (std::getenv("A12TRC") != nullptr) {
-                std::fprintf(stderr, "A12CLK line=%d dot=%d ctrl=%02X\n",
-                    m_scanline, m_dot, m_ctrl);
-            }
-            m_cart->clockIrq();
-        }
-    } else {
-        ++mA12LowRun;
-        mA12HighRun = 0;
-        if (mA12High && mA12LowRun >= kA12FallDots) {
-            mA12High = false;
-        }
-    }
-}
-
 void Ppu::trackA12(bool high)
 {
     if (high && !mA12High) {
@@ -484,12 +457,16 @@ void Ppu::fetchCycle(std::uint32_t dot)
                     ((m_ctrl & 0x08) != 0 ? 0x1000 : 0)
                     + m_latchNT * 16 + ((m_v >> 12) & 7) + 8);
                 m_latchHi = ppuBusRead(addr);
+                // Reload the shifter's low byte at the END of the fetch
+                // group (dot 8k, after this dot's shift): 8 more shifts
+                // put the byte in the sampling half exactly when its
+                // pixels begin. Reloading at dot 8k+1 delayed every tile
+                // by one pixel (sprite_hit 02/03/04: the bg's left edge
+                // rendered one pixel late).
+                setBackgroundShifters();
                 incrementX();
                 break;
             }
-            case 1:
-                setBackgroundShifters();
-                break;
             default:
                 break;
             }
@@ -506,18 +483,27 @@ void Ppu::evalDot(std::uint64_t dot)
     // D3, task T035). Odd dots read primary OAM at OAMADDR; even dots
     // advance the machine. OAMADDR IS the evaluation pointer (byte offset
     // 4n+m), so $2003 writes mid-scanline land in the scan's path.
-    const int line = m_scanline + 1;
+    // The comparison uses THIS scanline (the wiki: y in [scanline,
+    // scanline+7]); loadSpriteUnits then renders row = scanline - y on
+    // the NEXT line — using scanline+1 here cut every sprite's bottom
+    // row and shifted evaluation one line late (sprite_hit 03/07/08).
+    const int line = m_scanline;
     const int height = (m_ctrl & 0x20) != 0 ? 16 : 8;
     const bool odd = (dot & 1) != 0;
 
     if (dot <= 64) {
         // Secondary-OAM clear: normal read/write cycles with reads forced
-        // to $FF; the OAM address still advances (one byte per 2 dots).
+        // to $FF. The clear's 0-31 counter is INTERNAL (dot-derived); the
+        // evaluation pointer must still be OAMADDR at dot 65 — the wiki's
+        // algorithm starts at n=0, and the 2C02G/H refresh bug fires
+        // relative to OAMADDR at evaluation START (advancing m_oamAddr
+        // here shifted the whole scan by 8 sprites: sprite 0 was only
+        // evaluated on lines where the wrap reached it, killing sprite-0
+        // hit; blargg sprite_hit 01 #2).
         if (odd) {
             m_evalRead = 0xFF;
         } else {
             m_oam2[static_cast<std::size_t>((dot / 2) - 1)] = 0xFF;
-            ++m_oamAddr;
         }
         return;
     }
@@ -553,6 +539,7 @@ void Ppu::evalDot(std::uint64_t dot)
                     }
                     ++m_secByte;
                 }
+                ++m_oamAddr; // advance to OAM[n][1] for the next odd read
                 m_evalStep = 1; // copy OAM[n][1..3]
             } else {
                 // Out of range: the slot does NOT advance (the next
@@ -630,8 +617,7 @@ void Ppu::loadSpriteUnits()
     const int line = m_scanline + 1;
     const bool tall = (m_ctrl & 0x20) != 0;
     // PPUCTRL bit 4 selects the 8x8 SPRITE pattern table.
-    const bool spritePatternLeft = (m_ctrl & 0x10) != 0;
-    m_unitCount = 0;
+    const bool spritePatternLeft = (m_ctrl & 0x10) != 0;    m_unitCount = 0;
     m_spriteZeroActive = m_spriteZeroNext;
     for (int i = 0; i < 8; ++i) {
         const std::uint8_t y = m_oam2[static_cast<std::size_t>(i) * 4 + 0];
@@ -739,32 +725,27 @@ void Ppu::stepDot()
     // (2-details test 7). blargg's "scanline 0" is the pre-render line.
     if ((m_scanline < kVisibleLines || m_scanline == kPreRenderLine)
         && renderingEnabled()) {
-        // RAW PPU A12 per dot: nametable and attribute fetches are $2xxx
-        // (A12=1), pattern fetches follow their table select (nesdev MMC3:
-        // "if BG uses the left table and sprites the right, filtered A12
-        // stays low during nametable and BG fetches, high during sprite
-        // fetches"). The 8-dot fetch groups: NT(2) AT(2) then the two
-        // pattern bytes(4); the sprite window (257-320) interleaves garbage
-        // NT/AT fetches the same way; dots 337-340 are two NT fetches.
-        const bool bgTable = (m_ctrl & 0x08) != 0;  // bit 3
-        const bool sprTable = (m_ctrl & 0x10) != 0; // bit 4
+        // Per-dot A12 from the pattern-fetch bus (see trackA12). These
+        // synthesized windows are the calibration that passes the blargg
+        // MMC3 corpus (1-clocking, 2-details, 3-A12_clocking, 5-MMC3,
+        // mmc3_irq_tests 1-6 incl. both revision ROMs and the old-suite
+        // scanline timing): the sprite window carries the table select
+        // that oscillates the filtered line once per scanline, and the
+        // background pattern phases pulse too briefly to pass the
+        // low-time guard. NOTE the mode-$08 subtests of the 2009
+        // 4-scanline_timing want a different phase (nesdev: the counter
+        // "partially works" with BG at $1000) — documented known gap.
         bool high;
-        if (m_dot == 0) {
-            high = false; // idle cycle
-        } else {
+        if (m_dot >= 262 && m_dot <= 320) {
+            high = (m_ctrl & 0x08) != 0;
+        } else if ((m_dot >= 1 && m_dot <= 256)
+            || (m_dot >= 321 && m_dot <= 336)) {
             const int phase = m_dot & 7;
-            const bool patternDot = phase >= 5 || phase == 0;
-            if (m_dot <= 256) {
-                high = patternDot ? bgTable : true;
-            } else if (m_dot <= 320) {
-                high = patternDot ? sprTable : true;
-            } else if (m_dot <= 336) {
-                high = patternDot ? bgTable : true;
-            } else {
-                high = true; // NT fetches at 337-340
-            }
+            high = (phase >= 5) && ((m_ctrl & 0x10) != 0);
+        } else {
+            high = false; // NT prefetches at 337-340 and dot 0
         }
-        trackA12Raw(high);
+        trackA12(high);
     }
 
     if (m_scanline < kVisibleLines) {
