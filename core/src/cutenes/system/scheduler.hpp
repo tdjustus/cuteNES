@@ -59,8 +59,9 @@ public:
     // steals the next get cycle once the byte is wanted (wiki overlap).
     virtual bool dmcGetWanted() const { return false; }
     virtual std::uint16_t dmcFetchAddress() const { return 0; }
-    virtual bool dmcHaltOnPutForAlign() const { return false; }
     virtual bool dmcIsReloadFetch() const { return false; }
+    // True when the current CPU cycle lands on an APU get (read) half.
+    virtual bool dmcCycleIsGet() const { return true; }
     virtual void dmcDeliver(std::uint8_t) {}
 };
 

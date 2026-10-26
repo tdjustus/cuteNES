@@ -39,7 +39,7 @@ target_link_libraries(rom_harness PRIVATE
 
 # Tier-1 acceptance gate (constitution Principle III). Every ROM listed
 # here is green as of its registration; the set grows as remaining suites
-# pass (sprdma, cpu_interrupts_v2 2/3/5).
+# pass.
 # The ppu_vbl_nmi and apu_test entries are the standalone sub-test ROMs:
 # the multi-test builds can mask sub-test failures behind their bank layout.
 set(TIER1_ROMS
@@ -77,7 +77,9 @@ set(TIER1_ROMS
     apu_test/rom_singles/7-dmc_basics.nes
     apu_test/rom_singles/8-dmc_rates.nes
     apu_test/rom_singles/1-len_ctr.nes
-    apu_test/rom_singles/5-len_timing.nes)
+    apu_test/rom_singles/5-len_timing.nes
+    sprdma_and_dmc_dma/sprdma_and_dmc_dma.nes
+    sprdma_and_dmc_dma/sprdma_and_dmc_dma_512.nes)
 
 # All formerly known-failing ROMs have been fixed and promoted to tier 1
 # (see specs/001-emulation-core/analysis/FIX_ATTEMPTS.md).

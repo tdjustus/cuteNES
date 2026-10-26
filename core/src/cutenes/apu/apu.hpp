@@ -61,7 +61,7 @@ public:
     bool dmcIrqPending() const { return m_dmcIrq; }
 
     // CPU-serviced DMC memory fetch: the delta channel halts the processor
-    // for 4 cycles while it reads its next sample byte (task T037).
+    // for a 3- or 4-cycle sequence while it reads its next sample byte.
     bool dmcFetchPending() const override
     {
         // A fetch is due once its DMA halt is scheduled: loads at the
@@ -69,23 +69,39 @@ public:
         // the LAST-BIT wrap of the playing byte (tail arm): the DMA runs
         // during the byte's final timer period so the refill is present
         // AT the consume edge (hardware same-cycle full_after=1; T037).
-        // Reload DMAs halt on put cycles (parity-gated). A load DMA
-        // refused by the triggering write enters on the next READ cycle
-        // whichever half it is (wiki DMA; Disch t=14120).
         //
         // Arbiter phase: the first half of an APU cycle is a get, so CPU
         // cycle 0 after reset is a GET slot — even CPU cycles are get and
-        // odd are put. Reload DMA therefore halts on an odd (put) cycle.
-        // The absolute power-on phase is arbitrary on hardware; this sense
-        // is the one the hardware-validated reference tables were captured
-        // with (the OAM arbiter in machine_impl.hpp uses the same grid).
-        return m_dmc.enabled && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0
-            && m_sched.now() >= m_dmcDueMaster
-            && (!m_dmcHaltOnPut
-                || ((m_sched.now() / 12) % 2 == 1));
+        // odd are put. Loads are scheduled to halt on a get, reloads on a
+        // put. The absolute power-on phase is arbitrary on hardware; this
+        // sense is the one the hardware-validated reference tables were
+        // captured with (the OAM arbiter in machine_impl.hpp uses the same
+        // grid).
+        if (!m_dmc.enabled || !m_dmc.bufferEmpty || m_dmc.bytesRemaining == 0
+            || m_sched.now() < m_dmcDueMaster) {
+            return false;
+        }
+        if (!m_dmcHaltOnPut) {
+            return true; // load: scheduled on a get, so the halt is immediate
+        }
+        // Reload: scheduled to halt on the first put (odd) cycle at or after
+        // the drain. A halt refused by a CPU write retries on the VERY NEXT
+        // cycle — even a get one (nesdev DMA, "Failed halts try again on the
+        // next CPU cycle"; the delayed-1/2/3 examples) — so once armed the
+        // fetch stays pending every cycle.
+        const std::uint64_t cyc = m_sched.cpuCycleToMaster(1);
+        const std::uint64_t firstPut = (m_dmcDueMaster + cyc - 1) / cyc;
+        const std::uint64_t armed =
+            (firstPut % 2 == 1) ? firstPut : firstPut + 1;
+        return m_sched.now() >= armed * cyc;
     }
-    // True when the pending fetch is a reload (4-cycle span); loads span 3.
+    // True when the pending fetch is a reload (scheduled on a put cycle).
     bool dmcIsReloadFetch() const override { return m_dmcHaltOnPut; }
+    // True when the current cycle is a get (read) half of the APU clock.
+    bool dmcCycleIsGet() const override
+    {
+        return ((m_sched.now() / m_sched.cpuCycleToMaster(1)) % 2) == 0;
+    }
     bool dmcGetWanted() const override
     {
         return m_dmc.enabled && m_dmc.bufferEmpty
@@ -97,7 +113,6 @@ public:
     }
     // True when the pending fetch is a reload DMA (parity-gated halt,
     // alignment cycle in the CPU stall). Loads enter on the first read.
-    bool dmcHaltOnPutForAlign() const override { return m_dmcHaltOnPut; }
     void dmcDeliver(std::uint8_t byte) override
     {
         m_dmc.sampleBuffer = byte;

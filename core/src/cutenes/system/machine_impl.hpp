@@ -125,34 +125,48 @@ struct ApuIoBridge final : CpuBusDevice {
         std::uint8_t pending = 0;
         bool haveByte = false;
         int i = 0;
-        while (i < 256 || haveByte) {
-            if (haveByte || !nextIsGet()) {
-                // Put cycle: write the pending byte (or idle/realign when
-                // a DMC get stole the preceding get cycle).
+        // DMC overlap phase for the upcoming cycle (nesdev wiki DMA, "DMC DMA
+        // during OAM DMA"): halt and dummy and the optional alignment are
+        // no-op cycles that OVERLAP the OAM stream, while the DMC get steals
+        // the OAM get and forces an OAM realign. 0 idle, 1 halt, 2 dummy,
+        // 3 align, 4 the DMC get.
+        int dmc = 0;
+        while (i < 256 || haveByte || dmc != 0) {
+            const bool isGet = nextIsGet();
+            if (dmc == 0 && apu->dmcGetWanted()) {
+                dmc = 1; // halt: overlaps this cycle's OAM access
+            }
+            if (dmc == 4) {
+                // The DMC get owns this cycle; the skipped OAM get leaves
+                // the following put with nothing to write (realign).
                 dmaCycle();
-                if (haveByte) {
-                    ppu->oamDmaWrite(pending);
-                    haveByte = false;
-                }
+                apu->dmcDeliver(bus->read(apu->dmcFetchAddress()));
+                dmc = 0;
                 continue;
             }
-            // Get cycle: the DMC takes priority over the OAM read. The
-            // halt-parity gate is CPU-path only; the steal happens at the
-            // next get cycle once the byte is wanted.
-            if (apu->dmcGetWanted()) {
-                dmcGetCycle();
-                continue;
-            }
+            // OAM work happens on halt/dummy/align cycles (no-op overlap).
             dmaCycle();
-            pending = bus->read(static_cast<std::uint16_t>(base + i));
-            haveByte = true;
-            ++i;
+            if (isGet) {
+                if (i < 256) {
+                    pending = bus->read(static_cast<std::uint16_t>(base + i));
+                    haveByte = true;
+                    ++i;
+                }
+            } else if (haveByte) {
+                ppu->oamDmaWrite(pending);
+                haveByte = false;
+            }
+            if (dmc == 1) {
+                dmc = 2; // dummy follows the halt
+            } else if (dmc == 2) {
+                // The cycle after the dummy: the DMC get if it is a get,
+                // otherwise one alignment cycle first.
+                dmc = isGet ? 3 : 4;
+            } else if (dmc == 3) {
+                dmc = 4;
+            }
         }
-        // A fetch that became pending in the final pairs extends past the
-        // DMA: its dummy/align overlapped the tail, leaving the get owed.
-        if (apu->dmcGetWanted()) {
-            dmcGetCycle();
-        }
+        // The OAM stream is complete; nothing else to advance.
     }
 };
 
