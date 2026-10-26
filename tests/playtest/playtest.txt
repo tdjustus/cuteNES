@@ -166,6 +166,12 @@ run 500 none
 expect-text Passed
 end
 
+entry dmc-dma-2007-write
+rom ../roms/dmc_dma_during_read4/dma_2007_write.nes
+run 500 none
+expect-text Passed
+end
+
 # No check_crc in these two: they print documented hardware outcome
 # variants; ours matches dma_2007_read's table 1 (11 22 / ... / 33 44,
 # CRC 159A7A8F) and double_2007_read's variant 1 (22 33.. / 22 44..,

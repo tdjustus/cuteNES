@@ -1395,3 +1395,18 @@ text instead of tuning the tables:
    main table to `528 528 528 528 528 526 …`.
 
 Both ROMs are promoted to `TIER1_ROMS`; full ctest 154/154 (tier1 39).
+
+## T071 session 38 (2026-10-26): dma_2007_write passes — all five singles gated
+
+`dma_2007_write` was the last holdout (hardware prints
+`22 11 22 AA 44 55 66 77` five times, "no effect"; ours re-issued on
+only 1 of 5 iterations). It is the same defect class T037 closed: with
+the DMC fetch now attempted at the start of every CPU cycle and accepted
+only on a read (a write refuses and retries next cycle), every
+iteration's `$2007` write lands on the stall boundary and gets the
+re-issue. The ROM's own CRC check now prints `Passed`, and the entry is
+gated as a playtest case. All five `dmc_dma_during_read4` singles are
+covered.
+
+With T037, T068, T070 and T071 closed, Feature 001 has no open core
+accuracy tasks (T059 still needs user-supplied mapper 1/3 titles).
