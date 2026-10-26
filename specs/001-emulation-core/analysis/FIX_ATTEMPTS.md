@@ -1495,3 +1495,38 @@ continuously high, re-entering the calibrated-guard interaction. The
 guarded-edge model needs replacing with a real rise/fall filter whose
 thresholds are derived from the fetch pattern itself; left as T072's
 remaining item with this bisection on record.
+
+## Session 41 (2026-10-26): T072 CLOSED — fetch-level A12, the last family passes
+
+The session-40 bisection (mode-$08 clock at pre-render dot 260) plus one
+fresh look at the reference implementations cracked it:
+
+1. **Mesen's A12Watcher** (fetched from Mesen2): the mapper sees A12 only
+   on PATTERN-fetch address changes — a rise clocks the counter if a low
+   fetch preceded it by >= 3 master clocks. NT/AT fetches never touch the
+   reported bus; CPU $2006/$2007 only while rendering is off.
+2. **blargg's own comment** (4-scanline_timing source): `setb
+   PPUCTRL,$08 ; sprites use tiles at $1xxx` — PPUCTRL bit 3 is the
+   SPRITE table and bit 4 the BACKGROUND table, exactly as the wiki's
+   "VPHB SINN" layout numbers them (B = bit 4, S = bit 3) and as Mesen
+   decodes them. Session 39's "bit swap correction" was itself wrong —
+   invisible to every gated ROM because they set both bits symmetrically;
+   reverted here (golden hashes recaptured).
+3. With the bits right, the model fell out: mode $08 (sprites $1000)
+   clocks at the first sprite pattern fetch (pre-render dot 260); mode
+   $10 (bg $1000) at the first background pattern fetch — exactly 256
+   dots earlier (blargg's scanline_0_10 = scanline_0_08 - 256), and at
+   dot 324 per line steady-state ("cycle 324 of the previous scanline").
+   The pre-render line's eight DUMMY sprite fetches (no evaluation runs
+   there, secondary OAM is $FF) had to notify too — that was the missing
+   scanline-0 clock.
+
+Result: BOTH 4-scanline_timing suites pass (2009's gated as tier 1);
+2-details, 1-clocking, 3-A12_clocking, 5-MMC3, and the old
+mmc3_irq_tests all still pass. The full corpus sweep now reports ZERO
+protocol failures: 186 un-gated ROMs all pass or are no-protocol demos;
+13 load errors are unsupported mappers (out of scope by design).
+
+T072 is closed. Remaining core gaps are scope items, not defects:
+unsupported mappers (5+), PAL dot-level timing, and the MMC1 CHR-ROM
+4K-window path being untested locally (no CHR-ROM MMC1 cartridge).
