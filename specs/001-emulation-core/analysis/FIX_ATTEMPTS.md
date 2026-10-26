@@ -1459,3 +1459,74 @@ REMAINING KNOWN GAPS (documented, un-gated):
 METHODOLOGY note: probe binaries must be RELINKED after every core
 rebuild — a stale scriptprobe produced one wasted round this session
 (the trap is already on record from session 34).
+
+## Session 40 (2026-10-26): T072 — sprite overflow and ppu_read_buffer both pass
+
+**sprite_overflow_tests 2-5** (three overflow-scan defects, all gated now):
+1. The per-line reset lived in stepDot's dot-0 block — never reached
+   during vblank or the pre-render line, so the overflow state leaked
+   across frames into ones that enable rendering late (2.Details #9's
+   false positive). The reset now runs in the secondary-clear phase
+   (dot 1), where hardware resets it, and also clears m_secSecondaryRead.
+2. The scan never stopped when n wrapped past sprite 63: it re-scanned
+   from sprite 0 and re-copied already-copied sprites, doubling secCount
+   ("8 found" on lines with four sprites). The comparison also always
+   uses the primary-OAM byte now (the m_oam2[0] always-in-range source
+   was a compensating accident).
+3. The buggy diagonal's increment at m==3 is +1 (4n+3 -> 4(n+1)+0),
+   not +5 (4.Obscure #5, 3.Timing #11).
+
+**ppu_read_buffer (bisqwit, 78 subtests)**: one defect — m_spriteZeroNext
+was never reset per line, so after any line where sprite 0 came in range,
+the FIRST in-range sprite of whatever table OAM later held was treated as
+sprite 0. Every no-hit DMA half reported a spurious hit. Cleared with the
+rest of the evaluation machine at dot 1. Now a tier-1 ROM (code 00).
+
+**4-scanline_timing mode-$08/#10 — new characterization, still open.**
+A one-clock bisection (suppress the natural mode-$08 clock, fire one at a
+tunable pre-render dot) pins hardware's mode-$08 first clock to pre-render
+dot 260 +/- 1 — the SAME dot as mode $10, i.e. the sprite-fetch window
+clocks in every table configuration (the garbage nametable fetches
+interleaving it are $2xxx-high in all modes). With the window at 260 and
+mode-independent, subtests #2-#8 of BOTH suites pass; #9+ (mode $10) then
+fail, and moving the mode-$10 window could not recover them because the
+background-pulse branch (bit 3 vs bit 4) changes which regions are
+continuously high, re-entering the calibrated-guard interaction. The
+guarded-edge model needs replacing with a real rise/fall filter whose
+thresholds are derived from the fetch pattern itself; left as T072's
+remaining item with this bisection on record.
+
+## Session 41 (2026-10-26): T072 CLOSED — fetch-level A12, the last family passes
+
+The session-40 bisection (mode-$08 clock at pre-render dot 260) plus one
+fresh look at the reference implementations cracked it:
+
+1. **Mesen's A12Watcher** (fetched from Mesen2): the mapper sees A12 only
+   on PATTERN-fetch address changes — a rise clocks the counter if a low
+   fetch preceded it by >= 3 master clocks. NT/AT fetches never touch the
+   reported bus; CPU $2006/$2007 only while rendering is off.
+2. **blargg's own comment** (4-scanline_timing source): `setb
+   PPUCTRL,$08 ; sprites use tiles at $1xxx` — PPUCTRL bit 3 is the
+   SPRITE table and bit 4 the BACKGROUND table, exactly as the wiki's
+   "VPHB SINN" layout numbers them (B = bit 4, S = bit 3) and as Mesen
+   decodes them. Session 39's "bit swap correction" was itself wrong —
+   invisible to every gated ROM because they set both bits symmetrically;
+   reverted here (golden hashes recaptured).
+3. With the bits right, the model fell out: mode $08 (sprites $1000)
+   clocks at the first sprite pattern fetch (pre-render dot 260); mode
+   $10 (bg $1000) at the first background pattern fetch — exactly 256
+   dots earlier (blargg's scanline_0_10 = scanline_0_08 - 256), and at
+   dot 324 per line steady-state ("cycle 324 of the previous scanline").
+   The pre-render line's eight DUMMY sprite fetches (no evaluation runs
+   there, secondary OAM is $FF) had to notify too — that was the missing
+   scanline-0 clock.
+
+Result: BOTH 4-scanline_timing suites pass (2009's gated as tier 1);
+2-details, 1-clocking, 3-A12_clocking, 5-MMC3, and the old
+mmc3_irq_tests all still pass. The full corpus sweep now reports ZERO
+protocol failures: 186 un-gated ROMs all pass or are no-protocol demos;
+13 load errors are unsupported mappers (out of scope by design).
+
+T072 is closed. Remaining core gaps are scope items, not defects:
+unsupported mappers (5+), PAL dot-level timing, and the MMC1 CHR-ROM
+4K-window path being untested locally (no CHR-ROM MMC1 cartridge).
