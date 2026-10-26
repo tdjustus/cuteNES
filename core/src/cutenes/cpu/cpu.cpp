@@ -385,7 +385,7 @@ void Cpu::sampleNmi()
         const bool line = m_ppu->nmiLine();
         if (line && !m_nmiWasHigh) {
             m_nmiPending = true;
-            m_edgeCycle = m_cycles; // 1-based index within the instruction
+            m_edgeCycle = m_instrCycle; // 1-based architectural cycle
         }
         m_nmiWasHigh = line;
     }
@@ -725,23 +725,23 @@ void Cpu::doInterrupt(std::uint16_t vector, bool brk)
     }
     push(static_cast<std::uint8_t>(m_pc >> 8));
     push(static_cast<std::uint8_t>(m_pc & 0xFF));
-    push(static_cast<std::uint8_t>(m_p | kU | (brk ? kB : 0)));
-    m_p |= kI;
     // NMI hijack (nesdev "CPU interrupts"; blargg cpu_interrupts_v2
-    // 2-nmi_and_brk / 3-nmi_and_irq): an NMI edge latched by the end of
-    // the status push redirects the vector fetch to the NMI vector — the
-    // pushed flags keep their B value (set for a hijacked BRK) and only
-    // one interrupt sequence runs. Edges latched during the vector fetch
-    // cycles themselves land after this check and are taken normally
-    // after the sequence.
+    // 2-nmi_and_brk / 3-nmi_and_irq): the signal status after the PCL push
+    // (before the P push) determines which vector the sequence fetches. An
+    // NMI edge latched later in the sequence — including during the status
+    // push — does not hijack; it is serviced after the handler's first
+    // instruction (the interrupt sequence itself does not poll).
     if (vector != 0xFFFA && m_nmiPending) {
         vector = 0xFFFA;
         m_nmiPending = false;
         m_nmiStale = false;
     }
+    push(static_cast<std::uint8_t>(m_p | kU | (brk ? kB : 0)));
+    m_p |= kI;
     const std::uint8_t lo = rd(static_cast<std::uint16_t>(vector));
     const std::uint8_t hi = rd(static_cast<std::uint16_t>(vector + 1));
     m_pc = static_cast<std::uint16_t>(lo | (hi << 8));
+    m_skipPollOnce = true;
 }
 
 void Cpu::reset(bool cold)
@@ -761,6 +761,7 @@ void Cpu::reset(bool cold)
     m_irqSamplePrev = false;
     m_irqSampleFirst = false;
     m_instrCycle = 0;
+    m_skipPollOnce = false;
 
     // Reset sequence: internal cycles then the vector fetch. The absolute
     // first-fetch cycle sets the CPU-vs-PPU/DMC phase for the whole run;
@@ -878,33 +879,43 @@ void Cpu::execRmwCombo(std::uint8_t op)
 
 void Cpu::step()
 {
-    if (!m_branchSkipPoll) {
-        // Interrupts are effectively polled at the second-to-last cycle of
-        // an instruction: an edge latched ON the final cycle defers service
-        // past this boundary (05-nmi_timing, 04-nmi_control).
-        if (m_nmiPending && (m_nmiStale || m_edgeCycle < m_prevInstrCycles)) {
-            m_nmiPending = false;
-            m_nmiStale = false;
-            doInterrupt(0xFFFA, false);
+    if (m_skipPollOnce) {
+        // An interrupt sequence's final cycles do not poll for interrupts:
+        // the handler's first instruction always executes first (nesdev
+        // "CPU interrupts"; test 2 rows 8-9, test 3 rows 10-11).
+        m_skipPollOnce = false;
+        m_branchSkipPoll = false;
+    } else {
+        if (!m_branchSkipPoll) {
+            // Interrupts are effectively polled at the second-to-last cycle
+            // of an instruction: an edge latched ON the final cycle defers
+            // service past this boundary (05-nmi_timing, 04-nmi_control).
+            if (m_nmiPending
+                && (m_nmiStale || m_edgeCycle < m_prevInstrCycles)) {
+                m_nmiPending = false;
+                m_nmiStale = false;
+                doInterrupt(0xFFFA, false);
+                m_iPrev = true;
+                return;
+            }
+            if (m_nmiPending) {
+                m_nmiStale = true; // edge landed on the last cycle: defer
+            }
+        } else {
+            m_branchSkipPoll = false; // taken branch ignored its last clock
+        }
+        // The flag-change delay: CLI/SEI/PLP take effect for the poll after
+        // the NEXT instruction (test 3). The decision uses the sample taken
+        // while the previous instruction executed (test 4/5): normally its
+        // penultimate cycle, but a taken non-page-crossing branch polls
+        // before its second cycle and ignores a line that rises later
+        // (test 5).
+        if (m_irqPollHigh && !m_iPrev) {
+            m_irqPollHigh = false;
+            doInterrupt(0xFFFE, false);
             m_iPrev = true;
             return;
         }
-        if (m_nmiPending) {
-            m_nmiStale = true; // edge landed on the last cycle: defer
-        }
-    } else {
-        m_branchSkipPoll = false; // taken branch ignored its last-clock poll
-    }
-    // The flag-change delay: CLI/SEI/PLP take effect for the poll after the
-    // NEXT instruction (test 3). The decision uses the sample taken while
-    // the previous instruction executed (test 4/5): normally its
-    // penultimate cycle, but a taken non-page-crossing branch polls before
-    // its second cycle and ignores a line that rises later (test 5).
-    if (m_irqPollHigh && !m_iPrev) {
-        m_irqPollHigh = false;
-        doInterrupt(0xFFFE, false);
-        m_iPrev = true;
-        return;
     }
 
     m_cycles = 0;
@@ -1324,7 +1335,7 @@ void Cpu::step()
         execRmwCombo(op);
         break;
     }
-    m_prevInstrCycles = m_cycles;
+    m_prevInstrCycles = m_instrCycle;
     // Latch the IRQ poll for the next boundary. A taken non-page-crossing
     // branch polls before its second cycle, so a line that rises during the
     // branch is ignored and the following instruction executes first (test
@@ -1356,6 +1367,7 @@ void Cpu::saveState(StateWriter& w) const
     w.w(m_iPrev);
     w.w(m_iStart);
     w.w(m_branchSkipPoll);
+    w.w(m_skipPollOnce);
     w.w<std::int32_t>(m_cycles);
     w.w<std::int32_t>(m_prevInstrCycles);
     w.w<std::int32_t>(m_edgeCycle);
@@ -1364,6 +1376,7 @@ void Cpu::saveState(StateWriter& w) const
     w.w(m_irqPollHigh);
     w.w(m_irqSampleCur);
     w.w(m_irqSamplePrev);
+    w.w(m_irqSampleFirst);
     w.w<std::int32_t>(m_instrCycle);
     w.end();
 }
@@ -1384,6 +1397,7 @@ void Cpu::loadState(StateReader& r)
     m_iPrev = r.get<std::uint8_t>() != 0;
     m_iStart = r.get<std::uint8_t>() != 0;
     m_branchSkipPoll = r.get<std::uint8_t>() != 0;
+    m_skipPollOnce = r.get<std::uint8_t>() != 0;
     m_cycles = r.get<std::int32_t>();
     m_prevInstrCycles = r.get<std::int32_t>();
     m_edgeCycle = r.get<std::int32_t>();
@@ -1392,6 +1406,7 @@ void Cpu::loadState(StateReader& r)
     m_irqPollHigh = r.get<std::uint8_t>() != 0;
     m_irqSampleCur = r.get<std::uint8_t>() != 0;
     m_irqSamplePrev = r.get<std::uint8_t>() != 0;
+    m_irqSampleFirst = r.get<std::uint8_t>() != 0;
     m_instrCycle = r.get<std::int32_t>();
 }
 
