@@ -58,15 +58,18 @@ TEST(Controllers, SerialOrderIsASelStartUDLR)
     }
 }
 
-TEST(Controllers, ReadsAfterEightReturnZero)
+TEST(Controllers, ReadsAfterEightReturnOne)
 {
+    // After 8 shifts the official controller keeps returning 1s (nesdev
+    // Controllers; terminates blargg dmc_dma_during_read4's bit-count
+    // loop — previously modeled as 0, which hung that ROM).
     CtrlHarness h;
     h.strobe();
     for (int i = 0; i < 8; ++i) {
         (void)h.read(0);
     }
-    EXPECT_EQ(h.read(0) & 1, 0);
-    EXPECT_EQ(h.read(0) & 1, 0);
+    EXPECT_EQ(h.read(0) & 1, 1);
+    EXPECT_EQ(h.read(0) & 1, 1);
 }
 
 TEST(Controllers, PortsAreIsolated)

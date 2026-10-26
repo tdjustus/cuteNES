@@ -134,6 +134,16 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
             m_readBuffer = m_vram[nametableIndex(a)];
         } else {
             value = m_readBuffer;
+            // Double-read quirk (blargg double_2007_read): a $2007 read
+            // on the cycle immediately after another $2007 read latches
+            // the SAME value the first read latched — the refill from the
+            // first access has not landed in the visible latch yet. The
+            // refill and v increment still occur for both accesses.
+            if (m_sched.now() == m_lastVramReadMaster + 12) {
+                value = m_lastVramReadValue;
+            }
+            m_lastVramReadMaster = m_sched.now();
+            m_lastVramReadValue = value;
             m_readBuffer = ppuBusRead(a);
         }
         clockIfA12Rose();

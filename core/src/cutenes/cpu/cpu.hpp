@@ -75,6 +75,8 @@ private:
     void advanceDmcCycle(); // one stalled CPU cycle of a DMC DMA
     void serviceDmcDma(); // halt/dummy/[align]/get at the drain instant
     bool m_inDmcDma = false; // re-entrancy guard
+    int m_dmcStallExtras = 0; // re-issue count for a DMC-stalled access
+    bool m_dmaServicedThisHalf = false; // a DMA serviced at this cycle boundary
     std::uint8_t rawRead(std::uint16_t addr); // clocked read, no DMC re-entry
     void sampleNmi();
     void tick() { tickHalf(false); tickHalf(false); sampleNmi(); }

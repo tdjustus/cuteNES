@@ -56,7 +56,12 @@ struct ApuIoBridge final : CpuBusDevice {
                     bit = static_cast<std::uint8_t>(
                         set[static_cast<std::size_t>(kOrder[pos])]);
                     shiftPos[port] = static_cast<std::uint8_t>(pos + 1);
-                } // after 8 reads: 0 (open bus low)
+                } else {
+                    // After 8 shifts the official controller keeps
+                    // returning 1s (nesdev Controllers; terminates
+                    // blargg dmc_dma_during_read4's bit-count loop).
+                    bit = 1;
+                }
             }
             return static_cast<std::uint8_t>(0x40 | bit);
         }

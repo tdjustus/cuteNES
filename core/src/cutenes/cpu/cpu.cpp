@@ -10,6 +10,8 @@
 
 #include "cutenes/serialize/save_state.hpp"
 #include "cutenes/system/timing.hpp"
+#include <cstdio>
+#include <cstdlib>
 
 #include <array>
 #include <utility>
@@ -328,6 +330,7 @@ void Cpu::tickHalf(bool /*phi2*/)
         if (!m_inDmcDma && (now % m_sched.cpuCycleToMaster(1)) == 0
             && m_apu->dmcFetchPending()) {
             m_inDmcDma = true;
+            m_dmaServicedThisHalf = true;
             serviceDmcDma();
             m_inDmcDma = false;
         }
@@ -338,7 +341,12 @@ void Cpu::tickHalf(bool /*phi2*/)
 // Called from tickHalf at the drain instant (per-cycle engine, T037).
 void Cpu::serviceDmcDma()
 {
-    advanceDmcCycle(); // halt cycle
+    // A $2007 access stalled by this DMA causes extra read-side bus
+    // accesses (blargg dmc_dma_during_read4: reads get "2-3 extra $2007
+    // reads before real read"; writes show the same buffer/v oddities
+    // while the write itself lands once — "DMC DMA during $2007 write
+    // has no effect"). rd() consumes the count at the next $2007 read.
+    m_dmcStallExtras = 2;    advanceDmcCycle(); // halt cycle
     advanceDmcCycle(); // dummy
     if (m_apu->dmcIsReloadFetch()) {
         // Reloads span 4 (halt, dummy, align, get — blargg's fixed count).
@@ -408,6 +416,27 @@ std::uint8_t Cpu::rd(std::uint16_t addr)
         sampleNmi();
     }
     tickHalf(false);
+    // A DMC-stalled access re-issues on the bus as READS (the halt drives
+    // the address bus; blargg dmc_dma_during_read4): $2007 refills the
+    // read buffer and increments v twice ("2-3 extra $2007 reads") while
+    // a stalled WRITE still lands its byte once ("no effect"); $4016/17
+    // shift the controller once ("causes extra $4016 read"). The re-issue
+    // attaches to the access whose cycle the halt boundary opened — the
+    // flag is one-shot per service (the sync loop fetches continuously;
+    // a stale flag would shift every later access).
+    if (m_dmaServicedThisHalf) {
+        const bool isVram = (addr & 0x3FFF) == 0x2007; // PPU data mirror
+        const bool isPort = (addr & 0x401F) >= 0x4016
+            && (addr & 0x401F) <= 0x4017; // controller ports
+        if (isVram) {
+            for (int i = 0; i < m_dmcStallExtras; ++i) {
+                (void)m_bus.read(addr);
+            }
+        } else if (isPort) {
+            (void)m_bus.read(addr);
+        }
+    }
+    m_dmaServicedThisHalf = false;
     const std::uint8_t value = m_bus.read(addr);
     if ((addr & 0x3FFF) == 0x2002 && m_ppu != nullptr) {
         // A $2002 read in the suppression window cancels the frame's NMI.
@@ -433,6 +462,20 @@ void Cpu::wr(std::uint16_t addr, std::uint8_t value)
 {
     ++m_cycles;
     tickHalf(false);
+    // A stalled $2007 WRITE re-issues as reads (buffer refill + v
+    // increment) while the byte itself lands once — "DMC DMA during
+    // $2007 write has no effect" on VRAM content (dmc_dma_during_read4).
+    // Non-register writes pass the pending flag through (their re-read
+    // is invisible).
+    // A stalled $2007 WRITE re-issues as ONE read (buffer refill + one v
+    // increment — the dump shows the byte landing one address later with
+    // the pre-write buffer value) while the byte itself lands once — "DMC
+    // DMA during $2007 write has no effect" on the write itself
+    // (dmc_dma_during_read4; expected row 22 11 22 AA 44..).
+    if (m_dmaServicedThisHalf && (addr & 0x3FFF) == 0x2007) {
+        (void)m_bus.read(addr);
+    }
+    m_dmaServicedThisHalf = false;
     m_bus.write(addr, value);
     sampleNmi();
     tickHalf(false);

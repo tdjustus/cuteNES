@@ -147,3 +147,37 @@ rom ../roms/blargg_ppu_tests_2005.09.15b/vram_access.nes
 run 300 none
 expect-text $01
 end
+
+entry cpu-timing-test6
+rom ../roms/cpu_timing_test6/cpu_timing_test.nes
+run 2000 none
+expect-text PASSED
+end
+
+entry dmc-dma-4016-read
+rom ../roms/dmc_dma_during_read4/dma_4016_read.nes
+run 500 none
+expect-text Passed
+end
+
+entry dmc-dma-read-write-2007
+rom ../roms/dmc_dma_during_read4/read_write_2007.nes
+run 500 none
+expect-text Passed
+end
+
+# No check_crc in these two: they print documented hardware outcome
+# variants; ours matches dma_2007_read's table 1 (11 22 / ... / 33 44,
+# CRC 159A7A8F) and double_2007_read's variant 1 (22 33.. / 22 44..,
+# CRC 85CFD627) — pinned by CRC value.
+entry dmc-dma-2007-read-variant
+rom ../roms/dmc_dma_during_read4/dma_2007_read.nes
+run 500 none
+expect-text 159A7A8F
+end
+
+entry dmc-double-2007-read-variant
+rom ../roms/dmc_dma_during_read4/double_2007_read.nes
+run 600 none
+expect-text 85CFD627
+end

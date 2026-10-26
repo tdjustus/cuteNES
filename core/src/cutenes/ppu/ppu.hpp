@@ -125,6 +125,8 @@ private:
     std::uint8_t m_statusLag = 0;
     std::uint16_t m_v = 0, m_t = 0;
     std::uint8_t m_fineX = 0, m_w = 0, m_readBuffer = 0;
+    std::uint64_t m_lastVramReadMaster = ~0ull; // double-2007 quirk state
+    std::uint8_t m_lastVramReadValue = 0;
     std::uint8_t m_decay = 0; // open-bus latch for $2002 low bits
     std::uint8_t m_oamAddr = 0;
 
