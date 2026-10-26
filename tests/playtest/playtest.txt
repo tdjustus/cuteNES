@@ -224,6 +224,101 @@ run 500 none
 expect-text Passed
 end
 
+# blargg sprite_hit_tests (screen-reported): all eleven pass after the
+# sprite-evaluation/shifter fixes (session 39). sprite_overflow 1.Basics
+# passes; 2-5 remain known-failing (the buggy overflow scan's deeper
+# diagonal cases).
+
+entry sprite-hit-01-basics
+rom ../roms/sprite_hit_tests_2005.10.05/01.basics.nes
+run 400 none
+expect-text PASSED
+end
+
+entry sprite-hit-02-alignment
+rom ../roms/sprite_hit_tests_2005.10.05/02.alignment.nes
+run 400 none
+expect-text PASSED
+end
+
+entry sprite-hit-03-corners
+rom ../roms/sprite_hit_tests_2005.10.05/03.corners.nes
+run 400 none
+expect-text PASSED
+end
+
+entry sprite-hit-04-flip
+rom ../roms/sprite_hit_tests_2005.10.05/04.flip.nes
+run 400 none
+expect-text PASSED
+end
+
+entry sprite-hit-05-left-clip
+rom ../roms/sprite_hit_tests_2005.10.05/05.left_clip.nes
+run 400 none
+expect-text PASSED
+end
+
+entry sprite-hit-06-right-edge
+rom ../roms/sprite_hit_tests_2005.10.05/06.right_edge.nes
+run 400 none
+expect-text PASSED
+end
+
+entry sprite-hit-07-screen-bottom
+rom ../roms/sprite_hit_tests_2005.10.05/07.screen_bottom.nes
+run 400 none
+expect-text PASSED
+end
+
+entry sprite-hit-08-double-height
+rom ../roms/sprite_hit_tests_2005.10.05/08.double_height.nes
+run 400 none
+expect-text PASSED
+end
+
+entry sprite-hit-09-timing-basics
+rom ../roms/sprite_hit_tests_2005.10.05/09.timing_basics.nes
+run 400 none
+expect-text PASSED
+end
+
+entry sprite-hit-10-timing-order
+rom ../roms/sprite_hit_tests_2005.10.05/10.timing_order.nes
+run 400 none
+expect-text PASSED
+end
+
+entry sprite-hit-11-edge-timing
+rom ../roms/sprite_hit_tests_2005.10.05/11.edge_timing.nes
+run 400 none
+expect-text PASSED
+end
+
+entry sprite-overflow-1-basics
+rom ../roms/sprite_overflow_tests/1.Basics.nes
+run 600 none
+expect-text PASSED
+end
+
+# The 2009 MMC3 suite's revision variants declare nothing in their iNES
+# headers; both expect the alternate ("old") IRQ semantics, selected by
+# NES 2.0 submapper 4 (force-submapper 4 == revision A behavior).
+
+entry mmc3-test2-6-alt-reva
+force-submapper 4
+rom ../roms/mmc3_test_2/rom_singles/6-MMC3_alt.nes
+run 900 none
+expect-text Passed
+end
+
+entry mmc3-test-6-mmc6-reva
+force-submapper 4
+rom ../roms/mmc3_test/6-MMC6.nes
+run 900 none
+expect-text Passed
+end
+
 # No check_crc in these two: they print documented hardware outcome
 # variants; ours matches dma_2007_read's table 1 (11 22 / ... / 33 44,
 # CRC 159A7A8F) and double_2007_read's variant 1 (22 33.. / 22 44..,
