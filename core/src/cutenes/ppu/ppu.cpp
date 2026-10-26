@@ -20,6 +20,12 @@ namespace cutenes {
 namespace {
 
 constexpr int kVisibleLines = 240;
+// The dot the eight sprite PATTERN fetches begin (the 8-dot groups run
+// garbage-NT, garbage-AT, pattern-lo, pattern-hi; the first CHR access of
+// the sprite window is the first pattern pair). Calibrated so the mode-$08
+// (sprites at $1000) counter clock lands at pre-render dot 260 — the
+// razor edge of blargg 4-scanline_timing subtests #2/#3.
+constexpr int kSpriteFetchDot = 260;
 constexpr int kVblankLine = 241;
 constexpr int kPreRenderLine = 261;
 
@@ -247,10 +253,13 @@ void Ppu::cpuWrite(std::uint16_t addr, std::uint8_t value)
             m_t = static_cast<std::uint16_t>((m_t & 0x7F00) | value);
             m_v = m_t;
             m_w = 0;
-            // With rendering off the PPU address bus holds v, so A12
-            // follows bit 12; the shared guard filters shell-noise rises.
+            // With rendering off, v drives the PPU address bus, so the
+            // write itself is a bus event (blargg 3-A12_clocking #4: a
+            // $2006 write clocks the counter when bit 12 rises). While
+            // rendering, the fetch bus owns A12 and the CPU write is not
+            // visible to the mapper.
             if (!renderingEnabled()) {
-                trackA12((m_v & 0x1000) != 0);
+                notifyA12(m_v);
             }
         }
         break;
@@ -275,28 +284,31 @@ void Ppu::clockIfA12Rose()
     const std::uint16_t next = static_cast<std::uint16_t>(
         m_v + ((m_ctrl & 0x04) != 0 ? 32 : 1));
     m_v = next;
+    // Only when the CPU owns the bus (rendering off) does the $2007
+    // access's post-increment address reach the mapper's A12 input.
     if (!renderingEnabled()) {
-        trackA12((m_v & 0x1000) != 0);
+        notifyA12(m_v);
     }
 }
 
-// Per-dot PPU A12 (address bit 12 of the pattern-fetch bus): high during
-// pattern fetches from $1000 — sprites per ctrl bit 3 (dots 257-320),
-// background per ctrl bit 4 (pattern-fetch dots of 1-256 and 321-336).
-// Nametable/attribute fetches are $2xxx (bit 12 = 0). A guarded 0->1 rise
-// clocks mapper IRQ counters; the ~12-dot guard suppresses repeat rises.
-void Ppu::trackA12(bool high)
+// Fetch-level A12 for the MMC3 scanline counter (Mesen's A12Watcher
+// model): every PATTERN-fetch address change (and every CPU $2006/$2007
+// access) is reported; a rise clocks the mapper's IRQ counter only if a
+// LOW fetch was seen first and at least ~1 PPU dot passed since the fall
+// was stamped. Nametable/attribute fetches do not touch the reported bus,
+// so a background at $1000 never edges against its own NT gaps.
+void Ppu::notifyA12(std::uint16_t addr)
 {
-    if (high && !mA12High) {
-        // A rise clocks the counter only if A12 was low for >= ~12 PPU
-        // cycles first (the MMC3 guard; nesdev MMC3 "cycle timing").
-        if (m_dots - mA12LowStart >= 12 && m_cart != nullptr) {
+    if ((addr & 0x1000) != 0) {
+        const bool rise = mA12LowMaster != 0
+            && m_sched.now() - mA12LowMaster >= 3;
+        mA12LowMaster = 0;
+        if (rise && m_cart != nullptr) {
             m_cart->clockIrq();
         }
-    } else if (!high && mA12High) {
-        mA12LowStart = m_dots; // falling edge: low-time window opens
+    } else if (mA12LowMaster == 0) {
+        mA12LowMaster = m_sched.now();
     }
-    mA12High = high;
 }
 
 void Ppu::oamDmaWrite(std::uint8_t value)
@@ -434,7 +446,18 @@ void Ppu::fetchCycle(std::uint32_t dot)
                 m_latchNT = m_vram[nametableIndex(
                     static_cast<std::uint16_t>(0x2000 | (m_v & 0x0FFF)))];
                 break;
-            case 4: { // AT
+            case 4: {
+                // The pattern-low ADDRESS hits the bus at the first dot of
+                // its fetch pair (the read completes two dots later); A12
+                // must be notified there. Calibration: the mode-$10
+                // prefetch clock lands at dot 324 (nesdev MMC3: "cycle
+                // 324 of the previous scanline") and the mode-$10 first
+                // clock exactly 256 dots before the mode-$08 sprite fetch
+                // (blargg 4-scanline_timing's scanline_0_10 constant).
+                notifyA12(static_cast<std::uint16_t>(
+                    ((m_ctrl & 0x10) != 0 ? 0x1000 : 0)
+                    + m_latchNT * 16 + ((m_v >> 12) & 7)));
+                // AT
                 const std::uint16_t base =
                     static_cast<std::uint16_t>(0x23C0 | (m_v & 0x0C00));
                 const std::uint8_t at = m_vram[nametableIndex(static_cast<std::uint16_t>(
@@ -443,18 +466,25 @@ void Ppu::fetchCycle(std::uint32_t dot)
                     (at >> (((m_v >> 4) & 4) | (m_v & 2))) & 3);
                 break;
             }
-            case 6: { // pattern low
-                // PPUCTRL bit 3 selects the BACKGROUND pattern table
-                // ($0000/$1000); bit 4 is the 8x8 SPRITE table.
+            case 6: {
+                notifyA12(static_cast<std::uint16_t>(
+                    ((m_ctrl & 0x10) != 0 ? 0x1000 : 0)
+                    + m_latchNT * 16 + ((m_v >> 12) & 7) + 8));
+                // pattern low
+                // PPUCTRL bit 4 selects the BACKGROUND pattern table,
+                // bit 3 the 8x8 SPRITE table (nesdev PPU_registers layout
+                // "VPHB SINN": B = bit 4, S = bit 3; Mesen maps them the
+                // same way, and blargg's own comment on PPUCTRL $08 says
+                // "sprites use tiles at $1xxx").
                 const std::uint16_t addr = static_cast<std::uint16_t>(
-                    ((m_ctrl & 0x08) != 0 ? 0x1000 : 0)
+                    ((m_ctrl & 0x10) != 0 ? 0x1000 : 0)
                     + m_latchNT * 16 + ((m_v >> 12) & 7));
                 m_latchLo = ppuBusRead(addr);
                 break;
             }
             case 0: { // pattern high + horizontal advance
                 const std::uint16_t addr = static_cast<std::uint16_t>(
-                    ((m_ctrl & 0x08) != 0 ? 0x1000 : 0)
+                    ((m_ctrl & 0x10) != 0 ? 0x1000 : 0)
                     + m_latchNT * 16 + ((m_v >> 12) & 7) + 8);
                 m_latchHi = ppuBusRead(addr);
                 // Reload the shifter's low byte at the END of the fetch
@@ -658,8 +688,9 @@ void Ppu::loadSpriteUnits()
     }
     const int line = m_scanline + 1;
     const bool tall = (m_ctrl & 0x20) != 0;
-    // PPUCTRL bit 4 selects the 8x8 SPRITE pattern table.
-    const bool spritePatternLeft = (m_ctrl & 0x10) != 0;    m_unitCount = 0;
+    // PPUCTRL bit 3 selects the 8x8 SPRITE pattern table.
+    const bool spritePatternLeft = (m_ctrl & 0x08) != 0;
+    m_unitCount = 0;
     m_spriteZeroActive = m_spriteZeroNext;
     for (int i = 0; i < 8; ++i) {
         const std::uint8_t y = m_oam2[static_cast<std::size_t>(i) * 4 + 0];
@@ -667,7 +698,17 @@ void Ppu::loadSpriteUnits()
         const std::uint8_t attr = m_oam2[static_cast<std::size_t>(i) * 4 + 2];
         int row = line - y - 1;
         if (row < 0 || row >= (tall ? 16 : 8)) {
-            continue; // empty slot
+            // Empty slot: the PPU still FETCHES tile $FF's pattern and
+            // discards it — those dummy fetches drive A12 for the MMC3's
+            // scanline counter (Mesen: "Fetches to sprite 0xFF for
+            // remaining sprites/hidden - used by MMC3 IRQ counter").
+            const std::uint16_t dummy = tall
+                ? static_cast<std::uint16_t>(0x1000 + 0xFE * 16 + (row & 7))
+                : static_cast<std::uint16_t>(
+                    (spritePatternLeft ? 0x1000 : 0) + 0xFF * 16);
+            notifyA12(dummy);
+            notifyA12(static_cast<std::uint16_t>(dummy + 8));
+            continue;
         }
         if ((attr & 0x80) != 0) {
             row = (tall ? 15 : 7) - row; // vertical flip
@@ -684,7 +725,9 @@ void Ppu::loadSpriteUnits()
         Unit& unit = m_units[static_cast<std::size_t>(m_unitCount)];
         unit.x = m_oam2[static_cast<std::size_t>(i) * 4 + 3];
         unit.attr = attr;
+        notifyA12(addr);
         unit.lo = ppuBusRead(addr);
+        notifyA12(static_cast<std::uint16_t>(addr + 8));
         unit.hi = ppuBusRead(static_cast<std::uint16_t>(addr + 8));
         ++m_unitCount;
     }
@@ -763,32 +806,7 @@ void Ppu::stepDot()
         m_dot = 340; // skip the final idle dot of the odd frame
     }
 
-    // 241 clocks per frame: visible lines 0-239 plus the pre-render line
-    // (2-details test 7). blargg's "scanline 0" is the pre-render line.
-    if ((m_scanline < kVisibleLines || m_scanline == kPreRenderLine)
-        && renderingEnabled()) {
-        // Per-dot A12 from the pattern-fetch bus (see trackA12). These
-        // synthesized windows are the calibration that passes the blargg
-        // MMC3 corpus (1-clocking, 2-details, 3-A12_clocking, 5-MMC3,
-        // mmc3_irq_tests 1-6 incl. both revision ROMs and the old-suite
-        // scanline timing): the sprite window carries the table select
-        // that oscillates the filtered line once per scanline, and the
-        // background pattern phases pulse too briefly to pass the
-        // low-time guard. NOTE the mode-$08 subtests of the 2009
-        // 4-scanline_timing want a different phase (nesdev: the counter
-        // "partially works" with BG at $1000) — documented known gap.
-        bool high;
-        if (m_dot >= 262 && m_dot <= 320) {
-            high = (m_ctrl & 0x08) != 0;
-        } else if ((m_dot >= 1 && m_dot <= 256)
-            || (m_dot >= 321 && m_dot <= 336)) {
-            const int phase = m_dot & 7;
-            high = (phase >= 5) && ((m_ctrl & 0x10) != 0);
-        } else {
-            high = false; // NT prefetches at 337-340 and dot 0
-        }
-        trackA12(high);
-    }
+    // (A12 tracking is fetch-level: see notifyA12 / the fetch sites.)
 
     if (m_scanline < kVisibleLines) {
         if (m_dot >= 1 && m_dot <= 256) {
@@ -824,7 +842,15 @@ void Ppu::stepDot()
                 copyHorizontal();
                 m_oamAddr = 0; // OAMADDR resets during sprite fetchs
             }
-            loadSpriteUnits();
+        } else if (m_dot == kSpriteFetchDot) {
+            // The eight sprite pattern fetches run dots ~257-320 (2 bytes
+            // per 8-dot group after the garbage nametable fetches); the
+            // units are consumed from dot 321 onward, so loading them at
+            // the first pattern fetch keeps both the A12 timing and the
+            // pipeline correct.
+            if (renderingEnabled()) {
+                loadSpriteUnits();
+            }
         }
     } else if (m_scanline == kPreRenderLine) {
         fetchCycle(static_cast<std::uint32_t>(m_dot));
@@ -835,6 +861,13 @@ void Ppu::stepDot()
                 copyHorizontal();
             } else if (m_dot >= 280 && m_dot <= 304) {
                 copyVertical();
+            } else if (m_dot == kSpriteFetchDot) {
+                // No evaluation on the pre-render line (secondary OAM is
+                // $FF), but the PPU still performs the eight DUMMY sprite
+                // pattern fetches — and those CHR accesses drive A12 for
+                // the MMC3's counter: blargg 4-scanline_timing's scanline-0
+                // boundaries land on the PRE-RENDER line's fetch.
+                loadSpriteUnits();
             }
         }
     }

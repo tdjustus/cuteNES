@@ -82,7 +82,9 @@ public:
     // OAM DMA target: 256 bytes pushed by the $4014 engine.
     void oamDmaWrite(std::uint8_t value);
     void clockIfA12Rose(); // $2007 access: v++ and A12-rise IRQ
-    void trackA12(bool high); // shared guarded A12 edge
+    // Fetch-level A12 notification (MMC3 scanline counter; Mesen model).
+    void notifyA12(std::uint16_t addr);
+    std::uint64_t mA12LowMaster = 0; // master time the fall was stamped
 
     // Frame completion flag: set once the final visible pixel is emitted
     // (scanline 239, dot 255); the machine consumes and clears it.
@@ -182,8 +184,6 @@ private:
     bool m_secSecondaryRead = false;
     std::uint8_t m_evalRead = 0; // odd-cycle OAM read buffer
     bool m_frameComplete = false; // final visible pixel emitted
-    bool mA12High = false;        // PPU A12 line state (pattern bus)
-    std::uint64_t mA12LowStart = 0;
     std::uint64_t m_ignoreWritesUntil = 0; // master clock
 
     static const std::array<std::uint32_t, 64> kPalette;

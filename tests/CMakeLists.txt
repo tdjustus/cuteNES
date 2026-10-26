@@ -83,7 +83,8 @@ set(TIER1_ROMS
     ppu_open_bus/ppu_open_bus.nes
     cpu_exec_space/test_cpu_exec_space_apu.nes
     cpu_exec_space/test_cpu_exec_space_ppuio.nes
-    ppu_read_buffer/test_ppu_read_buffer.nes)
+    ppu_read_buffer/test_ppu_read_buffer.nes
+    mmc3_test_2/rom_singles/4-scanline_timing.nes)
 
 # All formerly known-failing ROMs have been fixed and promoted to tier 1
 # (see specs/001-emulation-core/analysis/FIX_ATTEMPTS.md).
