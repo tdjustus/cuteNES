@@ -506,6 +506,11 @@ void Ppu::evalDot(std::uint64_t dot)
             m_evalOverflow = false;
             m_secSecondaryRead = false;
             m_evalDone = false;
+            // Sprite-zero candidacy is decided fresh each line: leaving a
+            // stale latch made the FIRST in-range sprite of a later table
+            // count as sprite 0 (ppu_read_buffer's no-hit DMA halves all
+            // reported spurious hits).
+            m_spriteZeroNext = false;
         }
         // The clear's 0-31 counter is INTERNAL (dot-derived); the
         // evaluation pointer must still be OAMADDR at dot 65 — the wiki's

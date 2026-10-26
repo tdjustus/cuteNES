@@ -326,6 +326,7 @@ run 600 none
 expect-text PASSED
 end
 
+
 # The 2009 MMC3 suite's revision variants declare nothing in their iNES
 # headers; both expect the alternate ("old") IRQ semantics, selected by
 # NES 2.0 submapper 4 (force-submapper 4 == revision A behavior).

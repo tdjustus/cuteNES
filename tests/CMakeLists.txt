@@ -82,7 +82,8 @@ set(TIER1_ROMS
     sprdma_and_dmc_dma/sprdma_and_dmc_dma_512.nes
     ppu_open_bus/ppu_open_bus.nes
     cpu_exec_space/test_cpu_exec_space_apu.nes
-    cpu_exec_space/test_cpu_exec_space_ppuio.nes)
+    cpu_exec_space/test_cpu_exec_space_ppuio.nes
+    ppu_read_buffer/test_ppu_read_buffer.nes)
 
 # All formerly known-failing ROMs have been fixed and promoted to tier 1
 # (see specs/001-emulation-core/analysis/FIX_ATTEMPTS.md).
