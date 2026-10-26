@@ -91,7 +91,8 @@ public:
         // fetch stays pending every cycle.
         const std::uint64_t cyc = m_sched.cpuCycleToMaster(1);
         const std::uint64_t firstPut = (m_dmcDueMaster + cyc - 1) / cyc;
-        const std::uint64_t armed = (firstPut % 2 == 1) ? firstPut : firstPut + 1;
+        const std::uint64_t armed =
+            (firstPut % 2 == 1) ? firstPut : firstPut + 1;
         return m_sched.now() >= armed * cyc;
     }
     // True when the pending fetch is a reload (scheduled on a put cycle).
