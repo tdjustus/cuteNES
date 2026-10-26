@@ -115,6 +115,58 @@ run 1500 none
 expect-text PASSED
 end
 
+# MMC1 (mapper 1) coverage, T059. All three boot through several
+# PRG-banked screens (verified: constant bank flipping between the title,
+# menus and gameplay screens). The Legend of Zelda (USA) (Rev 1):
+# 128KB PRG + CHR-RAM + battery. Flow: title -> Start -> file select ->
+# Start -> REGISTER YOUR NAME, where A types name letters.
+
+entry zelda-boot-reaches-name-registration
+rom ../../roms-local/zelda.nes
+run 300 none
+expect-changes 1
+run 10 Start
+run 150 none
+run 10 Start
+run 120 none
+run 20 A
+run 30 none
+run 20 A
+run 30 none
+expect-text ijjjjjjjjjjjjjjjjjjjjjk
+expect-changes 1
+end
+
+# Final Fantasy (USA): 256KB PRG + CHR-RAM + battery. Boot sequence ->
+# Start -> A advances past the title into the game screens.
+
+entry final-fantasy-boot-and-start
+rom ../../roms-local/final-fantasy.nes
+run 400 none
+expect-changes 1
+run 10 Start
+expect-changes 1
+run 300 none
+run 10 A
+expect-changes 1
+run 300 none
+end
+
+# Mega Man 2 — NOTE: this local dump (md5 8e4bc5b03ffbd4ef91400e92e50dd294)
+# is a 256KB PRG + CHR-RAM MMC1 build, not Capcom's 128K/128K CHR-ROM board;
+# its title's Start goes straight to the password grid (the game's font
+# happens to sit at ASCII tile codes, so the grid is greppable).
+
+entry mega-man-2-boot-reaches-password-screen
+rom ../../roms-local/mega-man-2.nes
+run 360 none
+expect-changes 1
+run 10 Start
+run 200 none
+expect-text PQRSTUVWXYZ[\]^_
+expect-changes 1
+end
+
 # Screen-verified suites (no $6000 protocol; result text/code on screen).
 # Found passing in the session-33/34 un-gated sweep.
 
