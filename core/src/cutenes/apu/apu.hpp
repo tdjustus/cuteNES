@@ -73,16 +73,16 @@ public:
         // refused by the triggering write enters on the next READ cycle
         // whichever half it is (wiki DMA; Disch t=14120).
         //
-        // Arbiter phase: cycle 0 after reset is a PUT slot, so even CPU
-        // cycles are put and odd are get (T037 session 30). The previous
-        // sense delayed every reload DMA one cycle past the read it must
-        // stall — the sprdma row-0 chain — while the whole corpus passes
-        // either way; the hardware-validated sprdma tables pin this
-        // direction (the reference's reload halt lands on the even cycle).
+        // Arbiter phase: the first half of an APU cycle is a get, so CPU
+        // cycle 0 after reset is a GET slot — even CPU cycles are get and
+        // odd are put. Reload DMA therefore halts on an odd (put) cycle.
+        // The absolute power-on phase is arbitrary on hardware; this sense
+        // is the one the hardware-validated reference tables were captured
+        // with (the OAM arbiter in machine_impl.hpp uses the same grid).
         return m_dmc.enabled && m_dmc.bufferEmpty && m_dmc.bytesRemaining > 0
             && m_sched.now() >= m_dmcDueMaster
             && (!m_dmcHaltOnPut
-                || ((m_sched.now() / 12) % 2 == 0));
+                || ((m_sched.now() / 12) % 2 == 1));
     }
     // True when the pending fetch is a reload (4-cycle span); loads span 3.
     bool dmcIsReloadFetch() const override { return m_dmcHaltOnPut; }

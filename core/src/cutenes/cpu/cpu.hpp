@@ -47,6 +47,11 @@ public:
     // edge-triggered (the PPU calls assertNmi() exactly at the vblank dot).
     void assertNmi();
     void setIrq(bool level);
+    // Live IRQ source, sampled at every CPU cycle start. When set, the
+    // interrupt decision uses the line level at the second-to-last cycle of
+    // the instruction (hardware polls IRQ in the penultimate cycle); when
+    // unset, setIrq()'s boundary level is used (unit tests).
+    void setIrqLineSource(std::function<bool()> source);
 
     CpuState state() const;
 
@@ -79,7 +84,10 @@ private:
     bool m_dmaServicedThisHalf = false; // a DMA serviced at this cycle boundary
     std::uint8_t rawRead(std::uint16_t addr); // clocked read, no DMC re-entry
     void sampleNmi();
-    void tick() { tickHalf(false); tickHalf(false); sampleNmi(); }
+    // Per-cycle IRQ poll history: the decision at an instruction boundary
+    // uses the sample from the start of its penultimate cycle.
+    void sampleIrqCycle();
+    void tick() { sampleIrqCycle(); tickHalf(false); tickHalf(false); sampleNmi(); }
     std::uint8_t fetch() { return rd(m_pc++); }
 
     void push(std::uint8_t value);
@@ -133,8 +141,13 @@ private:
     bool m_nmiPending = false;
     bool m_irqLevel = false;
     bool m_irqWasHigh = false;
-    bool m_irqStale = false;
     int m_irqEdgeCycle = -1;
+    // Penultimate-cycle IRQ poll (see sampleIrqCycle()).
+    std::function<bool()> m_irqLineSource;
+    bool m_irqSampleCur = false;  // line at the start of the current cycle
+    bool m_irqSamplePrev = false; // line at the start of the previous cycle
+    bool m_irqPollHigh = false;   // penultimate-cycle sample of last instr
+    int m_instrCycle = 0;         // normal CPU cycles in this instruction
     bool m_jammed = false;
     bool m_nmiWasHigh = false;
     int m_cycles = 0;              // 1-based cycle index within instruction

@@ -12,7 +12,6 @@
 #include "cutenes/system/timing.hpp"
 
 #include <cmath>
-#include <cstdlib>
 
 namespace cutenes {
 

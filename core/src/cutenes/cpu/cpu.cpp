@@ -10,8 +10,6 @@
 
 #include "cutenes/serialize/save_state.hpp"
 #include "cutenes/system/timing.hpp"
-#include <cstdio>
-#include <cstdlib>
 
 #include <array>
 #include <utility>
@@ -388,9 +386,6 @@ void Cpu::sampleNmi()
         if (line && !m_nmiWasHigh) {
             m_nmiPending = true;
             m_edgeCycle = m_cycles; // 1-based index within the instruction
-            if (std::getenv("IRQTRC"))
-                std::fprintf(stderr, "EDGE master=%llu cyc=%d pc=%04X\n",
-                    (unsigned long long)m_sched.now(), m_edgeCycle, m_pc);
         }
         m_nmiWasHigh = line;
     }
@@ -403,6 +398,7 @@ void Cpu::sampleNmi()
 std::uint8_t Cpu::rd(std::uint16_t addr)
 {
     ++m_cycles;
+    sampleIrqCycle();
     // A pending DMC fetch halts the CPU: ~3 stall cycles plus the clocked
     // memory read itself (task T037). Get-cycles here also stall sprite DMA.
     // DMC DMA service moved to tickHalf (per-cycle engine, task T037):
@@ -461,6 +457,7 @@ std::uint8_t Cpu::rawRead(std::uint16_t addr)
 void Cpu::wr(std::uint16_t addr, std::uint8_t value)
 {
     ++m_cycles;
+    sampleIrqCycle();
     tickHalf(false);
     // A stalled $2007 WRITE re-issues as reads (buffer refill + v
     // increment) while the byte itself lands once — "DMC DMA during
@@ -742,9 +739,6 @@ void Cpu::doInterrupt(std::uint16_t vector, bool brk)
         m_nmiPending = false;
         m_nmiStale = false;
     }
-    if (std::getenv("IRQTRC"))
-        std::fprintf(stderr, "INT master=%llu vector=%04X brk=%d pc=%04X\n",
-            (unsigned long long)m_sched.now(), vector, (int)brk, m_pc);
     const std::uint8_t lo = rd(static_cast<std::uint16_t>(vector));
     const std::uint8_t hi = rd(static_cast<std::uint16_t>(vector + 1));
     m_pc = static_cast<std::uint16_t>(lo | (hi << 8));
@@ -762,6 +756,10 @@ void Cpu::reset(bool cold)
     }
     m_nmiPending = false;
     m_jammed = false;
+    m_irqPollHigh = false;
+    m_irqSampleCur = false;
+    m_irqSamplePrev = false;
+    m_instrCycle = 0;
 
     // Reset sequence: internal cycles then the vector fetch. The absolute
     // first-fetch cycle sets the CPU-vs-PPU/DMC phase for the whole run;
@@ -784,6 +782,21 @@ void Cpu::assertNmi()
     m_edgeCycle = -1; // externally-asserted edges predate everything
 }
 void Cpu::setIrq(bool level) { m_irqLevel = level; }
+void Cpu::setIrqLineSource(std::function<bool()> source)
+{
+    m_irqLineSource = std::move(source);
+}
+
+// Sample the live IRQ line at the start of a normal CPU cycle. DMA stall
+// cycles (sprite/DMC) never reach this path, so they do not count toward the
+// instruction's architectural length — the poll for `sta $4014` therefore
+// lands on its hi-byte-fetch cycle, before the DMA stretches the write cycle.
+void Cpu::sampleIrqCycle()
+{
+    m_irqSamplePrev = m_irqSampleCur;
+    m_irqSampleCur = m_irqLineSource ? m_irqLineSource() : m_irqLevel;
+    ++m_instrCycle;
+}
 
 CpuState Cpu::state() const
 {
@@ -875,25 +888,23 @@ void Cpu::step()
         if (m_nmiPending) {
             m_nmiStale = true; // edge landed on the last cycle: defer
         }
-        // The flag-change delay: CLI/SEI/PLP take effect for the poll after
-        // the NEXT instruction (test 3). Like NMI, the IRQ edge obeys the
-        // second-to-last-cycle poll: an edge on the final cycle defers one
-        // boundary (test 5).
-        if (m_irqLevel && !m_iPrev
-            && (m_irqStale || m_irqEdgeCycle < m_prevInstrCycles)) {
-            doInterrupt(0xFFFE, false);
-            m_irqStale = false;
-            m_iPrev = true;
-            return;
-        }
-        if (m_irqLevel) {
-            m_irqStale = true;
-        }
     } else {
         m_branchSkipPoll = false; // taken branch ignored its last-clock poll
     }
+    // The flag-change delay: CLI/SEI/PLP take effect for the poll after the
+    // NEXT instruction (test 3). The decision uses the penultimate-cycle
+    // sample taken while the previous instruction executed (test 4/5).
+    if (m_irqPollHigh && !m_iPrev) {
+        m_irqPollHigh = false;
+        doInterrupt(0xFFFE, false);
+        m_iPrev = true;
+        return;
+    }
 
     m_cycles = 0;
+    m_instrCycle = 0;
+    m_irqSampleCur = false;
+    m_irqSamplePrev = false;
     m_iStart = (m_p & kI) != 0;
     if (m_trace) {
         m_trace(state());
@@ -1308,6 +1319,9 @@ void Cpu::step()
         break;
     }
     m_prevInstrCycles = m_cycles;
+    // Latch the IRQ poll for the next boundary: the line as sampled at the
+    // start of this instruction's penultimate cycle.
+    m_irqPollHigh = (m_instrCycle >= 2) ? m_irqSamplePrev : m_irqSampleCur;
     // CLI/SEI/PLP take effect on the final cycle, so the poll sees the OLD
     // value; RTI pulls P early enough that the poll sees the NEW one
     // (cpu_interrupts_v2 tests 3, 7, and 10).
@@ -1338,6 +1352,10 @@ void Cpu::saveState(StateWriter& w) const
     w.w<std::int32_t>(m_edgeCycle);
     w.w<std::int32_t>(m_irqEdgeCycle);
     w.w(m_irqWasHigh);
+    w.w(m_irqPollHigh);
+    w.w(m_irqSampleCur);
+    w.w(m_irqSamplePrev);
+    w.w<std::int32_t>(m_instrCycle);
     w.end();
 }
 
@@ -1362,6 +1380,10 @@ void Cpu::loadState(StateReader& r)
     m_edgeCycle = r.get<std::int32_t>();
     m_irqEdgeCycle = r.get<std::int32_t>();
     m_irqWasHigh = r.get<std::uint8_t>() != 0;
+    m_irqPollHigh = r.get<std::uint8_t>() != 0;
+    m_irqSampleCur = r.get<std::uint8_t>() != 0;
+    m_irqSamplePrev = r.get<std::uint8_t>() != 0;
+    m_instrCycle = r.get<std::int32_t>();
 }
 
 } // namespace cutenes
