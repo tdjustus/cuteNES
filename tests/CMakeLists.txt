@@ -39,7 +39,7 @@ target_link_libraries(rom_harness PRIVATE
 
 # Tier-1 acceptance gate (constitution Principle III). Every ROM listed
 # here is green as of its registration; the set grows as remaining suites
-# pass (sprdma, cpu_interrupts_v2 2/3/5).
+# pass.
 # The ppu_vbl_nmi and apu_test entries are the standalone sub-test ROMs:
 # the multi-test builds can mask sub-test failures behind their bank layout.
 set(TIER1_ROMS
