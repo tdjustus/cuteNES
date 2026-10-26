@@ -144,10 +144,11 @@ private:
     int m_irqEdgeCycle = -1;
     // Penultimate-cycle IRQ poll (see sampleIrqCycle()).
     std::function<bool()> m_irqLineSource;
-    bool m_irqSampleCur = false;  // line at the start of the current cycle
-    bool m_irqSamplePrev = false; // line at the start of the previous cycle
-    bool m_irqPollHigh = false;   // penultimate-cycle sample of last instr
-    int m_instrCycle = 0;         // normal CPU cycles in this instruction
+    bool m_irqSampleCur = false;   // line at the start of the current cycle
+    bool m_irqSamplePrev = false;  // line at the start of the previous cycle
+    bool m_irqSampleFirst = false; // line at the start of the first cycle
+    bool m_irqPollHigh = false;    // poll sample of the last instruction
+    int m_instrCycle = 0;          // normal CPU cycles in this instruction
     bool m_jammed = false;
     bool m_nmiWasHigh = false;
     int m_cycles = 0;              // 1-based cycle index within instruction

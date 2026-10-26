@@ -759,6 +759,7 @@ void Cpu::reset(bool cold)
     m_irqPollHigh = false;
     m_irqSampleCur = false;
     m_irqSamplePrev = false;
+    m_irqSampleFirst = false;
     m_instrCycle = 0;
 
     // Reset sequence: internal cycles then the vector fetch. The absolute
@@ -795,6 +796,9 @@ void Cpu::sampleIrqCycle()
 {
     m_irqSamplePrev = m_irqSampleCur;
     m_irqSampleCur = m_irqLineSource ? m_irqLineSource() : m_irqLevel;
+    if (m_instrCycle == 0) {
+        m_irqSampleFirst = m_irqSampleCur;
+    }
     ++m_instrCycle;
 }
 
@@ -892,8 +896,10 @@ void Cpu::step()
         m_branchSkipPoll = false; // taken branch ignored its last-clock poll
     }
     // The flag-change delay: CLI/SEI/PLP take effect for the poll after the
-    // NEXT instruction (test 3). The decision uses the penultimate-cycle
-    // sample taken while the previous instruction executed (test 4/5).
+    // NEXT instruction (test 3). The decision uses the sample taken while
+    // the previous instruction executed (test 4/5): normally its
+    // penultimate cycle, but a taken non-page-crossing branch polls before
+    // its second cycle and ignores a line that rises later (test 5).
     if (m_irqPollHigh && !m_iPrev) {
         m_irqPollHigh = false;
         doInterrupt(0xFFFE, false);
@@ -1319,9 +1325,12 @@ void Cpu::step()
         break;
     }
     m_prevInstrCycles = m_cycles;
-    // Latch the IRQ poll for the next boundary: the line as sampled at the
-    // start of this instruction's penultimate cycle.
-    m_irqPollHigh = (m_instrCycle >= 2) ? m_irqSamplePrev : m_irqSampleCur;
+    // Latch the IRQ poll for the next boundary. A taken non-page-crossing
+    // branch polls before its second cycle, so a line that rises during the
+    // branch is ignored and the following instruction executes first (test
+    // 5). Every other instruction uses its penultimate-cycle sample.
+    m_irqPollHigh = m_branchSkipPoll ? m_irqSampleFirst
+        : ((m_instrCycle >= 2) ? m_irqSamplePrev : m_irqSampleCur);
     // CLI/SEI/PLP take effect on the final cycle, so the poll sees the OLD
     // value; RTI pulls P early enough that the poll sees the NEW one
     // (cpu_interrupts_v2 tests 3, 7, and 10).

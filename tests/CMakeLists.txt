@@ -57,6 +57,7 @@ set(TIER1_ROMS
     ppu_vbl_nmi/rom_singles/10-even_odd_timing.nes
     cpu_reset/ram_after_reset.nes
     cpu_interrupts_v2/rom_singles/4-irq_and_dma.nes
+    cpu_interrupts_v2/rom_singles/5-branch_delays_irq.nes
     oam_read/oam_read.nes
     oam_stress/oam_stress.nes
     apu_test/rom_singles/2-len_table.nes

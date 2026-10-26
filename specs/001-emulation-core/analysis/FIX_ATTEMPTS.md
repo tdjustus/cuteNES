@@ -1297,3 +1297,26 @@ Evidence:
 Still failing, unchanged by the flip: test 2 (9/10 rows; last SEC row off by
 one), test 3 (hijack rows engaged; NMI grid 1-2 late), test 5 (`test_jmp`
 table). sprdma row 5 (528 vs 526) and the _512 rows also unchanged.
+
+## T070 session 36 (2026-10-26): cpu_interrupts_v2 test 5 passes — taken-branch poll point
+
+Root cause of `5-branch_delays_irq/test_branch_taken` row 4 (`04 01 07`
+instead of `04 05 0A`): the generic penultimate-cycle latch used the
+operand-fetch sample for a 3-cycle taken branch, so a line that rose
+between the branch's opcode fetch and its operand fetch was serviced at
+the branch boundary. Hardware polls *before* the branch's second cycle and
+has no poll before the third cycle, so such a rise is ignored and the next
+instruction executes first.
+
+Fix: `sampleIrqCycle()` records the first-cycle sample in
+`m_irqSampleFirst`; the end-of-instruction latch uses it when
+`m_branchSkipPoll` is set (taken non-page-crossing branch) and keeps the
+penultimate sample otherwise. NMI logic is untouched (test 5 has none).
+
+Result: all four subtests (`test_jmp`, `test_branch_not_taken`,
+`test_branch_taken_pagecross`, `test_branch_taken`) match the readme,
+including the special `04 05 0A` row; the ROM prints `Passed`.
+`cpu_interrupts_v2/rom_singles/5-branch_delays_irq.nes` is promoted to
+`TIER1_ROMS`. Full ctest 149/149 (tier1 34).
+
+Still failing: tests 2 (`2-nmi_and_brk`) and 3 (`3-nmi_and_irq`).
