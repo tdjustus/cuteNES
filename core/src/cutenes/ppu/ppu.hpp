@@ -158,6 +158,7 @@ private:
         std::uint8_t x = 0xFF, attr = 0, lo = 0, hi = 0;
     };
     std::array<Unit, 8> m_units{};
+    bool m_evalDone = false; // n wrapped past sprite 63 this line
     int m_unitCount = 0;
     bool m_spriteZeroNext = false, m_spriteZeroActive = false;
     std::array<std::uint8_t, 32> m_oam2{};

@@ -225,9 +225,10 @@ expect-text Passed
 end
 
 # blargg sprite_hit_tests (screen-reported): all eleven pass after the
-# sprite-evaluation/shifter fixes (session 39). sprite_overflow 1.Basics
-# passes; 2-5 remain known-failing (the buggy overflow scan's deeper
-# diagonal cases).
+# sprite-evaluation/shifter fixes (session 39). sprite_overflow_tests:
+# all five pass after the overflow-scan fixes (session 40: per-line
+# reset in the clear phase, n-wrap termination, and the m==3 diagonal
+# increment is +1 not +5).
 
 entry sprite-hit-01-basics
 rom ../roms/sprite_hit_tests_2005.10.05/01.basics.nes
@@ -297,6 +298,30 @@ end
 
 entry sprite-overflow-1-basics
 rom ../roms/sprite_overflow_tests/1.Basics.nes
+run 600 none
+expect-text PASSED
+end
+
+entry sprite-overflow-2-details
+rom ../roms/sprite_overflow_tests/2.Details.nes
+run 600 none
+expect-text PASSED
+end
+
+entry sprite-overflow-3-timing
+rom ../roms/sprite_overflow_tests/3.Timing.nes
+run 600 none
+expect-text PASSED
+end
+
+entry sprite-overflow-4-obscure
+rom ../roms/sprite_overflow_tests/4.Obscure.nes
+run 600 none
+expect-text PASSED
+end
+
+entry sprite-overflow-5-emulator
+rom ../roms/sprite_overflow_tests/5.Emulator.nes
 run 600 none
 expect-text PASSED
 end

@@ -493,7 +493,21 @@ void Ppu::evalDot(std::uint64_t dot)
 
     if (dot <= 64) {
         // Secondary-OAM clear: normal read/write cycles with reads forced
-        // to $FF. The clear's 0-31 counter is INTERNAL (dot-derived); the
+        // to $FF. The clear IS the per-line reset of the evaluation
+        // machine (hardware resets with the secondary buffer) — including
+        // the overflow-scan state, which otherwise leaks across vblank
+        // (no visible-line dot 0 there) into frames that enable rendering
+        // late (sprite_overflow 2.Details #9 false positive).
+        if (dot == 1) {
+            m_evalStep = 0;
+            m_secCount = 0;
+            m_secByte = 0;
+            m_ovM = 0;
+            m_evalOverflow = false;
+            m_secSecondaryRead = false;
+            m_evalDone = false;
+        }
+        // The clear's 0-31 counter is INTERNAL (dot-derived); the
         // evaluation pointer must still be OAMADDR at dot 65 — the wiki's
         // algorithm starts at n=0, and the 2C02G/H refresh bug fires
         // relative to OAMADDR at evaluation START (advancing m_oamAddr
@@ -516,6 +530,10 @@ void Ppu::evalDot(std::uint64_t dot)
             m_oam[static_cast<std::size_t>(i)] =
                 m_oam[static_cast<std::size_t>((src + i) & 0xFF)];
         }
+    }
+
+    if (m_evalDone) {
+        return; // n wrapped past sprite 63: spin until the line ends (2a)
     }
 
     if (odd) {
@@ -544,7 +562,12 @@ void Ppu::evalDot(std::uint64_t dot)
             } else {
                 // Out of range: the slot does NOT advance (the next
                 // candidate's Y overwrites the same position).
-                m_oamAddr = static_cast<std::uint8_t>(m_oamAddr + 4); // n++
+                const std::uint8_t next =
+                    static_cast<std::uint8_t>(m_oamAddr + 4);
+                if (next < m_oamAddr) {
+                    m_evalDone = true; // n wrapped: all 64 evaluated
+                }
+                m_oamAddr = next; // n++
             }
             break;
         case 1:
@@ -561,6 +584,12 @@ void Ppu::evalDot(std::uint64_t dot)
                 m_oam2[static_cast<std::size_t>(m_secByte)] = m_evalRead;
                 ++m_secByte;
                 ++m_secCount;
+                const std::uint8_t next =
+                    static_cast<std::uint8_t>(m_oamAddr + 1);
+                if (next < m_oamAddr) {
+                    m_evalDone = true; // n wrapped: all 64 evaluated
+                }
+                m_oamAddr = next; // 4n+3 -> 4(n+1): n++ completes the sprite
                 if (m_secCount == 8) {
                     m_evalOverflow = true; // enter the step-3 scan
                     m_ovM = 0;
@@ -568,7 +597,6 @@ void Ppu::evalDot(std::uint64_t dot)
                     break;
                 }
             }
-            ++m_oamAddr; // 4n+3 -> 4(n+1)
             m_evalStep = 0;
             break;
         }
@@ -580,21 +608,30 @@ void Ppu::evalDot(std::uint64_t dot)
     // value always in range — which can steer the increments (the bug).
     switch (m_evalStep) {
     case 0: { // comparing OAM[n][m] as a Y coordinate
-        const std::uint8_t y = m_secSecondaryRead ? m_oam2[0] : m_evalRead;
+        const std::uint8_t y = m_evalRead;
         if (inRange(y)) {
             m_status |= 0x20; // overflow flag
             m_evalStep = 2;   // read the next 3 entries
             m_ovM = 3;
         } else {
-            m_oamAddr = static_cast<std::uint8_t>(m_oamAddr + 5); // n++ AND m++
-            // n overflow -> step 4 handled by the m_ovM == 4 sentinel below
-            if (m_oamAddr < 5) {
-                m_evalStep = 3; // wrapped: spin +4 until hblank
+            // 3b: increment n and m (+5 in byte terms) — but at m==3,
+            // m wraps and only n increments: 4n+3 -> 4(n+1)+0 is +1
+            // (wiki 3a: "incrementing n when m overflows"). A flat +5
+            // skips a sprite: the diagonal goes 9.0, 10.1, 11.2, 12.3,
+            // 13.0, 14.1 (sprite_overflow 4.Obscure #2-#6).
+            const std::uint8_t next = static_cast<std::uint8_t>(
+                m_oamAddr + ((m_oamAddr & 3) == 3 ? 1 : 5));
+            if (next < m_oamAddr) {
+                m_evalStep = 3; // n wrapped: spin +4 until hblank
             }
+            m_oamAddr = next;
         }
         break;
     }
     case 2: // consuming the 3 entries after a hit
+        if (static_cast<std::uint8_t>(m_oamAddr + 1) < m_oamAddr) {
+            m_evalDone = true; // n wrapped
+        }
         ++m_oamAddr;
         if (--m_ovM == 0) {
             m_evalStep = 3; // step 4: spin
