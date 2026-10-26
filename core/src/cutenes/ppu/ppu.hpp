@@ -187,6 +187,10 @@ private:
     std::uint64_t m_ignoreWritesUntil = 0; // master clock
 
     static const std::array<std::uint32_t, 64> kPalette;
+    // 8 emphasis variants of kPalette (PPUMASK bits 5-7), built at
+    // construction (region-dependent red/green swap on PAL).
+    void buildEmphasisTables();
+    std::array<std::array<std::uint32_t, 64>, 8> m_emphasis{};
 };
 
 } // namespace cutenes

@@ -139,3 +139,48 @@ TEST(Ppu, OddFrameDotSkipOnlyWhenRendering)
     blank.ppu.runTo(blank.scheduler.now());
     EXPECT_EQ(blank.ppu.scanline(), 261); // still one dot short of wrapping
 }
+
+// Colour emphasis (PPUMASK bits 5-7): each bit keeps its channel and
+// attenuates the other two to 3/4; all three darken everything. Verified
+// against the frozen kPalette by rendering one emphasized backdrop frame.
+TEST(Ppu, ColourEmphasisAttenuatesOtherChannels)
+{
+    // Backdrop $21 (0x4240FF-ish row); render one full frame per mask.
+    auto backdrop = [](std::uint8_t mask) {
+        PpuHarness h;
+        std::uint32_t frame[256 * 240] = {};
+        h.ppu.setVideoOutput(frame);
+        h.ppu.reset(true);
+        h.scheduler.reset();
+        h.scheduler.advanceMaster(29700 * 12); // clear ignore window
+        h.ppuWrite(0x3F00, 0x21); // backdrop colour
+        h.ppu.cpuWrite(0x2001, mask);
+        for (int i = 0; i < 300; ++i) { // run past one frame
+            h.scheduler.advanceMaster((341 * 262) * 4 - h.scheduler.now()
+                % ((341 * 262) * 4));
+            h.ppu.runTo(h.scheduler.now());
+        }
+        return frame[0];
+    };
+    const std::uint32_t base = backdrop(0x08); // bg on, no emphasis
+    const std::uint32_t r = backdrop(0x28); // + red
+    const std::uint32_t g = backdrop(0x48); // + green
+    const std::uint32_t b = backdrop(0x88); // + blue
+    const std::uint32_t all = backdrop(0xE8);
+    auto px = [](std::uint32_t v, int shift) {
+        return (v >> shift) & 0xFF;
+    };
+    // Red emphasis: R full, G/B at 3/4.
+    EXPECT_EQ(px(r, 16), px(base, 16));
+    EXPECT_EQ(px(r, 8), (px(base, 8) * 3) / 4);
+    EXPECT_EQ(px(r, 0), (px(base, 0) * 3) / 4);
+    // Green emphasis: G full, R/B at 3/4.
+    EXPECT_EQ(px(g, 8), px(base, 8));
+    EXPECT_EQ(px(g, 16), (px(base, 16) * 3) / 4);
+    // Blue emphasis: B full, R/G at 3/4.
+    EXPECT_EQ(px(b, 0), px(base, 0));
+    EXPECT_EQ(px(b, 16), (px(base, 16) * 3) / 4);
+    // All three: everything darkens.
+    EXPECT_EQ(px(all, 16), (px(base, 16) * 3) / 4);
+    EXPECT_EQ(px(all, 8), (px(base, 8) * 3) / 4);
+}

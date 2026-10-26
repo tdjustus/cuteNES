@@ -52,6 +52,42 @@ Ppu::Ppu(const RegionProfile& profile, Scheduler& scheduler)
 {
     // ~0.5 s of master clock before the open-bus latch has bled to zero.
     m_decayTicks = m_profile.masterClockNum / m_profile.masterClockDen / 2;
+    buildEmphasisTables();
+}
+
+// PPUMASK bits 5-7 (colour emphasis): each bit boosts one channel and
+// attenuates the other two; all three set darken everything (nesdev
+// "Colour emphasis"). Modeled on the frozen base palette with a 3/4
+// attenuation — deterministic integer math, byte-identical everywhere.
+// $0F black (base 0x000000) is naturally unaffected, as on hardware.
+// Greyscale still gets tinted: emphasis applies to the looked-up RGB.
+// PAL PPUs swap the red and green bit meanings (nesdev).
+void Ppu::buildEmphasisTables()
+{
+    // NTSC: bit 5 = red, bit 6 = green, bit 7 = blue.
+    int redSlot = 0, greenSlot = 1;
+    if (m_profile.ppuDivisor == regionProfile(Region::Pal).ppuDivisor) {
+        redSlot = 1; // PAL swaps red/green emphasis
+        greenSlot = 0;
+    }
+    for (int e = 0; e < 8; ++e) {
+        const bool all = (e & 7) == 7;
+        const bool r = (e & (1 << redSlot)) != 0;
+        const bool g = (e & (1 << greenSlot)) != 0;
+        const bool b = (e & 0x04) != 0; // bit 7 -> slot 2
+        for (int i = 0; i < 64; ++i) {
+            const std::uint32_t rgb = kPalette[static_cast<std::size_t>(i)];
+            const auto scale = [all](int v, bool emphasized) {
+                return (all || !emphasized) ? (v * 3) / 4 : v;
+            };
+            const int rr = scale((rgb >> 16) & 0xFF, r);
+            const int gg = scale((rgb >> 8) & 0xFF, g);
+            const int bb = scale((rgb >> 0) & 0xFF, b);
+            m_emphasis[static_cast<std::size_t>(e)]
+                      [static_cast<std::size_t>(i)] =
+                static_cast<std::uint32_t>((rr << 16) | (gg << 8) | bb);
+        }
+    }
 }
 
 void Ppu::attachCartridge(Cartridge* cartridge) { m_cart = cartridge; }
@@ -789,8 +825,12 @@ void Ppu::renderPixel(std::uint32_t x)
     if ((m_mask & 0x01) != 0) { // grayscale
         color &= 0x30;
     }
+    std::uint32_t rgb = kPalette[color & 0x3F];
+    if ((m_mask & 0xE0) != 0) { // colour emphasis bits 5-7
+        rgb = m_emphasis[(m_mask >> 5) & 7][color & 0x3F];
+    }
     if (m_frame != nullptr) {
-        m_frame[static_cast<std::size_t>(m_scanline) * 256 + x] = kPalette[color & 0x3F];
+        m_frame[static_cast<std::size_t>(m_scanline) * 256 + x] = rgb;
     }
 }
 
