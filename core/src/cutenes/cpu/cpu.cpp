@@ -355,7 +355,8 @@ void Cpu::serviceDmcDma()
     // reads before real read"; writes show the same buffer/v oddities
     // while the write itself lands once — "DMC DMA during $2007 write
     // has no effect"). rd() consumes the count at the next $2007 read.
-    m_dmcStallExtras = 2;    advanceDmcCycle(); // halt cycle
+    m_dmcStallExtras = 2;
+    advanceDmcCycle(); // halt cycle
     advanceDmcCycle(); // dummy
     // Reloads normally span 4 (halt on the scheduled put, dummy, align, get).
     // When the scheduled put halt was REFUSED by a CPU write, the retry
@@ -412,10 +413,9 @@ std::uint8_t Cpu::rd(std::uint16_t addr)
     serviceDmcIfDue(true); // reads (and internal cycles) are haltable
     ++m_cycles;
     sampleIrqCycle();
-    // A pending DMC fetch halts the CPU: ~3 stall cycles plus the clocked
-    // memory read itself (task T037). Get-cycles here also stall sprite DMA.
-    // DMC DMA service moved to tickHalf (per-cycle engine, task T037):
-    // fetches are served at the drain instant, not at the next read.
+    // A DMC fetch due at this cycle boundary has already been serviced by
+    // serviceDmcIfDue() above: the halt/dummy/align cycles are consumed
+    // there and m_dmaServicedThisHalf is set for the re-issue below.
     // Pre-access NMI sample: the silicon edge detector is continuous, so
     // the line must be observed after catch-up but BEFORE a $2002 read
     // clears the flag — a tight poll loop otherwise never latches the
