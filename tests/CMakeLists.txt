@@ -77,7 +77,9 @@ set(TIER1_ROMS
     apu_test/rom_singles/7-dmc_basics.nes
     apu_test/rom_singles/8-dmc_rates.nes
     apu_test/rom_singles/1-len_ctr.nes
-    apu_test/rom_singles/5-len_timing.nes)
+    apu_test/rom_singles/5-len_timing.nes
+    sprdma_and_dmc_dma/sprdma_and_dmc_dma.nes
+    sprdma_and_dmc_dma/sprdma_and_dmc_dma_512.nes)
 
 # All formerly known-failing ROMs have been fixed and promoted to tier 1
 # (see specs/001-emulation-core/analysis/FIX_ATTEMPTS.md).

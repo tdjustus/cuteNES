@@ -1354,3 +1354,44 @@ print `Passed`; singles 1-5 are promoted to `TIER1_ROMS`. Full ctest
 
 Remaining known core issue: T037 `sprdma` main table row 5 (+2) and the
 `_512` rows.
+
+## T037 session 38 (2026-10-26): sprdma_and_dmc_dma passes (main and _512)
+
+Both variants print `Passed` with the exact hardware tables:
+main `527 528 527 528 527 526 525 526 525 526 525 526 525 526 525 526`,
+_512 `525 526 525 526 524 525 526 527 527 528 526 527 527 528 527 528`.
+
+Three defects, found by driving the OAM/DMC overlap from the nesdev wiki
+text instead of tuning the tables:
+
+1. **The DMC halt attempt belongs at the start of a CPU cycle, not at
+   APU catch-up.** It was serviced inside `tickHalf` as soon as the drain
+   was observed during catch-up, which made the fetch start on whatever
+   half-cycle the APU happened to be caught up to. `Cpu::serviceDmcIfDue`
+   is now called from `rd()`/`wr()`/`tick()` before the cycle's access:
+   reads and internal cycles accept the halt, writes refuse it (nesdev
+   DMA, "DMA can only halt on CPU read cycles") and the unit retries on
+   the next cycle. This is what makes the post-window `_512` reload cost
+   3 instead of 4.
+
+2. **OAM DMA is now an explicit cycle machine** implementing "DMC DMA
+   during OAM DMA". The old loop serviced the transfer and the DMC fetch
+   as separate costs. Now halt/dummy/alignment are no-op cycles that
+   *overlap* the OAM stream, the DMC get *steals* an OAM get, and the
+   following empty put is the OAM realign. Derived costs match the wiki
+   examples exactly: +2 mid-window, +1 for second-to-last put, +3 for the
+   last put. This fixed the main ROM's row 5 (the OAM window span) and
+   `_512` rows 4-7, 8-9 in one change.
+
+3. **Reload arming vs the refusal path.** A reload is scheduled to halt
+   on the first put (odd) cycle at or after the drain, and remains armed
+   on every later cycle. A halt refused by a CPU write retries on the
+   *next* cycle — which is a get — and that "delayed 1 cycle" reload
+   spans 3 (halt/dummy/get). A reload that halted on its scheduled put
+   still spans 4 (halt/dummy/align/get), and loads always span 3. Only
+   this narrow combination keeps the main table exact AND fixes `_512`
+   rows 10/11: the earlier all-cycle retry also changed load spans (a
+   load halted on a put cycle gained an alignment cycle), flattening the
+   main table to `528 528 528 528 528 526 …`.
+
+Both ROMs are promoted to `TIER1_ROMS`; full ctest 154/154 (tier1 39).

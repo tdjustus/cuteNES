@@ -79,6 +79,7 @@ private:
     void tickHalf(bool phi2);
     void advanceDmcCycle(); // one stalled CPU cycle of a DMC DMA
     void serviceDmcDma(); // halt/dummy/[align]/get at the drain instant
+    void serviceDmcIfDue(bool haltable); // start-of-cycle halt attempt
     bool m_inDmcDma = false; // re-entrancy guard
     int m_dmcStallExtras = 0; // re-issue count for a DMC-stalled access
     bool m_dmaServicedThisHalf = false; // a DMA serviced at this cycle boundary
@@ -87,7 +88,15 @@ private:
     // Per-cycle IRQ poll history: the decision at an instruction boundary
     // uses the sample from the start of its penultimate cycle.
     void sampleIrqCycle();
-    void tick() { sampleIrqCycle(); tickHalf(false); tickHalf(false); sampleNmi(); }
+    void tick()
+    {
+        serviceDmcIfDue(true); // an internal cycle is a (dummy) read
+        m_dmaServicedThisHalf = false;
+        sampleIrqCycle();
+        tickHalf(false);
+        tickHalf(false);
+        sampleNmi();
+    }
     std::uint8_t fetch() { return rd(m_pc++); }
 
     void push(std::uint8_t value);
