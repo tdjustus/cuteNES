@@ -1410,3 +1410,52 @@ covered.
 
 With T037, T068, T070 and T071 closed, Feature 001 has no open core
 accuracy tasks (T059 still needs user-supplied mapper 1/3 titles).
+
+## Session 39 (2026-10-26): the un-gated corpus sweep — six more defect families, five fixed
+
+A sweep of all 208 un-gated corpus ROMs (tier1+playtest covered only 55)
+found 8 failing protocol ROMs across 6 root causes, plus 2 more families
+exposed while fixing them. Five are fixed; one is documented.
+
+1. **PPU open-bus RC decay** (`ppu_open_bus` — now tier 1). The latch is
+   per-bit charge: $2002 reads drive only bits 7-5, palette $2007 reads
+   only bits 5-0 (returning decayed bits 7-6), write-only reads charge
+   nothing, and everything bleeds to zero in ~0.5 s.
+2. **I/O-space open bus** (`cpu_exec_space` both — now tier 1).
+   $4000-$4013/$4014/$4018-$401F read the CPU-bus latch instead of 0,
+   and RTS/RTI perform a real cycle-2 dummy fetch of PC+1 (observable
+   through register side effects when executing from I/O space).
+3. **Sprite evaluation was broken three ways** (blargg sprite_hit
+   01-11, all now gated and passing):
+   - the secondary-OAM clear (dots 1-64) advanced OAMADDR by 32, so the
+     scan started at sprite 8 — sprite-0 hit could never fire (01 #2);
+   - the step-0 in-range copy did not advance to OAM[n][1], so every
+     sprite's tile byte was a copy of its Y;
+   - the Y comparison used scanline+1, one line late, cutting each
+     sprite's bottom row (03/07/08).
+4. **The background shifter reloaded at dot 8k+1 instead of 8k**,
+   delaying the entire background by one pixel (02/03/04 left-edge
+   rows). Fixed together with the PPUCTRL pattern-table bits in the
+   fetch addresses (bit 3 = background, bit 4 = 8x8 sprites — the
+   previous code had them swapped; every previously gated test used
+   symmetric settings and could not see it). Golden hashes recaptured.
+5. **MMC3 revision variants are a selection problem, not an emulation
+   bug**: 6-MMC3_alt and 6-MMC6 pass with NES 2.0 submapper 4 (rev A
+   semantics) forced; gated as playtest entries.
+   `ppu_read_buffer` (bisqwit) went from all-"Hi"-FAIL to all-"Hi"-OK
+   from fix 3; its "No-Hi" rows still report mismatches.
+
+REMAINING KNOWN GAPS (documented, un-gated):
+- `mmc3_test(2)/4-scanline_timing` #3-#7: the mode-$08 (BG $1000,
+  sprites $0000) A12 phase. The wiki itself calls this config
+  "partially works" (double-count on the pre-render line); a raw-bus +
+  rise/fall-filter model was built and rejected — it fixed #2 but
+  regressed the 2005 suite's timing tests. The corpus-calibrated
+  synthesized windows are kept; the mode-$08 subtests stay un-gated.
+- `sprite_overflow_tests` 2-5: the buggy overflow scan's deeper
+  diagonal cases (1.Basics passes and is gated).
+- `ppu_read_buffer`: No-Hi rows + result code 41 (78-subtest suite).
+
+METHODOLOGY note: probe binaries must be RELINKED after every core
+rebuild — a stale scriptprobe produced one wasted round this session
+(the trap is already on record from session 34).
