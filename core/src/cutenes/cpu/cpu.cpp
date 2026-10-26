@@ -1156,7 +1156,12 @@ void Cpu::step()
         break;
     }
     case 0x60: { // RTS
-        tick();
+        // Cycle 2 is a real dummy FETCH of the byte after the opcode (PC
+        // not incremented): executing from I/O space makes the read
+        // observable through register side effects (cpu_exec_space_ppuio
+        // #5, "an RTS opcode should still do a dummy fetch of the next
+        // opcode").
+        (void)rd(m_pc);
         tick();
         const std::uint8_t lo = pop();
         const std::uint8_t hi = pop();
@@ -1165,7 +1170,7 @@ void Cpu::step()
         break;
     }
     case 0x40: { // RTI: B stripped like PLP
-        tick();
+        (void)rd(m_pc); // cycle-2 dummy fetch of PC+1 (same as RTS)
         tick();
         m_p = static_cast<std::uint8_t>((pop() | kU) & ~kB);
         const std::uint8_t lo = pop();

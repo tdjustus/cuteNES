@@ -39,13 +39,16 @@ public:
 
     const std::array<std::uint8_t, 2048>& ram() const { return m_ram; }
 
+    // The CPU data-bus open-bus latch: the last byte driven on the bus.
+    // Read drivers with no register behind them return this (write-only
+    // APU ports, $4018-$401F — blargg cpu_exec_space).
+    std::uint8_t openBusRead() const { return m_openBus; }
+
     // Save-state section "RAM " (task T049).
     void saveState(class StateWriter& w) const;
     void loadState(StateReader& r);
 
 private:
-    std::uint8_t openBusRead();
-
     std::uint8_t m_openBus = 0;
     std::array<std::uint8_t, 2048> m_ram{};
     CpuBusDevice* m_ppu = nullptr;

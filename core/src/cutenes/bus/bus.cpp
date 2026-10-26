@@ -22,9 +22,6 @@ void Bus::attachPpu(CpuBusDevice* device) { m_ppu = device; }
 void Bus::attachApuIo(CpuBusDevice* device) { m_apuIo = device; }
 void Bus::attachCartridge(CpuBusDevice* device) { m_cartridge = device; }
 
-std::uint8_t Bus::openBusRead() { return m_openBus; }
-
-
 int g_bus4014 = 0;
 
 std::uint8_t Bus::read(std::uint16_t addr)

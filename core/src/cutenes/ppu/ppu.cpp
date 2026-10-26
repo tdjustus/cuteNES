@@ -44,6 +44,8 @@ Ppu::Ppu(const RegionProfile& profile, Scheduler& scheduler)
     : m_profile(profile)
     , m_sched(scheduler)
 {
+    // ~0.5 s of master clock before the open-bus latch has bled to zero.
+    m_decayTicks = m_profile.masterClockNum / m_profile.masterClockDen / 2;
 }
 
 void Ppu::attachCartridge(Cartridge* cartridge) { m_cart = cartridge; }
@@ -80,15 +82,43 @@ void Ppu::reset(bool /*cold*/)
 
 // --- Register file ---------------------------------------------------------
 
+// The open-bus latch after RC decay: a bit reads back zero once its last
+// charge is stale (ppu_open_bus #3).
+std::uint8_t Ppu::decayedBusValue() const
+{
+    const std::uint64_t now = m_sched.now();
+    std::uint8_t value = 0;
+    for (int bit = 0; bit < 8; ++bit) {
+        const std::uint8_t mask = static_cast<std::uint8_t>(1u << bit);
+        if ((m_decay & mask) != 0 && now - m_decayMaster[bit] < m_decayTicks) {
+            value |= mask;
+        }
+    }
+    return value;
+}
+
+void Ppu::chargeBusBits(std::uint8_t mask, std::uint8_t value)
+{
+    const std::uint64_t now = m_sched.now();
+    m_decay = static_cast<std::uint8_t>(
+        (m_decay & ~mask) | (value & mask));
+    for (int bit = 0; bit < 8; ++bit) {
+        if ((mask & (1u << bit)) != 0) {
+            m_decayMaster[bit] = now;
+        }
+    }
+}
+
 std::uint8_t Ppu::cpuRead(std::uint16_t addr)
 {
-    std::uint8_t value = m_decay;
+    std::uint8_t value = decayedBusValue();
     switch (addr) {
     case 0x2002:
         if (std::getenv("RDDBG")) std::fprintf(stderr, "RD2002 master=%llu line=%d dot=%d lag=%02X st=%02X\n",
             (unsigned long long)m_sched.now(), m_scanline, m_dot, m_statusLag, m_status);
         // Open-bus low 5 bits decay into the returned status byte.
-        value = static_cast<std::uint8_t>((m_statusLag & 0xE0) | (m_decay & 0x1F));
+        value = static_cast<std::uint8_t>(
+            (m_statusLag & 0xE0) | (decayedBusValue() & 0x1F));
         // Race: reading at (or within a CPU clock of) the set dot returns
         // the flag clear and suppresses it for the rest of the frame
         // (nesdev PPU_registers; exercised by 02-vbl_set_time).
@@ -130,7 +160,11 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
     case 0x2007: {
         const std::uint16_t a = m_v & 0x3FFF;
         if (a >= 0x3F00) {
-            value = paletteRead(static_cast<std::uint8_t>(a & 0x1F));
+            // Palette reads are immediate and drive only bits 5-0; bits
+            // 7-6 stay open bus (ppu_open_bus #8; nesdev PPU registers).
+            value = static_cast<std::uint8_t>(
+                (paletteRead(static_cast<std::uint8_t>(a & 0x1F)) & 0x3F)
+                | (decayedBusValue() & 0xC0));
             m_readBuffer = m_vram[nametableIndex(a)];
         } else {
             value = m_readBuffer;
@@ -152,13 +186,23 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
     default:
         break; // $2000/$2001/$2003/$2005/$2006 are write-only
     }
-    m_decay = value;
+    // Only lines the register actually drives get recharged: $2002 drives
+    // bits 7-5 alone (the low 5 keep decaying, #7), a palette $2007 read
+    // drives bits 5-0 (#8), $2004 and normal $2007 drive all 8, and reads
+    // of write-only registers drive nothing (#5).
+    if (addr == 0x2002) {
+        chargeBusBits(0xE0, value);
+    } else if (addr == 0x2004) {
+        chargeBusBits(0xFF, value);
+    } else if (addr == 0x2007) {
+        chargeBusBits((m_v & 0x3FFF) >= 0x3F00 ? 0x3F : 0xFF, value);
+    }
     return value;
 }
 
 void Ppu::cpuWrite(std::uint16_t addr, std::uint8_t value)
 {
-    m_decay = value;
+    chargeBusBits(0xFF, value);
     const bool writable = addr == 0x2002 || addr == 0x2003 || addr == 0x2004
         || addr == 0x2007 || m_sched.now() >= m_ignoreWritesUntil;
     if (!writable) {
@@ -400,23 +444,29 @@ void Ppu::fetchCycle(std::uint32_t dot)
                 break;
             }
             case 6: { // pattern low
+                // PPUCTRL bit 3 selects the BACKGROUND pattern table
+                // ($0000/$1000); bit 4 is the 8x8 SPRITE table.
                 const std::uint16_t addr = static_cast<std::uint16_t>(
-                    ((m_ctrl & 0x10) != 0 ? 0x1000 : 0)
+                    ((m_ctrl & 0x08) != 0 ? 0x1000 : 0)
                     + m_latchNT * 16 + ((m_v >> 12) & 7));
                 m_latchLo = ppuBusRead(addr);
                 break;
             }
             case 0: { // pattern high + horizontal advance
                 const std::uint16_t addr = static_cast<std::uint16_t>(
-                    ((m_ctrl & 0x10) != 0 ? 0x1000 : 0)
+                    ((m_ctrl & 0x08) != 0 ? 0x1000 : 0)
                     + m_latchNT * 16 + ((m_v >> 12) & 7) + 8);
                 m_latchHi = ppuBusRead(addr);
+                // Reload the shifter's low byte at the END of the fetch
+                // group (dot 8k, after this dot's shift): 8 more shifts
+                // put the byte in the sampling half exactly when its
+                // pixels begin. Reloading at dot 8k+1 delayed every tile
+                // by one pixel (sprite_hit 02/03/04: the bg's left edge
+                // rendered one pixel late).
+                setBackgroundShifters();
                 incrementX();
                 break;
             }
-            case 1:
-                setBackgroundShifters();
-                break;
             default:
                 break;
             }
@@ -433,18 +483,27 @@ void Ppu::evalDot(std::uint64_t dot)
     // D3, task T035). Odd dots read primary OAM at OAMADDR; even dots
     // advance the machine. OAMADDR IS the evaluation pointer (byte offset
     // 4n+m), so $2003 writes mid-scanline land in the scan's path.
-    const int line = m_scanline + 1;
+    // The comparison uses THIS scanline (the wiki: y in [scanline,
+    // scanline+7]); loadSpriteUnits then renders row = scanline - y on
+    // the NEXT line — using scanline+1 here cut every sprite's bottom
+    // row and shifted evaluation one line late (sprite_hit 03/07/08).
+    const int line = m_scanline;
     const int height = (m_ctrl & 0x20) != 0 ? 16 : 8;
     const bool odd = (dot & 1) != 0;
 
     if (dot <= 64) {
         // Secondary-OAM clear: normal read/write cycles with reads forced
-        // to $FF; the OAM address still advances (one byte per 2 dots).
+        // to $FF. The clear's 0-31 counter is INTERNAL (dot-derived); the
+        // evaluation pointer must still be OAMADDR at dot 65 — the wiki's
+        // algorithm starts at n=0, and the 2C02G/H refresh bug fires
+        // relative to OAMADDR at evaluation START (advancing m_oamAddr
+        // here shifted the whole scan by 8 sprites: sprite 0 was only
+        // evaluated on lines where the wrap reached it, killing sprite-0
+        // hit; blargg sprite_hit 01 #2).
         if (odd) {
             m_evalRead = 0xFF;
         } else {
             m_oam2[static_cast<std::size_t>((dot / 2) - 1)] = 0xFF;
-            ++m_oamAddr;
         }
         return;
     }
@@ -480,6 +539,7 @@ void Ppu::evalDot(std::uint64_t dot)
                     }
                     ++m_secByte;
                 }
+                ++m_oamAddr; // advance to OAM[n][1] for the next odd read
                 m_evalStep = 1; // copy OAM[n][1..3]
             } else {
                 // Out of range: the slot does NOT advance (the next
@@ -556,8 +616,8 @@ void Ppu::loadSpriteUnits()
     }
     const int line = m_scanline + 1;
     const bool tall = (m_ctrl & 0x20) != 0;
-    const bool spritePatternLeft = (m_ctrl & 0x08) != 0;
-    m_unitCount = 0;
+    // PPUCTRL bit 4 selects the 8x8 SPRITE pattern table.
+    const bool spritePatternLeft = (m_ctrl & 0x10) != 0;    m_unitCount = 0;
     m_spriteZeroActive = m_spriteZeroNext;
     for (int i = 0; i < 8; ++i) {
         const std::uint8_t y = m_oam2[static_cast<std::size_t>(i) * 4 + 0];
@@ -665,21 +725,23 @@ void Ppu::stepDot()
     // (2-details test 7). blargg's "scanline 0" is the pre-render line.
     if ((m_scanline < kVisibleLines || m_scanline == kPreRenderLine)
         && renderingEnabled()) {
-        // Per-dot A12 from the pattern-fetch bus (see trackA12).
+        // Per-dot A12 from the pattern-fetch bus (see trackA12). These
+        // synthesized windows are the calibration that passes the blargg
+        // MMC3 corpus (1-clocking, 2-details, 3-A12_clocking, 5-MMC3,
+        // mmc3_irq_tests 1-6 incl. both revision ROMs and the old-suite
+        // scanline timing): the sprite window carries the table select
+        // that oscillates the filtered line once per scanline, and the
+        // background pattern phases pulse too briefly to pass the
+        // low-time guard. NOTE the mode-$08 subtests of the 2009
+        // 4-scanline_timing want a different phase (nesdev: the counter
+        // "partially works" with BG at $1000) — documented known gap.
         bool high;
         if (m_dot >= 262 && m_dot <= 320) {
-            // Sprite pattern fetches begin at dot 257, but the MMC3's
-            // internal delay clocks the counter at ~dot 260 (the classic
-            // 3-dot offset; 4-scanline_timing boundaries).
-            high = (m_ctrl & 0x08) != 0; // sprite pattern table select
+            high = (m_ctrl & 0x08) != 0;
         } else if ((m_dot >= 1 && m_dot <= 256)
             || (m_dot >= 321 && m_dot <= 336)) {
-            // Within each 8-dot fetch group the last two dots fetch
-            // patterns; NT/AT fetches are $2xxx (bit 12 = 0).
-            // lo fetch at group dots 5-6, hi at 7-8 (dot & 7 == 0).
             const int phase = m_dot & 7;
-            high = (phase >= 5)
-                && ((m_ctrl & 0x10) != 0);
+            high = (phase >= 5) && ((m_ctrl & 0x10) != 0);
         } else {
             high = false; // NT prefetches at 337-340 and dot 0
         }
@@ -861,6 +923,9 @@ void Ppu::saveState(StateWriter& w) const
     w.w(m_w);
     w.w(m_readBuffer);
     w.w(m_decay);
+    for (int bit = 0; bit < 8; ++bit) {
+        w.w<std::uint64_t>(m_decayMaster[bit]);
+    }
     w.w(m_oamAddr);
     w.wBytes(m_vram.data(), m_vram.size());
     w.wBytes(m_palette.data(), m_palette.size());
@@ -913,6 +978,9 @@ void Ppu::loadState(StateReader& r)
     m_w = r.get<std::uint8_t>();
     m_readBuffer = r.get<std::uint8_t>();
     m_decay = r.get<std::uint8_t>();
+    for (int bit = 0; bit < 8; ++bit) {
+        m_decayMaster[bit] = r.get<std::uint64_t>();
+    }
     m_oamAddr = r.get<std::uint8_t>();
     r.getBytes(m_vram.data(), m_vram.size());
     r.getBytes(m_palette.data(), m_palette.size());
