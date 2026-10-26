@@ -1297,3 +1297,60 @@ Evidence:
 Still failing, unchanged by the flip: test 2 (9/10 rows; last SEC row off by
 one), test 3 (hijack rows engaged; NMI grid 1-2 late), test 5 (`test_jmp`
 table). sprdma row 5 (528 vs 526) and the _512 rows also unchanged.
+
+## T070 session 36 (2026-10-26): cpu_interrupts_v2 test 5 passes — taken-branch poll point
+
+Root cause of `5-branch_delays_irq/test_branch_taken` row 4 (`04 01 07`
+instead of `04 05 0A`): the generic penultimate-cycle latch used the
+operand-fetch sample for a 3-cycle taken branch, so a line that rose
+between the branch's opcode fetch and its operand fetch was serviced at
+the branch boundary. Hardware polls *before* the branch's second cycle and
+has no poll before the third cycle, so such a rise is ignored and the next
+instruction executes first.
+
+Fix: `sampleIrqCycle()` records the first-cycle sample in
+`m_irqSampleFirst`; the end-of-instruction latch uses it when
+`m_branchSkipPoll` is set (taken non-page-crossing branch) and keeps the
+penultimate sample otherwise. NMI logic is untouched (test 5 has none).
+
+Result: all four subtests (`test_jmp`, `test_branch_not_taken`,
+`test_branch_taken_pagecross`, `test_branch_taken`) match the readme,
+including the special `04 05 0A` row; the ROM prints `Passed`.
+`cpu_interrupts_v2/rom_singles/5-branch_delays_irq.nes` is promoted to
+`TIER1_ROMS`. Full ctest 149/149 (tier1 34).
+
+Still failing: tests 2 (`2-nmi_and_brk`) and 3 (`3-nmi_and_irq`).
+
+## T070 session 37 (2026-10-26): cpu_interrupts_v2 tests 2 and 3 pass — sequence polling + hijack point + architectural cycles
+
+Three independent defects remained:
+
+1. **Interrupt sequences do not poll at their own boundary.** After BRK
+   (or an IRQ/NMI sequence) the handler's first instruction always
+   executes before a newly pending interrupt. Added `m_skipPollOnce`,
+   set at the end of `doInterrupt()` and consumed at the next `step()`.
+   Fixes `2-nmi_and_brk` rows 8-9 and `3-nmi_and_irq` rows 10-11
+   (an NMI edge during the status push / vector fetch is serviced after
+   the handler's `sec`, so the pushed flags show C=1).
+
+2. **The hijack vector decision is made after the PCL push, before the
+   status push** (nesdev "CPU interrupts": the signal status at that
+   point selects the vector). The check previously ran after the status
+   push, so an NMI edge during the status-push cycle wrongly hijacked
+   BRK. `2-nmi_and_brk` row 8 now follows the BRK vector and services
+   the NMI afterwards.
+
+3. **NMI edge/instruction length used bus-access cycles, not
+   architectural cycles.** `m_edgeCycle` was `m_cycles` (only rd/wr
+   increments) and `m_prevInstrCycles` likewise, so implied 2-cycle
+   instructions such as SEC/CLV (one bus access + one `tick()`) had
+   length 1 and an edge during SEC's first cycle failed the
+   `edgeCycle < prevInstrCycles` penultimate test. Both now use
+   `m_instrCycle`. Fixes `3-nmi_and_irq` row 0 (`21` -> `23`).
+
+Result: `2-nmi_and_brk`, `3-nmi_and_irq` and `5-branch_delays_irq` all
+print `Passed`; singles 1-5 are promoted to `TIER1_ROMS`. Full ctest
+152/152 (tier1 37, tier2 22, unit 92, playtest 24, golden hashes).
+
+Remaining known core issue: T037 `sprdma` main table row 5 (+2) and the
+`_512` rows.

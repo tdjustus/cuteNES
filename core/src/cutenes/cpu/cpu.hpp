@@ -144,10 +144,11 @@ private:
     int m_irqEdgeCycle = -1;
     // Penultimate-cycle IRQ poll (see sampleIrqCycle()).
     std::function<bool()> m_irqLineSource;
-    bool m_irqSampleCur = false;  // line at the start of the current cycle
-    bool m_irqSamplePrev = false; // line at the start of the previous cycle
-    bool m_irqPollHigh = false;   // penultimate-cycle sample of last instr
-    int m_instrCycle = 0;         // normal CPU cycles in this instruction
+    bool m_irqSampleCur = false;   // line at the start of the current cycle
+    bool m_irqSamplePrev = false;  // line at the start of the previous cycle
+    bool m_irqSampleFirst = false; // line at the start of the first cycle
+    bool m_irqPollHigh = false;    // poll sample of the last instruction
+    int m_instrCycle = 0;          // normal CPU cycles in this instruction
     bool m_jammed = false;
     bool m_nmiWasHigh = false;
     int m_cycles = 0;              // 1-based cycle index within instruction
@@ -156,7 +157,8 @@ private:
     bool m_nmiStale = false;       // edge hit the last cycle: defer service
     bool m_iPrev = true;           // I flag at the previous instruction start
     bool m_iStart = true;
-    bool m_branchSkipPoll = false; // taken branch: skip one boundary poll          // I flag at this instruction's start
+    bool m_branchSkipPoll = false; // taken branch: skip one boundary poll
+    bool m_skipPollOnce = false;   // interrupt sequence: no boundary poll
     std::function<void(const CpuState&)> m_trace;
 };
 
