@@ -60,6 +60,9 @@ public:
     {
         const auto* bytes = reinterpret_cast<const std::uint8_t*>(frame.pixels);
         hashes.push_back(fnv1a32(bytes, 256 * 240 * 4)); // 61440 bytes
+        if (keepLast) {
+            last.assign(frame.pixels, frame.pixels + 256 * 240);
+        }
     }
 
     void onSamples(const std::int16_t* pcm, std::size_t count,
@@ -68,9 +71,27 @@ public:
         audio.insert(audio.end(), pcm, pcm + count);
     }
 
+    bool keepLast = false;
+    std::vector<std::uint32_t> last; // XRGB8888, only when keepLast
     std::vector<std::uint32_t> hashes;
     std::vector<std::int16_t> audio;
 };
+
+bool writePpm(const char* path, const std::vector<std::uint32_t>& xrgb)
+{
+    std::FILE* f = std::fopen(path, "wb");
+    if (f == nullptr) {
+        return false;
+    }
+    std::fprintf(f, "P6\n256 240\n255\n");
+    for (const std::uint32_t px : xrgb) {
+        const std::uint8_t rgb[3] = {static_cast<std::uint8_t>(px >> 16),
+            static_cast<std::uint8_t>(px >> 8), static_cast<std::uint8_t>(px)};
+        std::fwrite(rgb, 1, 3, f);
+    }
+    std::fclose(f);
+    return true;
+}
 
 int cmdRun(const char* romPath, std::uint32_t frames)
 {
@@ -291,26 +312,68 @@ int cmdSavestate(const char* romPath, std::uint32_t atFrame,
     std::vector<std::uint8_t> blob;
     const cutenes::SaveStateBlob view = machine.captureState();
     blob.assign(view.data, view.data + view.size);
-    machine.runFrames(rerunTo - atFrame); // the uninterrupted reference
 
-    machine.loadState(blob.data(), blob.size());
-    const std::size_t hashesBefore = sink.hashes.size();
-    machine.runFrames(rerunTo - atFrame); // the restored rerun
-    bool ok = sink.hashes.size() == 2 * (rerunTo - atFrame) + atFrame;
-    if (ok) {
-        for (std::size_t i = 0; i < rerunTo - atFrame; ++i) {
-            if (sink.hashes[hashesBefore + i]
-                != sink.hashes[atFrame + i]) {
-                ok = false;
-                break;
-            }
+    // The uninterrupted reference run, and the machine state it ends in.
+    const std::size_t span = rerunTo - atFrame;
+    const std::size_t refHashStart = sink.hashes.size();
+    const std::size_t refAudioStart = sink.audio.size();
+    machine.runFrames(span);
+    const std::size_t refHashEnd = sink.hashes.size();
+    const std::size_t refAudioEnd = sink.audio.size();
+    const cutenes::SaveStateBlob refEndView = machine.captureState();
+    const std::vector<std::uint8_t> refEnd(
+        refEndView.data, refEndView.data + refEndView.size);
+
+    // Restore and rerun the same span. Video, audio and the final machine
+    // state must all match the reference exactly.
+    bool ok = machine.loadState(blob.data(), blob.size())
+        == cutenes::LoadStateError::Ok;
+    machine.runFrames(span);
+    const std::vector<std::uint32_t> refHashes(sink.hashes.begin()
+            + static_cast<std::ptrdiff_t>(refHashStart),
+        sink.hashes.begin() + static_cast<std::ptrdiff_t>(refHashEnd));
+    const std::vector<std::int16_t> refAudio(sink.audio.begin()
+            + static_cast<std::ptrdiff_t>(refAudioStart),
+        sink.audio.begin() + static_cast<std::ptrdiff_t>(refAudioEnd));
+    const std::vector<std::uint32_t> rerunHashes(sink.hashes.begin()
+            + static_cast<std::ptrdiff_t>(refHashEnd),
+        sink.hashes.end());
+    const std::vector<std::int16_t> rerunAudio(sink.audio.begin()
+            + static_cast<std::ptrdiff_t>(refAudioEnd),
+        sink.audio.end());
+    const bool videoOk = refHashes.size() == span && refHashes == rerunHashes;
+    const bool audioOk = !refAudio.empty() && refAudio == rerunAudio;
+    const cutenes::SaveStateBlob rerunEndView = machine.captureState();
+    const bool stateOk = std::vector<std::uint8_t>(rerunEndView.data,
+                             rerunEndView.data + rerunEndView.size) == refEnd;
+    if (!stateOk) {
+        std::size_t at = 0;
+        const std::size_t n = std::min(refEnd.size(), rerunEndView.size);
+        while (at < n && refEnd[at] == rerunEndView.data[at]) {
+            ++at;
         }
+        std::printf("savestate: end states differ at byte %zu of %zu/%zu\n",
+            at, refEnd.size(), rerunEndView.size);
     }
-    // Repeated restore stability.
-    machine.loadState(blob.data(), blob.size());
-    machine.runFrames(1);
-    std::printf("savestate: %s (%u->%u round trip)\n", ok ? "PASS" : "FAIL",
-        atFrame, rerunTo);
+    if (!videoOk || !audioOk || !stateOk) {
+        std::printf("savestate: mismatch:%s%s%s (audio %zu vs %zu samples)\n",
+            videoOk ? "" : " video", audioOk ? "" : " audio",
+            stateOk ? "" : " state", refAudio.size(), rerunAudio.size());
+    }
+    ok = ok && videoOk && audioOk && stateOk;
+
+    // Restoring the same blob again must also be stable (repeatable).
+    const std::size_t again = sink.hashes.size();
+    ok = ok && machine.loadState(blob.data(), blob.size())
+        == cutenes::LoadStateError::Ok;
+    machine.runFrames(span);
+    ok = ok
+        && std::vector<std::uint32_t>(sink.hashes.begin()
+               + static_cast<std::ptrdiff_t>(again), sink.hashes.end())
+        == refHashes;
+
+    std::printf("savestate: %s (%u->%u round trip: video, audio, state)\n",
+        ok ? "PASS" : "FAIL", atFrame, rerunTo);
     return ok ? 0 : 1;
 }
 
@@ -350,9 +413,56 @@ int cmdBench(const char* romPath, std::uint32_t seconds)
     }
 }
 
+// Print all four nametables as text (printable ASCII tile codes shown as
+// characters, anything else as '.'), plus the raw tile codes of the first
+// non-blank row, to learn how a ROM encodes its on-screen text.
+int cmdText(const char* romPath, std::uint32_t frames)
+{
+    std::vector<std::uint8_t> rom;
+    if (!readRom(romPath, rom)) {
+        return 2;
+    }
+    cutenes::Machine machine;
+    if (machine.loadCartridge(rom.data(), rom.size()).error
+        != cutenes::LoadError::Ok) {
+        return 2;
+    }
+    machine.powerOn();
+    machine.runFrames(frames);
+    for (int table = 0; table < 4; ++table) {
+        std::vector<std::uint8_t> nt(0x3C0);
+        machine.readVram(static_cast<std::uint16_t>(0x2000 + table * 0x400),
+            nt.size(), nt.data());
+        std::printf("--- nametable %d ---\n", table);
+        for (std::size_t row = 0; row < 30; ++row) {
+            std::string line;
+            bool blank = true;
+            for (std::size_t col = 0; col < 32; ++col) {
+                const std::uint8_t c = nt[row * 32 + col];
+                blank = blank && (c == 0 || c == 0x20);
+                line += (c >= 0x20 && c <= 0x7E) ? static_cast<char>(c) : '.';
+            }
+            if (!blank) {
+                std::printf("%2zu |%s|", row, line.c_str());
+                if (std::getenv("TEXT_HEX") != nullptr) {
+                    for (std::size_t col = 0; col < 32; ++col) {
+                        std::printf(" %02x", nt[row * 32 + col]);
+                    }
+                }
+                std::printf("\n");
+            }
+        }
+    }
+    return 0;
+}
+
 // T058 tier-2: run until the frame hash settles (a static result
 // screen), reporting the settled hash — the baseline for golden capture.
-int cmdSettle(const char* romPath, std::uint32_t maxFrames)
+// `expectHash` (when non-null) pins the settled frame hash: a ROM that
+// settles on a different screen, such as a FAIL report, is a failure.
+// `outPath` writes the settled screen as a PPM for manual inspection.
+int cmdSettle(const char* romPath, std::uint32_t maxFrames,
+    std::uint32_t minFrames, const char* expectHash, const char* outPath)
 {
     std::vector<std::uint8_t> rom;
     if (!readRom(romPath, rom)) {
@@ -364,6 +474,7 @@ int cmdSettle(const char* romPath, std::uint32_t maxFrames)
         return 2;
     }
     RecordingSink sink;
+    sink.keepLast = outPath != nullptr;
     machine.setVideoSink(&sink);
     machine.setAudioSink(&sink);
     machine.powerOn();
@@ -375,18 +486,32 @@ int cmdSettle(const char* romPath, std::uint32_t maxFrames)
         machine.runFrames(1);
         if (sink.hashes.size() >= 2
             && sink.hashes.back() == sink.hashes[sink.hashes.size() - 2]) {
-            if (++stable >= kStableRun) {
+            // A long test can sit on a blank screen with rendering off;
+            // don't settle before `minFrames` has elapsed.
+            if (++stable >= kStableRun && frame >= minFrames) {
                 break;
             }
         } else {
             stable = 0;
         }
     }
-    const bool settled = stable >= kStableRun;
-    std::printf("settle: %s at frame %u hash %08x\n",
-        settled ? "SETTLED" : "TIMEOUT", frame,
-        sink.hashes.empty() ? 0 : sink.hashes.back());
-    return settled ? 0 : 1;
+    const bool settled = stable >= kStableRun && frame >= minFrames;
+    const std::uint32_t hash = sink.hashes.empty() ? 0 : sink.hashes.back();
+    char hashText[16];
+    std::snprintf(hashText, sizeof hashText, "%08x", hash);
+    const bool matches = expectHash == nullptr
+        || std::strcmp(expectHash, hashText) == 0;
+    std::printf("settle: %s at frame %u hash %s%s\n",
+        settled ? "SETTLED" : "TIMEOUT", frame, hashText,
+        matches ? "" : " (MISMATCH: expected pinned hash)");
+    if (outPath != nullptr && !writePpm(outPath, sink.last)) {
+        std::fprintf(stderr, "settle: cannot write %s\n", outPath);
+        return 2;
+    }
+    if (expectHash != nullptr && !matches) {
+        std::printf("settle: expected %s\n", expectHash);
+    }
+    return settled && matches ? 0 : 1;
 }
 
 // T059/T046: scripted game checks. The list format is documented in
@@ -406,6 +531,7 @@ struct PlaytestEntry {
     std::string rom;
     std::string expectError;
     int forceSubmapper = -1; // test-only: patch header to NES 2.0 + submapper
+    bool fontA1 = false; // tile codes 1..26 are letters A..Z (else ASCII)
     std::vector<PlaytestStep> steps;
 };
 
@@ -528,6 +654,13 @@ bool parsePlaytest(const std::string& text, std::vector<PlaytestEntry>& out,
                 || current->forceSubmapper > 15) {
                 return fail("force-submapper needs 0..15");
             }
+        } else if (cmd == "font") {
+            std::string name;
+            if (current == nullptr || !(tokens >> name)
+                || (name != "ascii" && name != "a1")) {
+                return fail("font needs 'ascii' or 'a1' inside an entry");
+            }
+            current->fontA1 = name == "a1";
         } else if (cmd == "expect-text") {
             PlaytestStep step;
             step.kind = PlaytestStep::Kind::ExpectText;
@@ -631,13 +764,18 @@ bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry,
         }
         case PlaytestStep::Kind::ExpectText: {
             // Nametable 0 tiles that are printable ASCII read as their
-            // character (the ROM text console uses ASCII tile codes).
+            // character (the ROM text console uses ASCII tile codes). With
+            // `font a1`, codes 1..26 read as the letters A..Z (Holy Mapperel).
             std::vector<std::uint8_t> nt(0x3C0);
             machine.readVram(0x2000, 0x3C0, nt.data());
             std::string screen;
             for (std::size_t i = 0; i < nt.size(); ++i) {
                 const std::uint8_t c = nt[i];
-                screen += (c >= 0x20 && c <= 0x7E) ? static_cast<char>(c) : ' ';
+                if (entry.fontA1 && c >= 1 && c <= 26) {
+                    screen += static_cast<char>('A' + c - 1);
+                } else {
+                    screen += (c >= 0x20 && c <= 0x7E) ? static_cast<char>(c) : ' ';
+                }
                 if (i % 32 == 31) {
                     screen += '\n';
                 }
@@ -836,6 +974,7 @@ void usage()
         "  suite [--tier 1|2]              tiered test-ROM acceptance (T031)\n"
         "  nestest [--golden-log]          CPU golden-log verification (T029)\n"
         "  savestate --rom R --at F --rerun-to F   restore round trip (T051)\n"
+        "  settle ROM [--min-frames N] [--expect HASH] [--out F.ppm]\n"
         "  playtest --list FILE [--entry N] scripted game checks (T059)\n"
         "  bench --rom R                   5s sustained-speed benchmark (T061)\n"
         "  golden --list F [--check B]     cross-platform golden hashes (T065)\n");
@@ -875,8 +1014,24 @@ int main(int argc, char** argv)
         }
         return cmdGolden(argv[3], check);
     }
-    if (command == "settle" && argc == 3) {
-        return cmdSettle(argv[2], 1800); // ~30s emulated cap
+    if (command == "text" && argc == 4) {
+        return cmdText(argv[2], parseUint(argv[3]));
+    }
+    if (command == "settle" && argc >= 3) {
+        const char* expect = nullptr;
+        const char* out = nullptr;
+        std::uint32_t minFrames = 0;
+        for (int i = 3; i + 1 < argc; i += 2) {
+            if (std::strcmp(argv[i], "--min-frames") == 0) {
+                minFrames = parseUint(argv[i + 1]);
+            }
+            if (std::strcmp(argv[i], "--expect") == 0) {
+                expect = argv[i + 1];
+            } else if (std::strcmp(argv[i], "--out") == 0) {
+                out = argv[i + 1];
+            }
+        }
+        return cmdSettle(argv[2], 1800, minFrames, expect, out); // ~30s cap
     }
     if (command == "bench" && argc == 4
         && std::strcmp(argv[2], "--rom") == 0) {

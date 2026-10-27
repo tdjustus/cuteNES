@@ -118,18 +118,6 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/other/nestest.nes")
     endforeach()
 endif()
 
-# Tier-2: Holy Mapperel execution + settle (T058). Screen-reported tests;
-# the settled hash is the deterministic baseline (golden capture pending a
-# reference emulator).
-file(GLOB HM_ROMS
-    "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/holy-mapperel/testroms/*.nes")
-foreach(rom IN LISTS HM_ROMS)
-    get_filename_component(name "${rom}" NAME_WE)
-    add_test(NAME "tier2-${name}"
-        COMMAND rom_harness settle ${rom})
-    set_tests_properties("tier2-${name}" PROPERTIES LABELS "tier2")
-endforeach()
-
 # Cross-platform golden hashes (T065): vendored ROMs only, so CI (which
 # has no roms-local/) can compare every OS against the checked-in baseline.
 add_test(NAME golden-hashes
@@ -137,16 +125,62 @@ add_test(NAME golden-hashes
             --check ${CMAKE_CURRENT_SOURCE_DIR}/golden/baseline.txt)
 set_tests_properties(golden-hashes PROPERTIES LABELS "tier1")
 
-# Scripted game checks (T059/T046), one ctest test per playtest entry so a
+# Behavioral guarantees, checked end to end on vendored ROMs that cover each
+# supported mapper family (NROM, MMC1, MMC3, MMC5, VRC2a). Vendored only, so
+# these run in CI too.
+#   determinism - two fresh runs are byte-identical (video and audio)
+#   savestate   - restore reproduces the uninterrupted run's video, audio
+#                 and final machine state
+#   step-equiv  - per-instruction stepping yields the same frames as runFrames
+set(BEHAVIOR_ROMS
+    nestest:other/nestest.nes
+    mmc1:MMC1_A12/mmc1_a12.nes
+    mmc3:mmc3_test/1-clocking.nes
+    mmc5:mmc5test/mmc5test.nes
+    mmc5_exram:exram/mmc5exram.nes
+    vrc2a:m22chrbankingtest/0-127.nes)
+foreach(entry IN LISTS BEHAVIOR_ROMS)
+    string(REPLACE ":" ";" parts "${entry}")
+    list(GET parts 0 tag)
+    list(GET parts 1 rel)
+    set(rom ${CMAKE_CURRENT_SOURCE_DIR}/roms/${rel})
+    if(EXISTS "${rom}")
+        add_test(NAME "determinism-${tag}"
+            COMMAND rom_harness determinism --rom ${rom} --frames 300)
+        add_test(NAME "savestate-${tag}"
+            COMMAND rom_harness savestate --rom ${rom} --at 120 --rerun-to 300)
+        add_test(NAME "step-equiv-${tag}"
+            COMMAND rom_harness step-equiv ${rom} 60)
+        set_tests_properties("determinism-${tag}" "savestate-${tag}"
+            "step-equiv-${tag}" PROPERTIES LABELS "behavior")
+    endif()
+endforeach()
+
+# Scripted checks (T059/T046/T058), one ctest test per playtest entry so a
 # failure names the entry and ctest -j parallelizes them. Entries whose
 # commercial ROM is absent from roms-local/ exit 77 and show as Skipped.
-set(PLAYTEST_LIST ${CMAKE_CURRENT_SOURCE_DIR}/playtest/playtest.txt)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PLAYTEST_LIST})
-file(STRINGS ${PLAYTEST_LIST} PLAYTEST_ENTRY_LINES REGEX "^entry ")
-foreach(line IN LISTS PLAYTEST_ENTRY_LINES)
-    string(REGEX REPLACE "^entry[ \t]+([^ \t]+).*" "\\1" entry_name "${line}")
-    add_test(NAME "playtest-${entry_name}"
-        COMMAND rom_harness playtest --list ${PLAYTEST_LIST} --entry ${entry_name})
-    set_tests_properties("playtest-${entry_name}" PROPERTIES
-        LABELS "playtest" SKIP_RETURN_CODE 77)
-endforeach()
+function(register_playtests list_file labels)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${list_file})
+    file(STRINGS ${list_file} entry_lines REGEX "^entry ")
+    get_filename_component(list_name ${list_file} NAME_WE)
+    foreach(line IN LISTS entry_lines)
+        string(REGEX REPLACE "^entry[ \t]+([^ \t]+).*" "\\1" entry_name "${line}")
+        # Test-name prefix keeps known-failing entries distinct from passing ones.
+        if("known-failing" IN_LIST labels)
+            set(test_name "known-failing-${entry_name}")
+        else()
+            set(test_name "playtest-${entry_name}")
+        endif()
+        add_test(NAME "${test_name}"
+            COMMAND rom_harness playtest --list ${list_file} --entry ${entry_name})
+        set_tests_properties("${test_name}" PROPERTIES
+            LABELS "${labels}" SKIP_RETURN_CODE 77)
+    endforeach()
+endfunction()
+
+register_playtests(${CMAKE_CURRENT_SOURCE_DIR}/playtest/playtest.txt "playtest")
+# Holy Mapperel: tier-2 mapper verification asserting the result screen text.
+register_playtests(${CMAKE_CURRENT_SOURCE_DIR}/playtest/mapperel.txt "playtest;tier2")
+register_playtests(
+    ${CMAKE_CURRENT_SOURCE_DIR}/playtest/mapperel-known-failing.txt
+    "playtest;tier2;known-failing")
