@@ -660,7 +660,10 @@ bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry,
     return true;
 }
 
-int cmdPlaytest(const char* listPath)
+// `only` selects a single entry by name (nullptr runs all). Exit codes: 0 all
+// ran and passed, 1 a failure, 2 usage/parse error, 77 nothing ran because
+// every selected entry needs a ROM absent from roms-local/ (ctest SKIP).
+int cmdPlaytest(const char* listPath, const char* only)
 {
     std::vector<std::uint8_t> bytes;
     if (!readRom(listPath, bytes)) {
@@ -681,7 +684,13 @@ int cmdPlaytest(const char* listPath)
     }
     int failures = 0;
     int skipped = 0;
+    int ran = 0;
+    int selected = 0;
     for (const PlaytestEntry& entry : entries) {
+        if (only != nullptr && entry.name != only) {
+            continue;
+        }
+        ++selected;
         // Commercial titles live in the gitignored roms-local/ folder; a
         // checkout without them skips those entries instead of failing.
         const std::string romPath = dir.empty() ? entry.rom : dir + "/" + entry.rom;
@@ -697,6 +706,7 @@ int cmdPlaytest(const char* listPath)
         }
         std::string why;
         const bool ok = runPlaytestEntry(dir, entry, why);
+        ++ran;
         if (ok) {
             std::printf("playtest: %s: PASS\n", entry.name.c_str());
         } else {
@@ -704,9 +714,16 @@ int cmdPlaytest(const char* listPath)
             std::printf("playtest: %s: FAIL (%s)\n", entry.name.c_str(), why.c_str());
         }
     }
-    std::printf("playtest: %zu entries, %d skipped, %d failed\n",
-        entries.size(), skipped, failures);
-    return failures == 0 ? 0 : 1;
+    if (only != nullptr && selected == 0) {
+        std::printf("playtest: no entry named '%s'\n", only);
+        return 2;
+    }
+    std::printf("playtest: %d entries, %d skipped, %d failed\n",
+        selected, skipped, failures);
+    if (failures != 0) {
+        return 1;
+    }
+    return ran == 0 && skipped > 0 ? 77 : 0;
 }
 
 // T065 cross-platform golden hashes: run vendored ROMs for fixed frame
@@ -819,7 +836,7 @@ void usage()
         "  suite [--tier 1|2]              tiered test-ROM acceptance (T031)\n"
         "  nestest [--golden-log]          CPU golden-log verification (T029)\n"
         "  savestate --rom R --at F --rerun-to F   restore round trip (T051)\n"
-        "  playtest --list FILE            scripted game checks (T059)\n"
+        "  playtest --list FILE [--entry N] scripted game checks (T059)\n"
         "  bench --rom R                   5s sustained-speed benchmark (T061)\n"
         "  golden --list F [--check B]     cross-platform golden hashes (T065)\n");
 }
@@ -884,10 +901,16 @@ int main(int argc, char** argv)
     if (command == "nestest") return cmdNestest(argc, argv);
     if (command == "playtest" && argc == 4
         && std::strcmp(argv[2], "--list") == 0) {
-        return cmdPlaytest(argv[3]);
+        return cmdPlaytest(argv[3], nullptr);
+    }
+    if (command == "playtest" && argc == 6
+        && std::strcmp(argv[2], "--list") == 0
+        && std::strcmp(argv[4], "--entry") == 0) {
+        return cmdPlaytest(argv[3], argv[5]);
     }
     if (command == "playtest") {
-        std::fprintf(stderr, "usage: rom_harness playtest --list FILE\n");
+        std::fprintf(stderr,
+            "usage: rom_harness playtest --list FILE [--entry NAME]\n");
         return 2;
     }
 

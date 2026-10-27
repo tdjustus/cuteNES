@@ -4,7 +4,8 @@
 include(FetchContent)
 
 FetchContent_Declare(googletest
-    URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip)
+    URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE) # MSVC MTd/MDd mismatch fix
 FetchContent_MakeAvailable(googletest)
 
@@ -136,8 +137,16 @@ add_test(NAME golden-hashes
             --check ${CMAKE_CURRENT_SOURCE_DIR}/golden/baseline.txt)
 set_tests_properties(golden-hashes PROPERTIES LABELS "tier1")
 
-# Scripted game checks (T059/T046). Commercial titles in roms-local/ are
-# skipped, not failed, when absent.
-add_test(NAME playtest
-    COMMAND rom_harness playtest --list ${CMAKE_CURRENT_SOURCE_DIR}/playtest/playtest.txt)
-set_tests_properties(playtest PROPERTIES LABELS "playtest")
+# Scripted game checks (T059/T046), one ctest test per playtest entry so a
+# failure names the entry and ctest -j parallelizes them. Entries whose
+# commercial ROM is absent from roms-local/ exit 77 and show as Skipped.
+set(PLAYTEST_LIST ${CMAKE_CURRENT_SOURCE_DIR}/playtest/playtest.txt)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PLAYTEST_LIST})
+file(STRINGS ${PLAYTEST_LIST} PLAYTEST_ENTRY_LINES REGEX "^entry ")
+foreach(line IN LISTS PLAYTEST_ENTRY_LINES)
+    string(REGEX REPLACE "^entry[ \t]+([^ \t]+).*" "\\1" entry_name "${line}")
+    add_test(NAME "playtest-${entry_name}"
+        COMMAND rom_harness playtest --list ${PLAYTEST_LIST} --entry ${entry_name})
+    set_tests_properties("playtest-${entry_name}" PROPERTIES
+        LABELS "playtest" SKIP_RETURN_CODE 77)
+endforeach()
