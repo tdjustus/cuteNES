@@ -1,14 +1,57 @@
 name: build
 
-on: [push, pull_request]
+# Test once per change, on the PR. main only accepts PRs that are up to date
+# with it (branch protection), so a post-merge run would repeat a tree that
+# was already tested. Scheduled and tag runs catch runner-image drift and
+# gate releases (constitution Principle IV).
+on:
+  pull_request:
+  push:
+    tags: ['core-v*']
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          # Anything that can change build or test results. Docs, specs and
+          # Spec Kit scaffolding are deliberately absent.
+          filters: |
+            code:
+              - 'core/**'
+              - 'tests/**'
+              - 'third_party/**'
+              - 'CMakeLists.txt'
+              - '.gitmodules'
+              - '.github/**'
+
   build-test:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        buildtype: [Release, Debug]
+        include:
+          - {os: ubuntu-latest,  buildtype: Release}
+          - {os: macos-latest,   buildtype: Release}
+          - {os: windows-latest, buildtype: Release}
+          # MSVC Debug keeps checked iterators and assertions.
+          - {os: windows-latest, buildtype: Debug}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -33,10 +76,15 @@ jobs:
       - name: Build
         run: cmake --build build
 
+      # -j: playtest entries and test ROMs are independent processes.
       - name: Test
-        run: ctest --test-dir build --output-on-failure -LE known-failing
+        run: ctest --test-dir build --output-on-failure -j 4 -LE known-failing
 
-  ubsan:
+  # Address + undefined-behavior sanitizers with assertions on. -O1 keeps
+  # the instrumented run to minutes instead of the ~45 min of an -O0 build.
+  sanitize:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,14 +94,36 @@ jobs:
       - name: Install Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
 
-      - name: Configure (UBSan)
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ubuntu-sanitize
+
+      - name: Configure
         run: >-
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
-          "-DCMAKE_CXX_FLAGS=-fsanitize=undefined -fno-sanitize-recover=all -g -fno-omit-frame-pointer"
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          "-DCMAKE_CXX_FLAGS=-O1 -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
       - name: Build
         run: cmake --build build
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure -LE known-failing
+        run: ctest --test-dir build --output-on-failure -j 4 -LE known-failing
+
+  # The single required status check for branch protection. It passes when
+  # the jobs above passed or were skipped (docs-only PRs), and fails if any
+  # failed or was cancelled.
+  ci-ok:
+    if: always()
+    needs: [changes, build-test, sanitize]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          echo '${{ toJSON(needs) }}'
+          if [ "${{ contains(needs.*.result, 'failure') }}" = "true" ] \
+             || [ "${{ contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            exit 1
+          fi
