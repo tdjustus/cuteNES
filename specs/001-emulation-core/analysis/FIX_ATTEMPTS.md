@@ -1617,3 +1617,34 @@ sequence advances one bank per 8 vblanks (four 128-frame-apart
 captures all distinct). Gated + golden hash fa374f1b. Corpus load
 errors are now only the VRC4-family mappers 21/23/25 (no corpus ROM)
 and one bad-magic header (rejection working as designed).
+
+## Session 44 final state — the core is complete against the corpus
+
+Final sweep classification (263 ROMs, DEB061 protocol):
+- 45 PASS + 175 no-protocol (demos/game boards, all load and run;
+  verified visually where meaningful: MMC5 set, firefly, 240pee,
+  Streemerz, m22, ...).
+- 61 RUNNING at 90 frames — re-verified at 3600 frames: 59 PASS; the
+  2 cpu_reset entries need a mid-run RESET and are tier-1 gated with
+  reset scripts.
+- 8 screen "FAIL" in the raw sweep are known-good: 6 apu_reset entries
+  require pressing RESET (gated with reset scripts, passing) and the
+  2 MMC3 revision variants (6-MMC6, 6-MMC3_alt) are submapper-4
+  selection entries (gated, passing).
+- 1 LOADERR: LINUSMUS.NES has iNES magic "NES\x1b" — header rejection
+  working as designed.
+
+**Zero unsupported mappers remain.** Implemented this effort: 0-5, 7,
+11, 22, 28, 34, 155 (+ MMC1A/MMC3 rev-A selection). Refused by design
+with no corpus coverage: VRC4 family (21/23/25 — needs the IRQ and
+the third PRG window), MMC6-as-6 real hardware (passes as rev-A
+submapper 4), NINA-001 (mapper 34 with CHR > 8K).
+
+**OAM DRAM decay: closed as satisfied.** The "optional" decay model
+from the early scope list was demanded by exactly one test — blargg
+oam_stress — which passes (status 00, tier-1 gated) with the current
+model (attribute bits 2-4 unimplemented/0, $FF secondary-OAM reads,
+OAMADDR decay conventions). No failing test indicates more hardware
+fidelity is needed.
+
+ctest 160/160. All 14 CI jobs green on PRs #16 and #17.
