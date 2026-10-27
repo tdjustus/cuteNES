@@ -7,6 +7,7 @@ namespace cutenes {
 std::unique_ptr<Mapper> makeMmc1(Cartridge& cart);
 std::unique_ptr<Mapper> makeUxrom(Cartridge& cart);
 std::unique_ptr<Mapper> makeCnrom(Cartridge& cart);
+std::unique_ptr<Mapper> makeVrc2a(Cartridge& cart);
 std::unique_ptr<Mapper> makeMmc5(Cartridge& cart);
 std::unique_ptr<Mapper> makeAxrom(Cartridge& cart);
 std::unique_ptr<Mapper> makeBnrom(Cartridge& cart);
@@ -69,6 +70,8 @@ std::unique_ptr<Mapper> createMapper(std::uint16_t mapperId, Cartridge& cart)
         return makeMmc3(cart);
     case 5:
         return makeMmc5(cart);
+    case 22: // VRC2a only (VRC4 variants need the IRQ; no corpus ROM)
+        return makeVrc2a(cart);
     default:
         return nullptr;
     }

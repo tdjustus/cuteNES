@@ -1604,3 +1604,16 @@ frames — 59 pass, 2 are the cpu_reset "Press RESET" pair (gated with
 reset scripts). Remaining load errors: mapper 22 (C&N), and LINUSMUS
 (bad iNES magic `NES\x1b` — header rejection working as designed).
 MMC6/MMC3_alt stay revision-selection entries. Full ctest 160/160.
+
+Addendum (same session): **VRC2a (mapper 22)** — the sweep's last
+unsupported mapper — implemented in vrc2.cpp. The board swaps the
+ASIC's register-select lines onto CPU A1/A0, so band sub-registers
+decode as $x000/$x002/$x001/$x003; CHR regs are two-write nibble
+pairs (4+4 bits), PRG is two 8K windows + fixed last 16K, and the
+VRC2a-specific CHR A0/A1 swap applies at read time. Verified via
+m22chrbankingtest, whose CHR data is self-describing: bank N renders
+the decimal digits of N on screen — ours shows exactly that, and the
+sequence advances one bank per 8 vblanks (four 128-frame-apart
+captures all distinct). Gated + golden hash fa374f1b. Corpus load
+errors are now only the VRC4-family mappers 21/23/25 (no corpus ROM)
+and one bad-magic header (rejection working as designed).
