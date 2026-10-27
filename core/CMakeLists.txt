@@ -19,6 +19,7 @@ add_library(cutenes-core
     src/cutenes/mappers/discrete.cpp
     src/cutenes/mappers/action53.cpp
     src/cutenes/mappers/mmc5.cpp
+    src/cutenes/mappers/vrc2.cpp
     src/cutenes/mappers/mmc1.cpp
     src/cutenes/mappers/uxrom_cnrom.cpp
     src/cutenes/mappers/mmc3.cpp)

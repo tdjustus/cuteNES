@@ -13,3 +13,4 @@ mmc5_test        ../roms/mmc5test/mmc5test.nes                  300
 mmc5_test_v2     ../roms/mmc5test_v2/mmc5test.nes               300
 mmc5_exram       ../roms/exram/mmc5exram.nes                    300
 mmc5_firefly     ../roms/other/firefly.nes                      300
+m22_chr_banking   ../roms/m22chrbankingtest/0-127.nes            300

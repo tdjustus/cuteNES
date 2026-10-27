@@ -475,3 +475,16 @@ rom ../roms/other/firefly.nes
 run 300 none
 expect-changes 50
 end
+
+# VRC2a (mapper 22), session 44 — the corpus's last unsupported mapper.
+# The demo banks CHR reg 1 through all 256 bank values (8 frames each)
+# and the CHR data is self-describing: bank N displays the decimal
+# digits of N (verified on screen: the bank shown matches the digits
+# rendered, which pins the VRC2a A0/A1 CHR-line swap). Also pinned by
+# a golden hash.
+
+entry m22-chr-banking-animates
+rom ../roms/m22chrbankingtest/0-127.nes
+run 300 none
+expect-changes 30
+end
