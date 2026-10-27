@@ -41,8 +41,11 @@ std::uint8_t Bus::read(std::uint16_t addr)
             value = m_apuIo->cpuRead(addr);
         }
     } else if (addr < 0x6000) {
-        // 0x4020-0x5FFF: effectively unmapped without a mapper device.
-        value = m_openBus;
+        // $4020-$5FFF: mapper decode space (MMC5's $5000-$5FFF registers,
+        // ExRAM). Boards that do not claim the range leave open bus.
+        if (m_cartridge != nullptr && m_cartridge->decodesLowCpuSpace()) {
+            value = m_cartridge->cpuRead(addr);
+        }
     } else {
         // 0x6000-0xFFFF: PRG RAM (blargg reporting) + program ROM.
         if (m_cartridge != nullptr) {
@@ -82,7 +85,10 @@ void Bus::write(std::uint16_t addr, std::uint8_t value)
             m_apuIo->cpuWrite(addr, value);
         }
     } else if (addr < 0x6000) {
-        // Unmapped without a mapper device.
+        // $4020-$5FFF: mapper decode space (MMC5); otherwise unmapped.
+        if (m_cartridge != nullptr && m_cartridge->decodesLowCpuSpace()) {
+            m_cartridge->cpuWrite(addr, value);
+        }
     } else if (m_cartridge != nullptr) {
         m_cartridge->cpuWrite(addr, value);
     }

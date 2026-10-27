@@ -90,11 +90,11 @@ TEST(Ines, RejectsZeroPrgBanks)
 TEST(Ines, RejectsUnsupportedMapperNamingItsId)
 {
     auto rom = makeNrom(1, 1);
-    rom[6] = (rom[6] & 0x0F) | (5u << 4); // mapper 5 (MMC5) low nibble
+    rom[6] = (rom[6] & 0x0F) | (9u << 4); // mapper 9 (MMC2) low nibble
     cutenes::Cartridge cart;
     const auto result = cutenes::Cartridge::load(rom.data(), rom.size(), cart);
     EXPECT_EQ(result.error, cutenes::LoadError::UnsupportedMapper);
-    EXPECT_EQ(result.detail, 5); // the mapper id, per FR-001
+    EXPECT_EQ(result.detail, 9); // the mapper id, per FR-001
 }
 
 TEST(Ines, ParsesFlags6)
@@ -144,7 +144,7 @@ TEST(Nes2, ParsesFormatAndSizes)
 {
     // Mapper 0 here; mappers 1-4 load successfully once US6 implements them
     // (tasks T053-T056) — until then the parser names them in `detail`,
-    // which Ines.RejectsUnsupportedMapperNamingItsId covers for mapper 5.
+    // which Ines.RejectsUnsupportedMapperNamingItsId covers for mapper 9.
     auto rom = makeNes2(2, 0, 0); // 32K PRG, CHR-RAM
     cutenes::Cartridge cart;
     const auto result = cutenes::Cartridge::load(rom.data(), rom.size(), cart);

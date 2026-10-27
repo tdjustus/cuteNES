@@ -27,6 +27,19 @@ void Mapper::chrWrite(std::uint16_t addr, std::uint8_t value)
     }
 }
 
+std::uint8_t Mapper::chrReadRaw(std::uint32_t addr) const
+{
+    // Absolute CHR storage read, bypassing bank registers (used for the
+    // MMC5's per-tile 4K banks and vertical-split window).
+    if (!m_cart.chr.empty()) {
+        return m_cart.chr[addr % m_cart.chr.size()];
+    }
+    if (!m_cart.chrRam.empty()) {
+        return m_cart.chrRam[addr % m_cart.chrRam.size()];
+    }
+    return 0;
+}
+
 void Mapper::saveState(StateWriter& w) const
 {
     w.begin("MAP ");

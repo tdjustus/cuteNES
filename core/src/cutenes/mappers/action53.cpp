@@ -1,0 +1,190 @@
+// Action 53 mapper (iNES 28, GTROM class) — session 43. Registers are
+// selected through $5000 and written through $8000-$FFFF (no bus
+// conflicts): $5000 = select register (bit 7 = supervisor), $8000+ =
+// write the selected register. The corpus's Streemerz bundle and
+// test28 use this board.
+//
+//   $00 (user)     CHR RAM A13-A14 = D0-D1; D4 sets 1-screen page when
+//                  the mirroring mode is 0/1
+//   $01 (user)     PRG inner bank = D0-D3; D4 as above
+//   $80 (supervisor) mode: D0-D1 mirroring (0/1 one-screen lo/hi,
+//                  2 vertical, 3 horizontal), D2-D3 PRG mode (0/1 = 32K
+//                  switchable, 2 = fixed-low/switch-high, 3 = UNROM),
+//                  D4-D5 outer-bank size (32K..256K granularity)
+//   $81 (supervisor) outer bank
+//
+// CHR is 8K RAM (GTROM) or banks of a 128K CHR-ROM on some releases; the
+// write-through-$8000 path also selects the PRG register directly on
+// power-up default state (register 1 preselected).
+
+#include "cutenes/mappers/mapper.hpp"
+
+#include "cutenes/cartridge/cart.hpp"
+
+#include "cutenes/serialize/save_state.hpp"
+
+namespace cutenes {
+namespace {
+
+class Action53 final : public Mapper {
+public:
+    using Mapper::Mapper;
+
+    std::uint8_t cpuRead(std::uint16_t addr) override
+    {
+        if (addr >= 0x5000 && addr < 0x6000) {
+            return m_sel;
+        }
+        if (addr >= 0x8000) {
+            return prgByte(addr);
+        }
+        return 0;
+    }
+
+    void cpuWrite(std::uint16_t addr, std::uint8_t value) override
+    {
+        if (addr >= 0x5000 && addr < 0x6000) {
+            m_sel = static_cast<std::uint8_t>(value & 0x81);
+            return;
+        }
+        if (addr < 0x8000) {
+            return;
+        }
+        switch (m_sel) {
+        case 0x00:
+            m_chrA13 = static_cast<std::uint8_t>(value & 0x03);
+            maybeOneScreen(value);
+            break;
+        case 0x01:
+            m_inner = static_cast<std::uint8_t>(value & 0x0F);
+            maybeOneScreen(value);
+            break;
+        case 0x80:
+            m_mode = value;
+            break;
+        case 0x81:
+            m_outer = value;
+            break;
+        default:
+            break;
+        }
+    }
+
+    Mirroring mirroring() const override
+    {
+        switch (m_mode & 3) {
+        case 0: // 1-screen, page from bit 0 (AxROM style)
+            return (m_oneScreen & 1) != 0 ? Mirroring::Horizontal
+                                          : Mirroring::Vertical;
+        case 1:
+            return (m_oneScreen & 1) != 0 ? Mirroring::Horizontal
+                                          : Mirroring::Vertical;
+        case 2:
+            return Mirroring::Vertical;
+        default:
+            return Mirroring::Horizontal;
+        }
+    }
+
+    std::uint8_t chrRead(std::uint16_t addr) const override
+    {
+        if (m_cart.chr.empty()) {
+            if (m_cart.chrRam.empty()) {
+                return 0;
+            }
+            const std::size_t bank = m_chrA13 & ((m_cart.chrRam.size() / 0x2000) - 1);
+            return m_cart.chrRam[bank * 0x2000 + (addr & 0x1FFF)];
+        }
+        const std::size_t banks = m_cart.chr.size() / 0x2000;
+        const std::size_t bank = m_chrA13 & (banks ? banks - 1 : 0);
+        return m_cart.chr[(bank * 0x2000 + (addr & 0x1FFF))
+            % m_cart.chr.size()];
+    }
+
+    void chrWrite(std::uint16_t addr, std::uint8_t value) override
+    {
+        if (m_cart.chr.empty() && !m_cart.chrRam.empty()) {
+            const std::size_t bank =
+                m_chrA13 & ((m_cart.chrRam.size() / 0x2000) - 1);
+            m_cart.chrRam[bank * 0x2000 + (addr & 0x1FFF)] = value;
+        }
+    }
+
+    void saveState(StateWriter& w) const override
+    {
+        w.begin("MAP ");
+        w.w<std::uint16_t>(m_cart.info.mapperId);
+        w.w(m_sel);
+        w.w(m_chrA13);
+        w.w(m_inner);
+        w.w(m_mode);
+        w.w(m_outer);
+        w.w(m_oneScreen);
+        w.end();
+    }
+
+    void loadState(StateReader& r) override
+    {
+        (void)r.get<std::uint16_t>();
+        m_sel = r.get<std::uint8_t>();
+        m_chrA13 = r.get<std::uint8_t>();
+        m_inner = r.get<std::uint8_t>();
+        m_mode = r.get<std::uint8_t>();
+        m_outer = r.get<std::uint8_t>();
+        m_oneScreen = r.get<std::uint8_t>();
+    }
+
+private:
+    void maybeOneScreen(std::uint8_t value)
+    {
+        if ((m_mode & 3) <= 1) {
+            m_oneScreen = static_cast<std::uint8_t>(value >> 4);
+        }
+    }
+
+    // PRG bank calculation, a direct port of the reference Python on
+    // nesdev (Action_53_mapper/Reference_implementations) — verified by
+    // the wiki's test vectors and by blargg's test28.
+    std::uint8_t prgByte(std::uint16_t addr) const
+    {
+        const std::uint32_t banks =
+            static_cast<std::uint32_t>(m_cart.prg.size() / 0x4000);
+        const unsigned cpuA14 = (addr >> 14) & 1;
+
+        unsigned outer = static_cast<unsigned>(m_outer) << 1; // 16K bank units
+        unsigned mode = m_mode >> 2;   // discard mirroring bits
+
+        static constexpr unsigned kMasks[4] = {0x01, 0x03, 0x07, 0x0F};
+
+        // In UNROM modes (10/11), a fixed-bank access (mode bit 0 ==
+        // cpuA14) temporarily switches to 32K/NROM behavior.
+        if (((mode ^ cpuA14) & 0x03) == 0x02) {
+            mode = 0;
+        }
+        unsigned bank = m_inner;
+        if ((mode & 0x02) == 0) {
+            // 32K switched mode: cpuA14 becomes the bank's low bit.
+            bank = (static_cast<unsigned>(m_inner) << 1) | cpuA14;
+        }
+        const unsigned mask = kMasks[(mode >> 2) & 3];
+        const unsigned idx =
+            ((bank & mask) | (outer & ~mask)) % banks;
+        return m_cart.prg[idx * 0x4000 + (addr & 0x3FFF)];
+    }
+
+    std::uint8_t m_sel = 0x01; // power-up: user register 1 (inner bank)
+    std::uint8_t m_chrA13 = 0;
+    std::uint8_t m_inner = 0;
+    std::uint8_t m_mode = 0x00; // 1-screen lo, 32K PRG, 32K outer
+    std::uint8_t m_outer = 0;
+    std::uint8_t m_oneScreen = 0;
+};
+
+} // namespace
+
+std::unique_ptr<Mapper> makeAction53(Cartridge& cart)
+{
+    return std::make_unique<Action53>(cart);
+}
+
+} // namespace cutenes

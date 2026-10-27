@@ -115,6 +115,10 @@ private:
     void setBackgroundShifters();
 
     std::uint16_t nametableIndex(std::uint16_t addr) const;
+    std::uint8_t readNametable(std::uint16_t addr) const; // mapper-aware
+    void writeNametable(std::uint16_t addr, std::uint8_t value);
+    int fetchColumn(std::uint32_t dot) const;  // MMC5 bg fetch index 0-33
+    int fetchScanline() const;                 // line this fetch is for
     std::uint8_t ppuBusRead(std::uint16_t addr) const; // $0000-$3FFF
     void ppuBusWrite(std::uint16_t addr, std::uint8_t value);
     std::uint8_t paletteRead(std::uint8_t index) const;
@@ -187,6 +191,10 @@ private:
     std::uint64_t m_ignoreWritesUntil = 0; // master clock
 
     static const std::array<std::uint32_t, 64> kPalette;
+    // 8 emphasis variants of kPalette (PPUMASK bits 5-7), built at
+    // construction (region-dependent red/green swap on PAL).
+    void buildEmphasisTables();
+    std::array<std::array<std::uint32_t, 64>, 8> m_emphasis{};
 };
 
 } // namespace cutenes

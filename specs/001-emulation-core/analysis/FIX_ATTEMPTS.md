@@ -1548,3 +1548,59 @@ control-register logging shows the game runs 8K CHR mode; the local
 Tetris (MMC1) runs 4K mode (ctrl $10) and is already gated to gameplay,
 so both MMC1 CHR window paths are exercised by playing games. T059's
 KNOWN LIMIT is resolved. Playtest 48/48, ctest 159/159.
+
+## Session 43 (2026-10-26): PPU colour emphasis + the discrete one-register mappers
+
+Two scope items land together (commits 577d5a0, 14fdd51).
+
+**Colour emphasis** (PPUMASK bits 5-7): the frozen `kPalette` is expanded
+into eight precomputed 64-entry variants — each emphasis bit keeps its own
+channel and attenuates the other two to 3/4; all three darken everything;
+PAL swaps the red/green bits. Greyscale still applies on top (it tints the
+post-emphasis colour). `full_palette` — the one ROM that deliberately
+cycles emphasis — is the only golden hash that changed; recaptured.
+
+**Mappers 7 (AxROM), 34 (BNROM), 11 (ColorDreams), 28 (Action 53)**: all
+single-PRG-bank boards with mapper-controlled mirroring (AxROM forces
+single-screen upper/lower; BNROM/ColorDreams keep header mirroring).
+Action 53's PRG formula is a direct port of the wiki's reference Python
+(all four PRG modes, outer-bank sizes, the UNROM fallback for the early
+entries). The six formerly-refused corpus ROMs (oam3, 240pee-bnrom,
+fceuxd, nestopia, nintendulator, test001/test28, Streemerz) all load and
+animate; the Ines unsupported-mapper unit test moves to mapper 9.
+
+## Session 44 (2026-10-26): MMC5 (mapper 5) — the blank-screen hunt
+
+All four mapper-5 corpus ROMs (mmc5test, mmc5test_v2, mmc5exram, firefly)
+loaded and ran but rendered one all-white frame (hash 90369dc5). The
+instruction trace found the cause in seconds once the CPU PC was visible:
+**PC was stuck at $0000 in a BRK storm** — the reset vector fetch at
+$FFFC was reading PRG-RAM. Two structural defects:
+
+1. **MMC5's own `cpuRead` decoded `addr >= 0x6000` as the PRG-RAM
+   window, swallowing $8000-$FFFF.** Every PRG-ROM read returned RAM.
+   Fix: `$8000+` routes to `readPrg` first; the `$5114-$5116`-banked
+   windows write RAM only when bit 7 selects it (`prgMappedWrite`).
+2. **The bus never delivered $4020-$5FFF to the cartridge at all**
+   (`Bus::read`/`write` treated the range as unmapped), so even the fixed
+   decode saw no register writes — `$5100`/`$5116` writes vanished, and
+   firefly's `JSR $C000` (PRG mode 2, `$5116=$80`) executed a BRK from
+   empty RAM, vectoring through the IRQ trampoline (`JMP ($00C7)` → 0)
+   forever. Fix: `CpuBusDevice::decodesLowCpuSpace()` — the cartridge
+   opts in (MMC5); every other board keeps the exact open-bus behavior.
+
+With the bus fixed the demos came alive: mmc5exram runs its copper-bar
+engine from ExRAM ($5C00, $5104 mode 2), mmc5test/v2 exercise 1K CHR
+banks + extended attributes + 8x16 sprite banks, firefly runs its
+$5116-banked menu engine and animates every frame. All four are verified
+on screen (screenshots captured), gated as playtest entries, and pinned
+by four new T065 golden hashes (existing six unchanged). Also fixed en
+route: the `$2007` palette-read nametable refill indexed `m_vram` out of
+bounds under MapperControlled mirroring — it now goes through the
+mapper-aware `readNametable`.
+
+Corpus sweep (263 ROMs, DEB061 protocol): 61 long suites re-run at 3600
+frames — 59 pass, 2 are the cpu_reset "Press RESET" pair (gated with
+reset scripts). Remaining load errors: mapper 22 (C&N), and LINUSMUS
+(bad iNES magic `NES\x1b` — header rejection working as designed).
+MMC6/MMC3_alt stay revision-selection entries. Full ctest 160/160.
