@@ -7,6 +7,10 @@ namespace cutenes {
 std::unique_ptr<Mapper> makeMmc1(Cartridge& cart);
 std::unique_ptr<Mapper> makeUxrom(Cartridge& cart);
 std::unique_ptr<Mapper> makeCnrom(Cartridge& cart);
+std::unique_ptr<Mapper> makeAxrom(Cartridge& cart);
+std::unique_ptr<Mapper> makeBnrom(Cartridge& cart);
+std::unique_ptr<Mapper> makeColorDreams(Cartridge& cart);
+std::unique_ptr<Mapper> makeAction53(Cartridge& cart);
 std::unique_ptr<Mapper> makeMmc3(Cartridge& cart);
 
 namespace {
@@ -52,6 +56,14 @@ std::unique_ptr<Mapper> createMapper(std::uint16_t mapperId, Cartridge& cart)
         return makeUxrom(cart);
     case 3:
         return makeCnrom(cart);
+    case 7:
+        return makeAxrom(cart);
+    case 11:
+        return makeColorDreams(cart);
+    case 28:
+        return makeAction53(cart);
+    case 34: // BNROM only when CHR <= 8K (else NINA, unsupported)
+        return cart.chr.size() <= 0x2000 ? makeBnrom(cart) : nullptr;
     case 4:
         return makeMmc3(cart);
     default:
