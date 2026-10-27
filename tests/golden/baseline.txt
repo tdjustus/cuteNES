@@ -4,3 +4,7 @@ golden: litewall           last=d8f3a605 audio=239538
 golden: mmc1_a12           last=0a3bcd6e audio=239538
 golden: mmc3_clocking      last=d108a785 audio=479143
 golden: apu_len_table      last=90805c45 audio=239538
+golden: mmc5_test          last=248b4fe5 audio=239538
+golden: mmc5_test_v2       last=f664d4ff audio=239538
+golden: mmc5_exram         last=ede3cbb4 audio=239538
+golden: mmc5_firefly       last=c8cd9c42 audio=239538

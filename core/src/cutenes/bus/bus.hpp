@@ -16,6 +16,9 @@ public:
     virtual ~CpuBusDevice() = default;
     virtual std::uint8_t cpuRead(std::uint16_t addr) = 0;
     virtual void cpuWrite(std::uint16_t addr, std::uint8_t value) = 0;
+    // $4020-$5FFF decode claim (MMC5 registers/ExRAM). Devices that do not
+    // override leave the range open bus, as on a stock NES.
+    virtual bool decodesLowCpuSpace() const { return false; }
 };
 
 // CPU bus: 2KB work RAM with $0800 mirroring, register routing, and an

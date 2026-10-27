@@ -6,3 +6,10 @@ litewall                ../roms/blargg_litewall/litewall3.nes           300
 mmc1_a12                ../roms/MMC1_A12/mmc1_a12.nes                   300
 mmc3_clocking           ../roms/mmc3_test/1-clocking.nes                600
 apu_len_table           ../roms/apu_test/rom_singles/2-len_table.nes    300
+
+# MMC5 (mapper 5): ExRAM modes, 1K CHR banks, 8x16 sprite banks,
+# fill/nametable mapping and code execution from ExRAM (session 44).
+mmc5_test        ../roms/mmc5test/mmc5test.nes                  300
+mmc5_test_v2     ../roms/mmc5test_v2/mmc5test.nes               300
+mmc5_exram       ../roms/exram/mmc5exram.nes                    300
+mmc5_firefly     ../roms/other/firefly.nes                      300

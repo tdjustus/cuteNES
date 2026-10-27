@@ -207,7 +207,8 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
             value = static_cast<std::uint8_t>(
                 (paletteRead(static_cast<std::uint8_t>(a & 0x1F)) & 0x3F)
                 | (decayedBusValue() & 0xC0));
-            m_readBuffer = m_vram[nametableIndex(a)];
+            m_readBuffer = readNametable(static_cast<std::uint16_t>(
+                0x2000 | (a & 0x0FFF)));
         } else {
             value = m_readBuffer;
             // Double-read quirk (blargg double_2007_read): a $2007 read
@@ -254,9 +255,15 @@ void Ppu::cpuWrite(std::uint16_t addr, std::uint8_t value)
     case 0x2000:
         m_ctrl = value;
         m_t = static_cast<std::uint16_t>((m_t & 0x73FF) | ((value & 0x03) << 10));
+        if (m_cart != nullptr) {
+            m_cart->setPpuCtrl(value);
+        }
         break;
     case 0x2001:
         m_mask = value;
+        if (m_cart != nullptr) {
+            m_cart->setPpuMask(value);
+        }
         break;
     case 0x2003:
         m_oamAddr = value;
@@ -381,6 +388,65 @@ std::uint16_t Ppu::nametableIndex(std::uint16_t addr) const
     return static_cast<std::uint16_t>(table * 1024 + (offset & 0x3FF));
 }
 
+// Nametable access with mapper-controlled mapping (MMC5 $5105): each 1K
+// slot can point at CIRAM page 0/1, the mapper's ExRAM, or fill mode.
+std::uint8_t Ppu::readNametable(std::uint16_t addr) const
+{
+    if (m_cart != nullptr) {
+        switch (m_cart->ntSource(addr)) {
+        case Mapper::NtSource::Ciram0:
+            return m_vram[addr & 0x3FF];
+        case Mapper::NtSource::Ciram1:
+            return m_vram[0x400 + (addr & 0x3FF)];
+        case Mapper::NtSource::Mapper:
+            return m_cart->ntRead(addr);
+        case Mapper::NtSource::Default:
+            break;
+        }
+    }
+    return m_vram[nametableIndex(addr)];
+}
+
+void Ppu::writeNametable(std::uint16_t addr, std::uint8_t value)
+{
+    if (m_cart != nullptr) {
+        switch (m_cart->ntSource(addr)) {
+        case Mapper::NtSource::Ciram0:
+            m_vram[addr & 0x3FF] = value;
+            return;
+        case Mapper::NtSource::Ciram1:
+            m_vram[0x400 + (addr & 0x3FF)] = value;
+            return;
+        case Mapper::NtSource::Mapper:
+            m_cart->ntWrite(addr, value);
+            return;
+        case Mapper::NtSource::Default:
+            break;
+        }
+    }
+    m_vram[nametableIndex(addr)] = value;
+}
+
+int Ppu::fetchColumn(std::uint32_t dot) const
+{
+    // 34 background fetches per line: dots 321-336 prefetch columns 0-1 for
+    // the next line, dots 1-256 fetch columns 2-33.
+    if (dot >= 321) {
+        return static_cast<int>((dot - 321) / 8);
+    }
+    return 2 + static_cast<int>((dot - 1) / 8);
+}
+
+int Ppu::fetchScanline() const
+{
+    // Pre-render fetches build line 0; end-of-line prefetches build the
+    // next visible line.
+    if (m_scanline == kPreRenderLine) {
+        return 0;
+    }
+    return m_dot >= 321 ? m_scanline + 1 : m_scanline;
+}
+
 std::uint8_t Ppu::ppuBusRead(std::uint16_t addr) const
 {
     addr &= 0x3FFF;
@@ -388,7 +454,7 @@ std::uint8_t Ppu::ppuBusRead(std::uint16_t addr) const
         return m_cart != nullptr ? m_cart->chrRead(addr) : 0;
     }
     if (addr < 0x3F00) {
-        return m_vram[nametableIndex(addr)];
+        return readNametable(addr);
     }
     return paletteRead(static_cast<std::uint8_t>(addr & 0x1F));
 }
@@ -401,7 +467,7 @@ void Ppu::ppuBusWrite(std::uint16_t addr, std::uint8_t value)
             m_cart->chrWrite(addr, value); // CHR-RAM only
         }
     } else if (addr < 0x3F00) {
-        m_vram[nametableIndex(addr)] = value;
+        writeNametable(addr, value);
     }
 }
 
@@ -478,10 +544,11 @@ void Ppu::fetchCycle(std::uint32_t dot)
         m_shiftAttrHi = static_cast<std::uint16_t>(m_shiftAttrHi << 1);
         if ((dot >= 2 && dot <= 257) || (dot >= 322 && dot <= 337)) {
             switch (dot & 7) {
-            case 2: // NT
-                m_latchNT = m_vram[nametableIndex(
-                    static_cast<std::uint16_t>(0x2000 | (m_v & 0x0FFF)))];
+            case 2: { // NT
+                m_latchNT = readNametable(static_cast<std::uint16_t>(
+                    0x2000 | (m_v & 0x0FFF)));
                 break;
+            }
             case 4: {
                 // The pattern-low ADDRESS hits the bus at the first dot of
                 // its fetch pair (the read completes two dots later); A12
@@ -496,33 +563,75 @@ void Ppu::fetchCycle(std::uint32_t dot)
                 // AT
                 const std::uint16_t base =
                     static_cast<std::uint16_t>(0x23C0 | (m_v & 0x0C00));
-                const std::uint8_t at = m_vram[nametableIndex(static_cast<std::uint16_t>(
-                    base | ((m_v >> 4) & 0x38) | ((m_v >> 2) & 0x07)))];
+                const std::uint16_t atAddr = static_cast<std::uint16_t>(
+                    base | ((m_v >> 4) & 0x38) | ((m_v >> 2) & 0x07));
+                std::uint8_t at = readNametable(atAddr);
+                if (m_cart != nullptr) {
+                    // MMC5 extended attributes / vertical split supply the
+                    // raw attribute byte from ExRAM.
+                    Mapper::BgFetch fetch;
+                    fetch.tileColumn = fetchColumn(dot);
+                    fetch.scanline = fetchScanline();
+                    fetch.v = m_v;
+                    fetch.mask = m_mask;
+                    fetch.attribute = true;
+                    if (m_cart->bgFetch(fetch)) {
+                        at = fetch.value;
+                    }
+                }
                 m_latchAT = static_cast<std::uint8_t>(
                     (at >> (((m_v >> 4) & 4) | (m_v & 2))) & 3);
                 break;
             }
             case 6: {
-                notifyA12(static_cast<std::uint16_t>(
+                std::uint32_t addr = static_cast<std::uint16_t>(
                     ((m_ctrl & 0x10) != 0 ? 0x1000 : 0)
-                    + m_latchNT * 16 + ((m_v >> 12) & 7) + 8));
+                    + m_latchNT * 16 + ((m_v >> 12) & 7));
+                bool direct = false;
+                if (m_cart != nullptr) {
+                    Mapper::BgFetch fetch;
+                    fetch.tileColumn = fetchColumn(dot);
+                    fetch.scanline = fetchScanline();
+                    fetch.v = m_v;
+                    fetch.mask = m_mask;
+                    fetch.pattern = true;
+                    fetch.addr = addr;
+                    if (m_cart->bgFetch(fetch)) {
+                        addr = fetch.addr;
+                        direct = true;
+                    }
+                }
+                notifyA12(static_cast<std::uint16_t>(addr));
                 // pattern low
                 // PPUCTRL bit 4 selects the BACKGROUND pattern table,
                 // bit 3 the 8x8 SPRITE table (nesdev PPU_registers layout
                 // "VPHB SINN": B = bit 4, S = bit 3; Mesen maps them the
                 // same way, and blargg's own comment on PPUCTRL $08 says
                 // "sprites use tiles at $1xxx").
-                const std::uint16_t addr = static_cast<std::uint16_t>(
-                    ((m_ctrl & 0x10) != 0 ? 0x1000 : 0)
-                    + m_latchNT * 16 + ((m_v >> 12) & 7));
-                m_latchLo = ppuBusRead(addr);
+                m_latchLo = direct ? m_cart->chrReadRaw(addr)
+                                   : ppuBusRead(static_cast<std::uint16_t>(addr));
                 break;
             }
             case 0: { // pattern high + horizontal advance
-                const std::uint16_t addr = static_cast<std::uint16_t>(
+                std::uint32_t addr = static_cast<std::uint16_t>(
                     ((m_ctrl & 0x10) != 0 ? 0x1000 : 0)
                     + m_latchNT * 16 + ((m_v >> 12) & 7) + 8);
-                m_latchHi = ppuBusRead(addr);
+                bool direct = false;
+                if (m_cart != nullptr) {
+                    Mapper::BgFetch fetch;
+                    fetch.tileColumn = fetchColumn(dot);
+                    fetch.scanline = fetchScanline();
+                    fetch.v = m_v;
+                    fetch.mask = m_mask;
+                    fetch.pattern = true;
+                    fetch.addr = addr;
+                    if (m_cart->bgFetch(fetch)) {
+                        addr = fetch.addr;
+                        direct = true;
+                    }
+                }
+                m_latchHi = direct ? m_cart->chrReadRaw(addr)
+                                   : ppuBusRead(static_cast<std::uint16_t>(addr));
                 // Reload the shifter's low byte at the END of the fetch
                 // group (dot 8k, after this dot's shift): 8 more shifts
                 // put the byte in the sampling half exactly when its
@@ -762,9 +871,12 @@ void Ppu::loadSpriteUnits()
         unit.x = m_oam2[static_cast<std::size_t>(i) * 4 + 3];
         unit.attr = attr;
         notifyA12(addr);
-        unit.lo = ppuBusRead(addr);
+        unit.lo = m_cart != nullptr ? m_cart->chrFetch(addr, true)
+                                    : ppuBusRead(addr);
         notifyA12(static_cast<std::uint16_t>(addr + 8));
-        unit.hi = ppuBusRead(static_cast<std::uint16_t>(addr + 8));
+        unit.hi = m_cart != nullptr
+            ? m_cart->chrFetch(static_cast<std::uint16_t>(addr + 8), true)
+            : ppuBusRead(static_cast<std::uint16_t>(addr + 8));
         ++m_unitCount;
     }
 }
@@ -839,6 +951,9 @@ void Ppu::renderPixel(std::uint32_t x)
 void Ppu::stepDot()
 {
     m_statusLag = m_status; // the read path sees the previous dot's status
+    if (m_cart != nullptr && m_dot == 0) {
+        m_cart->onScanline(m_scanline, renderingEnabled());
+    }
     // Pre-render line uses index 261; wrap dot/scanline with the odd-frame
     // dot skip when rendering.
     if (m_scanline == kPreRenderLine && m_dot == 339 && m_oddFrame

@@ -52,6 +52,61 @@ public:
     // floating-bus convention, writes dropped). MMC1B's $E000 bit 4.
     virtual bool prgRamReadable() const { return true; }
 
+    // --- Mapper-owned low CPU space ($4020-$7FFF) ---------------------------
+    // MMC5 decodes its registers at $5000-$5FFF, ExRAM at $5C00-$5FFF and a
+    // banked 64K PRG-RAM at $6000-$7FFF. Boards that claim the range take
+    // over the Cartridge's generic PRG-RAM window completely.
+    virtual bool ownsLowSpace() const { return false; }
+
+    // --- Nametable source ($2000-$2FFF) -----------------------------------
+    // MMC5's $5105 maps each 1K nametable slot to CIRAM page 0/1, ExRAM or
+    // fill mode. Boards that do not override use the header mirroring.
+    enum class NtSource : std::uint8_t { Default, Ciram0, Ciram1, Mapper };
+    virtual NtSource ntSource(std::uint16_t /*addr*/) const
+    {
+        return NtSource::Default;
+    }
+    virtual std::uint8_t ntRead(std::uint16_t /*addr*/) const { return 0; }
+    virtual void ntWrite(std::uint16_t /*addr*/, std::uint8_t /*value*/) {}
+
+    // --- PPU bus context ---------------------------------------------------
+    // The PPU reports $2000/$2001 writes so MMC5 can gate substitutions on
+    // the PPUCTRL sprite size and the PPUMASK E bits (fully decoded
+    // registers; the bus has already folded the mirrors).
+    virtual void setPpuCtrl(std::uint8_t /*value*/) {}
+    virtual void setPpuMask(std::uint8_t /*value*/) {}
+
+    // Pattern-bus read for a rendering fetch. `sprite` distinguishes sprite
+    // pattern fetches (MMC5 8x16 independent banks) from background ones.
+    virtual std::uint8_t chrReadBus(std::uint16_t addr, bool /*sprite*/) const
+    {
+        return chrRead(addr);
+    }
+    // Direct CHR storage read at a final byte address (no bank mapping):
+    // used when a mapper supplies an absolute pattern address (MMC5
+    // extended attributes / vertical split).
+    std::uint8_t chrReadRaw(std::uint32_t addr) const;
+
+    // Background fetch substitution. The PPU calls once per NT byte, once
+    // per attribute byte and once per pattern fetch pair, with the current
+    // fetch column (0-33; 0/1 are the next line's prefetches), the line the
+    // fetch is for, the address latch and PPUMASK. Return true when the
+    // mapper supplied `value` (NT/AT) or replaced `addr` (pattern).
+    struct BgFetch {
+        int tileColumn = 0;
+        int scanline = 0;
+        std::uint16_t v = 0;
+        std::uint8_t mask = 0;
+        bool attribute = false;
+        bool pattern = false;
+        std::uint8_t value = 0; // NT/AT result
+        std::uint32_t addr = 0; // pattern address in/out
+    };
+    virtual bool bgFetch(BgFetch& /*fetch*/) const { return false; }
+
+    // One call per scanline at dot 0 (MMC5's in-frame/scanline counter).
+    virtual void onScanline(int /*line*/, bool /*rendering*/) {}
+
     // Write-cycle context (MMC1-class consecutive-write rules, T053): the
     // machine wires the scheduler after load; mappers that must know the
     // cycle spacing of back-to-back writes (RMW double writes) override.

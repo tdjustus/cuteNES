@@ -8,6 +8,11 @@ namespace cutenes {
 
 std::uint8_t Cartridge::cpuRead(std::uint16_t addr)
 {
+    // Mappers that decode below $8000 (MMC5) own the whole range: their
+    // banked PRG-RAM at $6000-$7FFF replaces the generic window.
+    if (addr < 0x8000 && mapper && mapper->ownsLowSpace()) {
+        return mapper->cpuRead(addr);
+    }
     if (addr < 0x8000) {
         // $6000-$7FFF PRG-RAM (kept writable for blargg reporting, D11);
         // below $6000 the bus never routes here. Boards with a disable bit
@@ -25,6 +30,10 @@ std::uint8_t Cartridge::cpuRead(std::uint16_t addr)
 void Cartridge::cpuWrite(std::uint16_t addr, std::uint8_t value)
 {
     if (addr < 0x8000) {
+        if (mapper && mapper->ownsLowSpace()) {
+            mapper->cpuWrite(addr, value);
+            return;
+        }
         if (addr >= 0x6000 && !prgRam.empty()
             && (!mapper || mapper->prgRamWritable())) {
             prgRam[addr % prgRam.size()] = value;
@@ -40,6 +49,20 @@ void Cartridge::cpuWrite(std::uint16_t addr, std::uint8_t value)
 std::uint8_t Cartridge::chrRead(std::uint16_t addr) const
 {
     return mapper ? const_cast<Mapper*>(mapper.get())->chrRead(addr) : 0;
+}
+
+std::uint8_t Cartridge::chrFetch(std::uint16_t addr, bool sprite) const
+{
+    return mapper
+        ? const_cast<Mapper*>(mapper.get())->chrReadBus(addr, sprite)
+        : 0;
+}
+
+std::uint8_t Cartridge::chrReadRaw(std::uint32_t addr) const
+{
+    return mapper
+        ? const_cast<Mapper*>(mapper.get())->chrReadRaw(addr)
+        : 0;
 }
 
 void Cartridge::chrWrite(std::uint16_t addr, std::uint8_t value)

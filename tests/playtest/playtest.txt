@@ -439,3 +439,39 @@ rom ../roms/dmc_dma_during_read4/double_2007_read.nes
 run 600 none
 expect-text 85CFD627
 end
+
+# MMC5 (mapper 5), session 44. The three screen-reported demo/test ROMs
+# exercise: ExRAM as nametable + code execution from ExRAM (mmc5exram's
+# copper bars run from $5C00 in $5104 mode 2), 1K CHR banking with
+# extended attributes and fill mode (mmc5test), and the 8x16 independent
+# sprite-bank registers (mmc5test v2's bank display). firefly (Damian
+# Grokk'e's "Fire Fly" MMC5 demo) drives PRG mode 2 banking with the
+# menu engine executing through $5116-mapped banks and animates
+# continuously. All four are also pinned by golden hashes (T065).
+
+entry mmc5-exram-copper-bars
+rom ../roms/exram/mmc5exram.nes
+run 300 none
+expect-text MMC5
+expect-changes 50
+end
+
+entry mmc5-test-chr-banks
+rom ../roms/mmc5test/mmc5test.nes
+run 300 none
+expect-changes 20
+end
+
+entry mmc5-test-v2-bank-display
+rom ../roms/mmc5test_v2/mmc5test.nes
+run 60 none
+expect-changes 1
+run 840 none
+expect-changes 0
+end
+
+entry mmc5-firefly-animates
+rom ../roms/other/firefly.nes
+run 300 none
+expect-changes 50
+end
