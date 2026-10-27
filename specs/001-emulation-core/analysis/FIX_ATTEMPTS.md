@@ -1530,3 +1530,21 @@ protocol failures: 186 un-gated ROMs all pass or are no-protocol demos;
 T072 is closed. Remaining core gaps are scope items, not defects:
 unsupported mappers (5+), PAL dot-level timing, and the MMC1 CHR-ROM
 4K-window path being untested locally (no CHR-ROM MMC1 cartridge).
+
+## Session 42 (2026-10-26): MMC1 coverage closed — Zelda II + MM2 gameplay
+
+The user supplied two more dumps. "Megaman II (U) [!]" is byte-identical
+to the already-gated MM2 (md5 8e4bc5b0...): 256KB PRG + 8KB CHR-RAM.
+Verified the full 4-bit PRG bank register spans all 16 banks — SUROM's
+CHR0-bit-4 outer banking only exists for 512K ROMs — so the board is
+fully served by MMC1B; the playtest now types the documented Normal
+password (A4 B3 C2 C3 C4 D4 D5 E3 E5) through the grid, lands on the
+stage select, and verifies 900 frames of animated level play.
+
+Zelda II (USA): 128KB PRG + 128KB CHR-ROM — the CHR-ROM board. Gated
+title -> story -> file registration -> overworld, with D-pad response
+verified (each direction walks to a distinct screen hash). Live
+control-register logging shows the game runs 8K CHR mode; the local
+Tetris (MMC1) runs 4K mode (ctrl $10) and is already gated to gameplay,
+so both MMC1 CHR window paths are exercised by playing games. T059's
+KNOWN LIMIT is resolved. Playtest 48/48, ctest 159/159.

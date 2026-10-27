@@ -137,6 +137,38 @@ expect-text ijjjjjjjjjjjjjjjjjjjjjk
 expect-changes 1
 end
 
+# Zelda II (USA) — 128KB PRG + 128KB CHR-ROM MMC1 with battery: the
+# CHR-ROM banking board. The entry drives title -> story -> file
+# registration -> the overworld, then verifies Link actually responds to
+# the D-pad (different walks give different screens). Verified live:
+# the game switches CHR banks through the whole run (control writes
+# logged chr=8K; Tetris below exercises the 4K window mode).
+
+entry zelda-2-boot-to-overworld
+rom ../../roms-local/zelda-2.nes
+run 600 none
+expect-changes 10
+run 20 Start
+run 500 none
+run 20 Start
+run 200 none
+run 20 A
+run 300 none
+run 4 A
+run 60 none
+run 4 Start
+run 60 none
+run 4 A
+run 600 none
+expect-changes 50
+run 120 Right
+expect-changes 20
+run 120 Up
+expect-changes 20
+run 600 none
+expect-changes 50
+end
+
 # Final Fantasy (USA): 256KB PRG + CHR-RAM + battery. Boot sequence ->
 # Start -> A advances past the title into the game screens.
 
@@ -152,10 +184,16 @@ expect-changes 1
 run 300 none
 end
 
-# Mega Man 2 — NOTE: this local dump (md5 8e4bc5b03ffbd4ef91400e92e50dd294)
-# is a 256KB PRG + CHR-RAM MMC1 build, not Capcom's 128K/128K CHR-ROM board;
-# its title's Start goes straight to the password grid (the game's font
-# happens to sit at ASCII tile codes, so the grid is greppable).
+# Mega Man 2 — this local dump (md5 8e4bc5b03ffbd4ef91400e92e50dd294,
+# the GoodNES [!] verified "Megaman II (U)") is the 256KB PRG + 8KB
+# CHR-RAM MMC1 board: the full 4-bit PRG bank register spans all 16 banks
+# (no SUROM outer banking needed below 512K). The title's Start goes
+# straight to the password grid (the game's font happens to sit at ASCII
+# tile codes, so the grid is greppable). The gameplay entry types the
+# documented Normal password (A4 B3 C2 C3 C4 D4 D5 E3 E5 — 4 bosses
+# cleared, 3 E-tanks), lands on the stage select, picks a stage and
+# verifies the level actually animates — exercising CHR-RAM upload and
+# PRG bank switching across the ROM.
 
 entry mega-man-2-boot-reaches-password-screen
 rom ../../roms-local/mega-man-2.nes
@@ -165,6 +203,47 @@ run 10 Start
 run 200 none
 expect-text PQRSTUVWXYZ[\]^_
 expect-changes 1
+end
+
+entry mega-man-2-reaches-gameplay
+rom ../../roms-local/mega-man-2.nes
+run 240 none
+run 20 Start
+run 150 none
+# Password A4 B3 C2 C3 C4 D4 D5 E3 E5 from cursor A1.
+run 4 Down
+run 4 Down
+run 4 Down
+run 4 A
+run 4 Right
+run 4 Up
+run 4 A
+run 4 Right
+run 4 Up
+run 4 A
+run 4 Down
+run 4 A
+run 4 Down
+run 4 A
+run 4 Right
+run 4 A
+run 4 Down
+run 4 A
+run 4 Right
+run 4 Up
+run 4 Up
+run 4 A
+run 4 Down
+run 4 Down
+run 4 A
+run 4 Start
+run 300 none
+expect-changes 10
+# Stage select: accept the highlighted (alive) stage.
+run 4 A
+run 150 none
+run 900 none
+expect-changes 50
 end
 
 # Screen-verified suites (no $6000 protocol; result text/code on screen).
