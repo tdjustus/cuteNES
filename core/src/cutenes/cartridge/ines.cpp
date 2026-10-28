@@ -77,9 +77,16 @@ LoadResult Cartridge::load(const std::uint8_t* data, std::size_t size,
         (h[6] >> 4) | ((h[7] & 0xF0)));
     if (nes2) {
         mapperId = static_cast<std::uint16_t>(mapperId | (h[8] & 0x0F) << 8);
-        info.prgRamSize = (h[10] & 0x0F) < 15
-            ? (std::size_t{64} << (h[10] & 0x0F))
-            : 0;
+        // Byte 10: low nibble = volatile PRG-RAM, high nibble = battery
+        // (NVRAM) PRG-RAM, each 64 << shift bytes; a shift of 0 means none.
+        const auto ramBytes = [](std::uint8_t shift) -> std::size_t {
+            return shift != 0 && shift < 15 ? std::size_t{64} << shift : 0;
+        };
+        const std::size_t nvram = ramBytes(h[10] >> 4);
+        info.prgRamSize = ramBytes(h[10] & 0x0F) + nvram;
+        if (nvram != 0) {
+            info.battery = true; // NVRAM implies battery backing
+        }
         // Byte 11: CHR-RAM size shift (64 << n; 0x9 => 32K); byte 12
         // bits 0-1 are the TV system (0 NTSC, 1 PAL).
         const std::uint8_t chrShift = h[11] & 0x0F;
