@@ -1,0 +1,115 @@
+# Source control strategy
+
+How code gets from an idea to `main`, how releases are cut, and how known
+bugs and planned features are tracked. This is the canonical description;
+the constitution, `README.md` and `CLAUDE.md` point here.
+
+## Phases
+
+| Phase | Integration branch | Releases are cut by |
+|---|---|---|
+| **Pre-1.0** (now) | `main` | tagging `main` (`core-v<version>`) |
+| **1.0 and later** | `development` (long-lived, never deleted) | merging `development` into `main`, then tagging `main` |
+
+The `development` branch does not exist until 1.0 ships. Version 1.0 is
+reached when **every roadmapped feature is implemented and every known bug
+is resolved**, meaning the GitHub milestone `1.0` has no open issues (see
+[Tracking work](#tracking-work-the-10-milestone)).
+
+## Pre-1.0 workflow
+
+1. **Branch from fresh `main`**: `git fetch` and branch from `origin/main`
+   as `<kind>/<slug>`, where kind is `feature`, `fix`, `docs`, `test` or
+   `chore`. Commit messages use the matching prefix (`feat(...)`,
+   `fix(...)`, `docs`, `test`, `chore`).
+2. **One branch at a time.** Do not start the next branch, or continue
+   development, until the previous branch's pull request has merged. Do not
+   stack branches on one another. Why: `main` requires branches to be up to
+   date before merging, so each merge leaves every other open branch behind,
+   and each update costs a full CI run.
+3. **One logical change per branch.** Keep it small enough to review.
+4. **Tests first for core behavior** (constitution, Principle III): write
+   the test, watch it fail, then fix.
+5. **Open a PR into `main`.** If the PR resolves tracked issues, put
+   `Fixes #N` in its description so they close on merge.
+6. **Keep the branch current by merging `main` into it** (no rebase). Check
+   first whether the remote branch already contains `main`; the "Update
+   branch" button in GitHub does the same thing.
+7. **The maintainer merges.** Automated agents open PRs and update branches
+   but never merge. Do not merge while required checks are red.
+8. **Merge commits only** (squash and rebase are disabled) so each change
+   keeps its own commit messages. The head branch is deleted automatically
+   on merge; delete the local copy and pull `main`.
+9. Never push directly to `main`; hotfixes follow the same path on `fix/`.
+
+## Repository protections
+
+- `main`: pull request required (0 approvals), required status check
+  `ci-ok`, branch must be up to date, no force-push, no deletion. Admin
+  enforcement is off so the maintainer can still merge their own PRs.
+- Allowed merge method: merge commit. Delete-branch-on-merge: on.
+
+## CI
+
+Defined in `.github/workflows/build.yml`.
+
+- **Triggers:** `pull_request`, tags `core-v*`, a weekly schedule, and
+  manual dispatch. There is deliberately no run on pushes to branches or on
+  `main` after a merge: a PR is tested up to date with `main`, so a
+  post-merge run would repeat an already-tested tree. The weekly run catches
+  runner-image drift; the tag run gates releases.
+- **Jobs:** Release on Linux, macOS and Windows; Windows Debug; one Linux
+  ASan + UBSan job (`-O1`, assertions on).
+- **`ci-ok`** aggregates them and is the only required check. Docs-only PRs
+  (no change under `core/`, `tests/`, `third_party/`, `CMakeLists.txt`,
+  `.gitmodules` or `.github/`) skip the build, and `ci-ok` still passes.
+- **Superseded runs** are cancelled when a PR is pushed again.
+- Tests labelled `known-failing` are excluded from CI. Use them only for a
+  documented emulator discrepancy, and file an issue for it.
+- Run locally: `cmake -S . -B build && cmake --build build -j` then
+  `ctest --test-dir build -j8 -LE known-failing`. Playtest entries that need
+  gitignored commercial ROMs (`roms-local/`) report *Skipped*, not Passed.
+
+## Tracking work: the 1.0 milestone
+
+The GitHub milestone **1.0** is the source of truth for "known bugs and
+roadmapped features". Labels: `bug`, `feature`, `test`, `ci`,
+`documentation`.
+
+- Every known bug that is not fixed in the current PR gets an issue in the
+  milestone immediately, with cause and reproduction. Do not leave bugs only
+  in a PR description or a commit message.
+- Every roadmapped feature, and any deferred test or documentation work,
+  gets an issue in the milestone.
+- Check the open milestone issues at the start of a work session.
+- Scope is set by the maintainer: a suggested feature is not a milestone
+  item until the maintainer agrees to it.
+
+## Releasing 1.0
+
+When the milestone has no open issues:
+
+1. Confirm `README.md` and this document are current and `main`'s CI is green
+   on all platforms.
+2. Create the long-lived `development` branch from `main`.
+3. Protect `development`: pull request required, no deletion. (Branch
+   protection also stops delete-branch-on-merge from removing it when a
+   release PR merges.)
+4. Tag `core-v1.0.0` from `main` once its CI is green.
+
+These steps change repository settings and publish a release, so the
+maintainer approves each one.
+
+## After 1.0
+
+- Feature and fix branches start from `development` and merge into it, one
+  at a time, with the same rules as above.
+- A release is a pull request that merges `development` into `main`. It runs
+  CI once more as the release gate (one extra run per release, not per
+  change). Tag `core-v<version>` on `main` after that CI is green.
+- **After every release, merge `main` back into `development`.** The merge
+  commit on `main` is not on `development`, and without the back-merge the
+  "must be up to date" rule blocks the next release PR.
+- **Hotfixes:** branch from `main`, merge to `main`, tag, then merge `main`
+  into `development`.
+- `main` always equals the latest release. Tags are cut from `main` only.
