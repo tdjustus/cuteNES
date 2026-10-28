@@ -413,6 +413,119 @@ int cmdBench(const char* romPath, std::uint32_t seconds)
     }
 }
 
+// Debugging aid: report where the CPU is after N frames, sampling PC over the
+// next few frames (a ROM stuck in a crash handler shows a tight loop).
+// Environment variables select other views:
+//   WHERE_TAIL=1     the 40 instructions executed before first entering
+//                    $FF80-$FFE9 (Holy Mapperel's crash handler)
+//   WHERE_WRITES=1   stores to mapper-register space ($8000+) as they run
+//   WHERE_DIS=addr   40 instructions disassembled forward from a hex address
+//   WHERE_TAGS=1     byte at +$FF8 of each 4K PRG window (bank tags)
+//   WHERE_CHRTAGS=1  byte at +$1FC of each 1K CHR window (bank tags)
+int cmdWhere(const char* romPath, std::uint32_t frames)
+{
+    std::vector<std::uint8_t> rom;
+    if (!readRom(romPath, rom)) {
+        return 2;
+    }
+    cutenes::Machine machine;
+    if (machine.loadCartridge(rom.data(), rom.size()).error
+        != cutenes::LoadError::Ok) {
+        return 2;
+    }
+    machine.powerOn();
+    if (std::getenv("WHERE_TAIL") != nullptr) {
+        // Print the instructions executed just before the CPU first enters
+        // the $FF80-$FFFF window (a crash handler), from a ring buffer.
+        std::vector<std::string> ring;
+        bool entered = false;
+        machine.setInstructionTrace([&](const cutenes::TracePoint& tp) {
+            if (entered) {
+                return;
+            }
+            if (tp.cpu.pc >= 0xFF80 && tp.cpu.pc < 0xFFEA) {
+                entered = true;
+                for (const std::string& l : ring) {
+                    std::printf("%s\n", l.c_str());
+                }
+                return;
+            }
+            ring.push_back(machine.disassemble(tp.cpu.pc).substr(0, 34));
+            if (ring.size() > 40) {
+                ring.erase(ring.begin());
+            }
+        });
+        machine.runFrames(frames);
+        return 0;
+    }
+    if (std::getenv("WHERE_WRITES") != nullptr) {
+        // Log stores to mapper-register space ($8000+) as they execute.
+        int shown = 0;
+        machine.setInstructionTrace([&](const cutenes::TracePoint& tp) {
+            const std::string line = machine.disassemble(tp.cpu.pc);
+            const std::size_t st = line.find("ST");
+            if (st == std::string::npos || shown >= 20000) {
+                return;
+            }
+            const std::size_t dollar = line.find('$', st);
+            if (dollar == std::string::npos || line.size() < dollar + 5) {
+                return;
+            }
+            const unsigned long target =
+                std::strtoul(line.substr(dollar + 1, 4).c_str(), nullptr, 16);
+            if (target >= 0x8000 && line[st + 2] >= 'A' && line[st + 2] <= 'Y') {
+                ++shown;
+                std::printf("%s  A=%02x X=%02x Y=%02x\n",
+                    line.substr(0, 28).c_str(), tp.cpu.a, tp.cpu.x, tp.cpu.y);
+            }
+        });
+    }
+    machine.runFrames(frames);
+    if (std::getenv("WHERE_WRITES") != nullptr) {
+        return 0;
+    }
+    if (std::getenv("WHERE_CHRTAGS") != nullptr) {
+        // CHR bytes at $1FC of each 1K window, read through the PPU bus.
+        for (std::uint16_t w = 0; w < 8; ++w) {
+            std::uint8_t b = 0;
+            machine.readVram(static_cast<std::uint16_t>(w * 0x400 + 0x1FC), 1, &b);
+            std::printf("chr window %u (+1FC) = %02x\n", w, b);
+        }
+        return 0;
+    }
+    if (std::getenv("WHERE_TAGS") != nullptr) {
+        // Byte at offset $FF8 of each 4K CPU window (Holy Mapperel bank tags).
+        for (std::uint32_t a = 0x8000; a < 0x10000; a += 0x1000) {
+            std::printf("window %04x tag(+FF8) = %02x\n", a,
+                machine.peek(static_cast<std::uint16_t>(a + 0xFF8)));
+        }
+        return 0;
+    }
+    if (const char* dis = std::getenv("WHERE_DIS")) {
+        // Walk instructions forward from a hex address (trace-format text).
+        std::uint16_t addr = static_cast<std::uint16_t>(std::strtoul(dis, nullptr, 16));
+        for (int i = 0; i < 40; ++i) {
+            const std::string line = machine.disassemble(addr);
+            std::printf("%s\n", line.substr(0, 40).c_str());
+            // The trace line is "ADDR  B1 B2 B3  OP": count the hex bytes.
+            std::size_t n = 0;
+            for (std::size_t k = 6; k + 2 < line.size() && line[k] != ' ' ? true : (k + 1 < line.size() && line[k + 1] != ' '); k += 3) {
+                ++n;
+                if (n == 3) break;
+            }
+            addr = static_cast<std::uint16_t>(addr + (n ? n : 1));
+        }
+        return 0;
+    }
+    for (int i = 0; i < 6; ++i) {
+        const cutenes::CpuState c = machine.cpu();
+        std::printf("pc=%04x a=%02x x=%02x y=%02x s=%02x p=%02x  %s\n", c.pc,
+            c.a, c.x, c.y, c.s, c.p, machine.disassemble(c.pc).c_str());
+        machine.runFrames(1);
+    }
+    return 0;
+}
+
 // Print all four nametables as text (printable ASCII tile codes shown as
 // characters, anything else as '.'), plus the raw tile codes of the first
 // non-blank row, to learn how a ROM encodes its on-screen text.
@@ -975,6 +1088,7 @@ void usage()
         "  nestest [--golden-log]          CPU golden-log verification (T029)\n"
         "  savestate --rom R --at F --rerun-to F   restore round trip (T051)\n"
         "  settle ROM [--min-frames N] [--expect HASH] [--out F.ppm]\n"
+        "  text ROM FRAMES / where ROM FRAMES   debugging views (see source)\n"
         "  playtest --list FILE [--entry N] scripted game checks (T059)\n"
         "  bench --rom R                   5s sustained-speed benchmark (T061)\n"
         "  golden --list F [--check B]     cross-platform golden hashes (T065)\n");
@@ -1013,6 +1127,9 @@ int main(int argc, char** argv)
             return 2;
         }
         return cmdGolden(argv[3], check);
+    }
+    if (command == "where" && argc == 4) {
+        return cmdWhere(argv[2], parseUint(argv[3]));
     }
     if (command == "text" && argc == 4) {
         return cmdText(argv[2], parseUint(argv[3]));

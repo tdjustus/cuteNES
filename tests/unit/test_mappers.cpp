@@ -397,25 +397,31 @@ namespace {
 
 // MMC3 board: 256 KiB PRG (32 x 8K, each bank's first byte = its index),
 // 8 KiB CHR.
-std::vector<std::uint8_t> makeMmc3Rom()
+// chrBanks8k: CHR ROM size in 8K units (0 = CHR-RAM). Every 1K CHR bank's
+// first byte holds its 1K bank index.
+std::vector<std::uint8_t> makeMmc3Rom(int chrBanks8k = 1)
 {
     std::vector<std::uint8_t> rom{
-        'N', 'E', 'S', 0x1A, 16, 1,
+        'N', 'E', 'S', 0x1A, 16, static_cast<std::uint8_t>(chrBanks8k),
         0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     const std::size_t prgSize = 32 * 8192;
-    const std::size_t chrSize = 8192;
+    const std::size_t chrSize = static_cast<std::size_t>(chrBanks8k) * 8192;
     rom.resize(16 + prgSize + chrSize, 0);
     for (std::size_t bank = 0; bank < 32; ++bank) {
         rom[16 + bank * 8192] = static_cast<std::uint8_t>(bank);
+    }
+    for (std::size_t bank = 0; bank < chrSize / 1024; ++bank) {
+        rom[16 + prgSize + bank * 1024] = static_cast<std::uint8_t>(bank);
     }
     return rom;
 }
 
 struct Mmc3Harness {
-    std::vector<std::uint8_t> rom = makeMmc3Rom();
+    std::vector<std::uint8_t> rom;
     // submapper > 0 promotes the header to NES 2.0 (byte 7 bit 3, byte 13
     // low nibble) so mapper 4 can select the MMC3 revision.
-    explicit Mmc3Harness(int submapper = 0)
+    explicit Mmc3Harness(int submapper = 0, int chrBanks8k = 1)
+        : rom(makeMmc3Rom(chrBanks8k))
     {
         if (submapper > 0) {
             rom[7] = static_cast<std::uint8_t>((rom[7] & 0xF0) | 0x08);
@@ -433,9 +439,81 @@ struct Mmc3Harness {
     }
 
     std::uint8_t prgAt(std::uint16_t addr) { return cart.cpuRead(addr); }
+    std::uint8_t chrAt(std::uint16_t addr) { return cart.chrRead(addr); }
 };
 
 } // namespace
+
+// --- MMC3 CHR banking ---------------------------------------------------------
+// Normal layout (bank-select bit 7 = 0): R0/R1 are 2K banks at $0000/$0800
+// (the low bit is ignored), R2-R5 are 1K banks at $1000/$1400/$1800/$1C00.
+// Inverted (bit 7 = 1): R2-R5 fill $0000-$0FFF, R0/R1 sit at $1000/$1800.
+
+TEST(Mmc3, ChrNormalLayoutPutsTwoKilobyteBanksLow)
+{
+    Mmc3Harness h(0, 8); // 64K CHR = 64 x 1K banks
+    h.select(0, 8);
+    h.select(1, 12);
+    h.select(2, 20);
+    h.select(3, 21);
+    h.select(4, 22);
+    h.select(5, 23);
+    EXPECT_EQ(h.chrAt(0x0000), 8);
+    EXPECT_EQ(h.chrAt(0x0400), 9) << "R0 covers two 1K banks";
+    EXPECT_EQ(h.chrAt(0x0800), 12);
+    EXPECT_EQ(h.chrAt(0x0C00), 13);
+    EXPECT_EQ(h.chrAt(0x1000), 20);
+    EXPECT_EQ(h.chrAt(0x1400), 21);
+    EXPECT_EQ(h.chrAt(0x1800), 22);
+    EXPECT_EQ(h.chrAt(0x1C00), 23);
+}
+
+TEST(Mmc3, ChrTwoKilobyteRegistersIgnoreTheirLowBit)
+{
+    Mmc3Harness h(0, 8);
+    h.select(0, 9);  // odd: still the pair 8,9
+    h.select(1, 13); // odd: still the pair 12,13
+    EXPECT_EQ(h.chrAt(0x0000), 8);
+    EXPECT_EQ(h.chrAt(0x0400), 9);
+    EXPECT_EQ(h.chrAt(0x0800), 12);
+    EXPECT_EQ(h.chrAt(0x0C00), 13);
+}
+
+TEST(Mmc3, ChrInvertedLayoutSwapsTheHalves)
+{
+    Mmc3Harness h(0, 8);
+    h.cart.cpuWrite(0x8000, 0x80); // bank-select bit 7 set, register 0
+    auto set = [&](std::uint8_t reg, std::uint8_t data) {
+        h.cart.cpuWrite(0x8000, static_cast<std::uint8_t>(0x80 | reg));
+        h.cart.cpuWrite(0x8001, data);
+    };
+    set(0, 8);
+    set(1, 12);
+    set(2, 20);
+    set(3, 21);
+    set(4, 22);
+    set(5, 23);
+    EXPECT_EQ(h.chrAt(0x0000), 20);
+    EXPECT_EQ(h.chrAt(0x0400), 21);
+    EXPECT_EQ(h.chrAt(0x0800), 22);
+    EXPECT_EQ(h.chrAt(0x0C00), 23);
+    EXPECT_EQ(h.chrAt(0x1000), 8);
+    EXPECT_EQ(h.chrAt(0x1400), 9);
+    EXPECT_EQ(h.chrAt(0x1800), 12);
+    EXPECT_EQ(h.chrAt(0x1C00), 13);
+}
+
+TEST(Mmc3, ChrRamReadsSeeWhatWritesStored)
+{
+    Mmc3Harness h(0, 0); // CHR-RAM (8K)
+    h.select(2, 3);      // 1K bank 3 at $1000
+    h.cart.chrWrite(0x1000, 0x5A);
+    EXPECT_EQ(h.chrAt(0x1000), 0x5A) << "read must use the same banking";
+    h.select(2, 4);
+    EXPECT_NE(h.chrAt(0x1000), 0x5A) << "a different bank, different storage";
+    h.select(2, 3);
+    EXPECT_EQ(h.chrAt(0x1000), 0x5A);
+}
 
 TEST(Mmc3, ModeZeroFixesSecondLastAndLastBanks)
 {
