@@ -1,0 +1,68 @@
+# Holy Mapperel (tier 2): each ROM must identify the right board, find the
+# expected memory sizes, and report DETAILED TEST RESULT 0000 (zero is normal;
+# anything else is an unexpected mapper behavior). Expectations come from the
+# ROM names and the Holy Mapperel README, never from this emulator's output.
+# The ROM's font encodes letters as tile codes 1..26, hence `font a1`.
+#
+# Name key: M<mapper>_P<PRG ROM>_C<CHR ROM> | CR<CHR RAM>, S<battery RAM>,
+# W<work RAM>, _V/_H fixed mirroring. No S/W means no PRG RAM.
+# These pass today.
+
+entry mapperel-m0-p32k-c8k-v
+rom ../../third_party/holy-mapperel/testroms/M0_P32K_C8K_V.nes
+font a1
+run 1200 none
+expect-text 000 NROM
+expect-text 32K PRG ROM
+expect-text 8K CHR ROM OK
+expect-text DETAILED TEST RESULT: 0000
+end
+
+entry mapperel-m0-p32k-cr32k-v
+rom ../../third_party/holy-mapperel/testroms/M0_P32K_CR32K_V.nes
+font a1
+run 1200 none
+expect-text 000 NROM
+expect-text 32K PRG ROM
+expect-text CHR RAM OK
+expect-text DETAILED TEST RESULT: 0000
+end
+
+entry mapperel-m0-p32k-cr8k-v
+rom ../../third_party/holy-mapperel/testroms/M0_P32K_CR8K_V.nes
+font a1
+run 1200 none
+expect-text 000 NROM
+expect-text 32K PRG ROM
+expect-text CHR RAM OK
+expect-text DETAILED TEST RESULT: 0000
+end
+
+entry mapperel-m2-p128k-cr8k-v
+rom ../../third_party/holy-mapperel/testroms/M2_P128K_CR8K_V.nes
+font a1
+run 1200 none
+expect-text 002 U
+expect-text 128K PRG ROM
+expect-text 8K CHR RAM OK
+expect-text DETAILED TEST RESULT: 0000
+end
+
+entry mapperel-m2-p128k-v
+rom ../../third_party/holy-mapperel/testroms/M2_P128K_V.nes
+font a1
+run 1200 none
+expect-text 002 U
+expect-text 128K PRG ROM
+expect-text DETAILED TEST RESULT: 0000
+end
+
+entry mapperel-m3-p32k-c32k-h
+rom ../../third_party/holy-mapperel/testroms/M3_P32K_C32K_H.nes
+font a1
+run 1200 none
+expect-text 003 CNROM
+expect-text 32K PRG ROM
+expect-text 32K CHR ROM OK
+expect-text DETAILED TEST RESULT: 0000
+end

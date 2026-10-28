@@ -238,6 +238,9 @@ private:
     static bool sTablesBuilt;
 
     static void buildTables(); // one-time double-precision table init
+
+    // Output-rate-derived one-pole coefficients only; leaves stream state.
+    void computeFilterCoefficients();
 };
 
 } // namespace cutenes

@@ -307,8 +307,11 @@ void Apu::loadState(StateReader& r)
         r.getBytes(reinterpret_cast<std::uint8_t*>(m_native.data()),
             nativeCount * 2);
     }
-    // Rebuild the mixer/resampler filter coefficients (config-derived).
-    setOutputRate(m_outRate);
+    // Rebuild the filter coefficients (config-derived) without touching the
+    // streaming state just restored: resetting it would restart the
+    // resampler and drop pending samples, so audio after a restore would
+    // differ from an uninterrupted run.
+    computeFilterCoefficients();
 }
 
 void Apu::reset(bool cold)
@@ -396,6 +399,17 @@ void Apu::reset(bool cold)
 void Apu::setOutputRate(std::uint32_t rate)
 {
     m_outRate = rate;
+    computeFilterCoefficients();
+    // Reset the streaming state deterministically for the new ratio.
+    m_nextOutNum = 0;
+    m_historyCount = 0;
+    m_history.fill(0);
+    m_native.clear();
+}
+
+void Apu::computeFilterCoefficients()
+{
+    const std::uint32_t rate = m_outRate;
     // One-pole coefficients (Q30), computed once per configuration — double
     // is allowed here, never in the emulated path (research.md D7).
     const auto alphaQ30 = [rate](double hz) {
@@ -407,11 +421,6 @@ void Apu::setOutputRate(std::uint32_t rate)
     m_hpf1B = alphaQ30(90.0);
     m_hpf2B = alphaQ30(440.0);
     m_lpfB = alphaQ30(14000.0);
-    // Reset the streaming state deterministically for the new ratio.
-    m_nextOutNum = 0;
-    m_historyCount = 0;
-    m_history.fill(0);
-    m_native.clear();
 }
 
 void Apu::setAudioSink(IAudioSink* sink) { m_sink = sink; }

@@ -15,6 +15,9 @@
 #                             CPU-visible byte (side-effect free) must equal value
 #   expect-changes <n>        at least n frame-to-frame screen changes during
 #                             the most recent run
+#   font <ascii|a1>           how expect-text decodes tiles: ascii (default) or
+#                             a1 (codes 1..26 are letters A..Z, other printable
+#                             ASCII as-is)
 #   end                       end of entry
 #
 # Commercial titles are not checked in. Keep local copies under the
