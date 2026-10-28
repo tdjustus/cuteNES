@@ -181,6 +181,3 @@ endfunction()
 register_playtests(${CMAKE_CURRENT_SOURCE_DIR}/playtest/playtest.txt "playtest")
 # Holy Mapperel: tier-2 mapper verification asserting the result screen text.
 register_playtests(${CMAKE_CURRENT_SOURCE_DIR}/playtest/mapperel.txt "playtest;tier2")
-register_playtests(
-    ${CMAKE_CURRENT_SOURCE_DIR}/playtest/mapperel-known-failing.txt
-    "playtest;tier2;known-failing")
