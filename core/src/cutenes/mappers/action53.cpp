@@ -70,20 +70,23 @@ public:
         }
     }
 
+    // Mode bits 0-1: 0/1 = one-screen (page from bit 4 of the last CHR or
+    // inner-bank write, AxROM style), 2 = vertical, 3 = horizontal.
     Mirroring mirroring() const override
     {
         switch (m_mode & 3) {
-        case 0: // 1-screen, page from bit 0 (AxROM style)
-            return (m_oneScreen & 1) != 0 ? Mirroring::Horizontal
-                                          : Mirroring::Vertical;
-        case 1:
-            return (m_oneScreen & 1) != 0 ? Mirroring::Horizontal
-                                          : Mirroring::Vertical;
-        case 2:
-            return Mirroring::Vertical;
-        default:
-            return Mirroring::Horizontal;
+        case 2: return Mirroring::Vertical;
+        case 3: return Mirroring::Horizontal;
+        default: return Mirroring::MapperControlled;
         }
+    }
+
+    NtSource ntSource(std::uint16_t /*addr*/) const override
+    {
+        if ((m_mode & 3) > 1) {
+            return NtSource::Default;
+        }
+        return (m_oneScreen & 1) != 0 ? NtSource::Ciram1 : NtSource::Ciram0;
     }
 
     std::uint8_t chrRead(std::uint16_t addr) const override

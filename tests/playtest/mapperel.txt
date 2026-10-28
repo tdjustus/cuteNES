@@ -6,7 +6,7 @@
 #
 # Name key: M<mapper>_P<PRG ROM>_C<CHR ROM> | CR<CHR RAM>, S<battery RAM>,
 # W<work RAM>, _V/_H fixed mirroring. No S/W means no PRG RAM.
-# These pass today.
+# These pass today (NROM/UNROM/CNROM, and the MMC1 boards with declared WRAM).
 
 entry mapperel-m0-p32k-c8k-v
 rom ../../third_party/holy-mapperel/testroms/M0_P32K_C8K_V.nes
@@ -65,4 +65,26 @@ expect-text 003 CNROM
 expect-text 32K PRG ROM
 expect-text 32K CHR ROM OK
 expect-text DETAILED TEST RESULT: 0000
+end
+
+entry mapperel-m1-p128k-c128k-w8k
+rom ../../third_party/holy-mapperel/testroms/M1_P128K_C128K_W8K.nes
+font a1
+run 1200 none
+expect-text 001 S
+expect-text 128K PRG ROM
+expect-text 128K CHR ROM OK
+expect-text DETAILED TEST RESULT: 0000
+expect-text 8K PRG RAM OK
+end
+
+entry mapperel-m1-p128k-c32k-w8k
+rom ../../third_party/holy-mapperel/testroms/M1_P128K_C32K_W8K.nes
+font a1
+run 1200 none
+expect-text 001 S
+expect-text 128K PRG ROM
+expect-text 32K CHR ROM OK
+expect-text DETAILED TEST RESULT: 0000
+expect-text 8K PRG RAM OK
 end
