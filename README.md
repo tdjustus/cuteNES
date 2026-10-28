@@ -100,28 +100,28 @@ that never exercises the divergent cases.
 
 - Constitution: `.specify/memory/constitution.md`
 - Feature specs & plans: `specs/`
+- Source control, CI and releases: `docs/source-control.md`
 - Licensing: MIT for project code (see LICENSE); test-ROM provenance in
   `third_party/NOTICE.md`.
 
 ### Branching & merging
 
-`main` is always green: every change lands through a branch and a pull
-request, merged only after the CI matrix (ubuntu/macos/windows x
-Release/Debug plus UBSan) passes.
+The full strategy is in [`docs/source-control.md`](docs/source-control.md).
+In short:
 
-- Branch from `main` as `<kind>/<slug>`: `feat/`, `fix/`, `docs/`,
-  `test/`, `chore/` (matching the commit-prefix convention).
-- One logical change per branch; keep commits prefixed the same way
-  (`feat(api): ...`).
-- Open a PR against `main`; CI runs the full gate including the
-  cross-platform `golden-hashes` audit. Do not self-merge while the
-  matrix is red.
-- Merge with a merge commit (no squash) to preserve per-change commit
-  messages, then delete the branch.
-- Tags (`core-v0.1.0`, ...) are cut from `main` only after its CI run is
-  green.
-- Never push directly to `main`; hotfixes follow the same path on
-  `fix/`.
+- `main` is protected and always green. Every change lands through a pull
+  request from a `<kind>/<slug>` branch (`feature/`, `fix/`, `docs/`,
+  `test/`, `chore/`), merged with a merge commit once the `ci-ok` check
+  passes and the branch is up to date. Merged branches are deleted
+  automatically.
+- One branch at a time: each is merged before the next one starts, and
+  branches are never stacked.
+- CI runs on pull requests, on `core-v*` tags and weekly, not on every push
+  and not again after the merge.
+- Known bugs and roadmapped features are tracked in the GitHub milestone
+  **1.0**. Version 1.0 ships when that milestone is empty.
+- After 1.0, work moves to a long-lived `development` branch (never
+  deleted) and each release merges `development` into `main`.
 
 ## Status
 

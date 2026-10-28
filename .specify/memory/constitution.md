@@ -106,13 +106,17 @@ determinism keep the GUI and automation surfaces from diverging.
 - Every change MUST pass: the automated test suite (Principle III), CI builds on all
   three platforms (Principle IV), and review by at least one maintainer for core
   changes.
+- Source control, CI and release management follow `docs/source-control.md`:
+  one branch at a time, each merged before the next begins; known bugs and
+  roadmapped features are tracked in the GitHub milestone for the next
+  release; version 1.0 is released only when its milestone has no open issues.
 - Hot paths (CPU/PPU/APU stepping) MAY be optimized only after correctness is locked
   by tests, and optimizations MUST NOT regress real-time performance as measured by
   the project's benchmarks.
 - New core components MUST be documented in code, with hardware citations per
   Principle I.
-- Release gates: full test ROM suite passes, MCP schema validates, and all
-  cross-platform builds are green.
+- Release gates: full test ROM suite passes, MCP schema validates, all
+  cross-platform builds are green, and the release milestone has no open issues.
 
 ## Governance
 
@@ -127,4 +131,4 @@ determinism keep the GUI and automation surfaces from diverging.
 - Feature scope decisions are governed by the specs that reference this constitution;
   expanding scope requires amending the relevant spec, not silent addition.
 
-**Version**: 1.0.1 | **Ratified**: 2026-10-17 | **Last Amended**: 2026-10-17
+**Version**: 1.1.0 | **Ratified**: 2026-10-17 | **Last Amended**: 2026-10-27
