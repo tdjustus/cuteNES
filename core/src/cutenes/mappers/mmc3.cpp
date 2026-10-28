@@ -117,7 +117,7 @@ public:
         if (m_cart.chr.empty()) { // CHR-RAM
             return m_cart.chrRam.empty()
                 ? 0
-                : m_cart.chrRam[addr & (m_cart.chrRam.size() - 1)];
+                : m_cart.chrRam[chrOffset(addr) % m_cart.chrRam.size()];
         }
         return m_cart.chr[chrOffset(addr) % m_cart.chr.size()];
     }
@@ -214,22 +214,25 @@ public:
 
 private:
     // Pattern-bank offset for a PPU address under the current CHR mode.
+    // CHR layout in 1K windows (nesdev MMC3, "Bank select"): with bank-select
+    // bit 7 clear, R0/R1 are 2K banks at $0000/$0800 (low bit ignored) and
+    // R2-R5 are 1K banks at $1000/$1400/$1800/$1C00; with bit 7 set the two
+    // halves swap (R2-R5 at $0000-$0FFF, R0/R1 at $1000/$1800).
     std::size_t chrOffset(std::uint16_t addr) const
     {
-        if ((mBankMode & 0x80) == 0) {
-            // 2K mode: R0 -> $0000-$0FFF, R1 -> $1000-$1FFF (register bit
-            // 7 selects the inner 1K pair).
-            const std::uint8_t reg = addr < 0x1000 ? mChr[0] : mChr[1];
-            const std::size_t pair = static_cast<std::size_t>(reg & 0x7E);
-            const std::size_t inner = (addr >> 10) & 1;
-            return (pair * 2 + ((reg >> 7) & 1) * 2 + inner) * 1024
-                + (addr & 0x3FF);
+        std::size_t slot = (addr >> 10) & 7;
+        if ((mBankMode & 0x80) != 0) {
+            slot ^= 4; // swap the 4K halves
         }
-        // 1K mode: R2/R3 -> $0000/$0400, R4/R5 -> $1000/$1400.
-        const std::size_t idx = static_cast<std::size_t>(
-            (addr < 0x1000 ? 2 : 4) + ((addr >> 10) & 1));
-        return static_cast<std::size_t>(mChr[idx]) * 1024
-            + (addr & 0x3FF);
+        std::size_t bank;
+        switch (slot) {
+        case 0: bank = mChr[0] & 0xFE; break;
+        case 1: bank = mChr[0] | 0x01; break;
+        case 2: bank = mChr[1] & 0xFE; break;
+        case 3: bank = mChr[1] | 0x01; break;
+        default: bank = mChr[slot - 2]; break; // slots 4-7 = R2-R5
+        }
+        return bank * 1024 + (addr & 0x3FF);
     }
 
     std::uint8_t mBankMode = 0;

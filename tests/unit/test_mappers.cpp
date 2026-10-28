@@ -13,7 +13,7 @@ namespace {
 // PRG-RAM. Mapper and PRG bank count are parameterized for the revision
 // tests (mapper 155 = MMC1A; 16 banks = 256 KiB for the A17 bypass).
 std::vector<std::uint8_t> makeMmc1Rom(std::uint16_t mapper = 1,
-    int prgBanks = 8)
+    int prgBanks = 8, int ramBanks = 0)
 {
     std::vector<std::uint8_t> rom{
         'N', 'E', 'S', 0x1A,
@@ -23,6 +23,7 @@ std::vector<std::uint8_t> makeMmc1Rom(std::uint16_t mapper = 1,
     // 7-4 (byte 7 bit 3 is the NES 2.0 flag — keep it clear).
     rom[6] = static_cast<std::uint8_t>((rom[6] & 0x0F) | (mapper << 4));
     rom[7] = static_cast<std::uint8_t>(mapper & 0xF0);
+    rom[8] = static_cast<std::uint8_t>(ramBanks); // iNES PRG-RAM, 8K units
     const std::size_t prgSize = static_cast<std::size_t>(prgBanks) * 16384;
     const std::size_t chrSize = 16 * 4096;
     rom.resize(16 + prgSize + chrSize, 0);
@@ -40,8 +41,9 @@ struct Mmc1Harness {
     cutenes::Cartridge cart;
     cutenes::Scheduler sched{cutenes::regionProfile(cutenes::Region::Ntsc)};
 
-    explicit Mmc1Harness(std::uint16_t mapper = 1, int prgBanks = 8)
-        : rom(makeMmc1Rom(mapper, prgBanks))
+    explicit Mmc1Harness(std::uint16_t mapper = 1, int prgBanks = 8,
+        int ramBanks = 0)
+        : rom(makeMmc1Rom(mapper, prgBanks, ramBanks))
     {
         const auto result = cutenes::Cartridge::load(rom.data(), rom.size(), cart);
         EXPECT_EQ(result.error, cutenes::LoadError::Ok);
@@ -244,6 +246,69 @@ TEST(Mmc1, ConsecutiveCycleWriteDataBitIgnoredButResetNever)
     EXPECT_EQ(h.prgAt(0xC000), 7);
 }
 
+// --- MMC1 large boards (SUROM 512K PRG, SXROM 32K WRAM) -----------------------
+
+// SUROM: with more than 256K of PRG, bit 4 of the CHR bank 0 register picks
+// which 256K half every PRG window shows (it drives PRG A18); the fixed bank
+// is the last bank of the selected half.
+TEST(Mmc1, SuromChrBitFourSelectsThe256KPrgHalf)
+{
+    Mmc1Harness h(1, 32); // 512 KiB PRG: 32 x 16K, bank index in byte 0
+    h.serialWrite(0xE000, 3);
+    EXPECT_EQ(h.prgAt(0x8000), 3);
+    EXPECT_EQ(h.prgAt(0xC000), 15) << "fixed bank of the lower half";
+
+    h.serialWrite(0xA000, 0x10);
+    EXPECT_EQ(h.prgAt(0x8000), 16 + 3);
+    EXPECT_EQ(h.prgAt(0xC000), 31) << "fixed bank of the upper half";
+
+    h.serialWrite(0xA000, 0x00);
+    EXPECT_EQ(h.prgAt(0x8000), 3);
+}
+
+TEST(Mmc1, SuromHalfSelectAppliesInThirtyTwoKilobyteMode)
+{
+    Mmc1Harness h(1, 32);
+    h.serialWrite(0x8000, 0x00); // PRG mode 0: 32K switchable (also 1-screen)
+    h.serialWrite(0xE000, 4);    // 32K pair = banks 4,5
+    h.serialWrite(0xA000, 0x10);
+    EXPECT_EQ(h.prgAt(0x8000), 16 + 4);
+    EXPECT_EQ(h.prgAt(0xC000), 16 + 5);
+}
+
+TEST(Mmc1, ChrBitFourDoesNotBankA256KBoard)
+{
+    Mmc1Harness h(1, 16); // 256 KiB: bit 4 has no PRG A18 to drive
+    h.serialWrite(0xE000, 3);
+    h.serialWrite(0xA000, 0x10);
+    EXPECT_EQ(h.prgAt(0x8000), 3);
+    EXPECT_EQ(h.prgAt(0xC000), 15);
+}
+
+// SXROM: with 32K of WRAM, CHR bank 0 bits 2-3 select the 8K bank at $6000.
+TEST(Mmc1, SxromChrBitsSelectTheWramBank)
+{
+    Mmc1Harness h(1, 8, 4); // 4 x 8K = 32K PRG-RAM
+    h.cart.cpuWrite(0x6000, 0x11);
+    h.serialWrite(0xA000, 0x04); // WRAM bank 1
+    EXPECT_EQ(h.cart.cpuRead(0x6000), 0x00) << "bank 1 is separate storage";
+    h.cart.cpuWrite(0x6000, 0x22);
+    h.serialWrite(0xA000, 0x0C); // WRAM bank 3
+    EXPECT_EQ(h.cart.cpuRead(0x6000), 0x00);
+    h.serialWrite(0xA000, 0x00); // back to bank 0
+    EXPECT_EQ(h.cart.cpuRead(0x6000), 0x11);
+    h.serialWrite(0xA000, 0x04);
+    EXPECT_EQ(h.cart.cpuRead(0x6000), 0x22);
+}
+
+TEST(Mmc1, EightKilobyteWramIgnoresTheBankBits)
+{
+    Mmc1Harness h(1, 8, 1);
+    h.cart.cpuWrite(0x6000, 0x33);
+    h.serialWrite(0xA000, 0x0C);
+    EXPECT_EQ(h.cart.cpuRead(0x6000), 0x33);
+}
+
 // --- MMC1 mirroring --------------------------------------------------------
 
 TEST(Mmc1, ControlBitsSelectVerticalOrHorizontalMirroring)
@@ -332,25 +397,31 @@ namespace {
 
 // MMC3 board: 256 KiB PRG (32 x 8K, each bank's first byte = its index),
 // 8 KiB CHR.
-std::vector<std::uint8_t> makeMmc3Rom()
+// chrBanks8k: CHR ROM size in 8K units (0 = CHR-RAM). Every 1K CHR bank's
+// first byte holds its 1K bank index.
+std::vector<std::uint8_t> makeMmc3Rom(int chrBanks8k = 1)
 {
     std::vector<std::uint8_t> rom{
-        'N', 'E', 'S', 0x1A, 16, 1,
+        'N', 'E', 'S', 0x1A, 16, static_cast<std::uint8_t>(chrBanks8k),
         0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     const std::size_t prgSize = 32 * 8192;
-    const std::size_t chrSize = 8192;
+    const std::size_t chrSize = static_cast<std::size_t>(chrBanks8k) * 8192;
     rom.resize(16 + prgSize + chrSize, 0);
     for (std::size_t bank = 0; bank < 32; ++bank) {
         rom[16 + bank * 8192] = static_cast<std::uint8_t>(bank);
+    }
+    for (std::size_t bank = 0; bank < chrSize / 1024; ++bank) {
+        rom[16 + prgSize + bank * 1024] = static_cast<std::uint8_t>(bank);
     }
     return rom;
 }
 
 struct Mmc3Harness {
-    std::vector<std::uint8_t> rom = makeMmc3Rom();
+    std::vector<std::uint8_t> rom;
     // submapper > 0 promotes the header to NES 2.0 (byte 7 bit 3, byte 13
     // low nibble) so mapper 4 can select the MMC3 revision.
-    explicit Mmc3Harness(int submapper = 0)
+    explicit Mmc3Harness(int submapper = 0, int chrBanks8k = 1)
+        : rom(makeMmc3Rom(chrBanks8k))
     {
         if (submapper > 0) {
             rom[7] = static_cast<std::uint8_t>((rom[7] & 0xF0) | 0x08);
@@ -368,9 +439,81 @@ struct Mmc3Harness {
     }
 
     std::uint8_t prgAt(std::uint16_t addr) { return cart.cpuRead(addr); }
+    std::uint8_t chrAt(std::uint16_t addr) { return cart.chrRead(addr); }
 };
 
 } // namespace
+
+// --- MMC3 CHR banking ---------------------------------------------------------
+// Normal layout (bank-select bit 7 = 0): R0/R1 are 2K banks at $0000/$0800
+// (the low bit is ignored), R2-R5 are 1K banks at $1000/$1400/$1800/$1C00.
+// Inverted (bit 7 = 1): R2-R5 fill $0000-$0FFF, R0/R1 sit at $1000/$1800.
+
+TEST(Mmc3, ChrNormalLayoutPutsTwoKilobyteBanksLow)
+{
+    Mmc3Harness h(0, 8); // 64K CHR = 64 x 1K banks
+    h.select(0, 8);
+    h.select(1, 12);
+    h.select(2, 20);
+    h.select(3, 21);
+    h.select(4, 22);
+    h.select(5, 23);
+    EXPECT_EQ(h.chrAt(0x0000), 8);
+    EXPECT_EQ(h.chrAt(0x0400), 9) << "R0 covers two 1K banks";
+    EXPECT_EQ(h.chrAt(0x0800), 12);
+    EXPECT_EQ(h.chrAt(0x0C00), 13);
+    EXPECT_EQ(h.chrAt(0x1000), 20);
+    EXPECT_EQ(h.chrAt(0x1400), 21);
+    EXPECT_EQ(h.chrAt(0x1800), 22);
+    EXPECT_EQ(h.chrAt(0x1C00), 23);
+}
+
+TEST(Mmc3, ChrTwoKilobyteRegistersIgnoreTheirLowBit)
+{
+    Mmc3Harness h(0, 8);
+    h.select(0, 9);  // odd: still the pair 8,9
+    h.select(1, 13); // odd: still the pair 12,13
+    EXPECT_EQ(h.chrAt(0x0000), 8);
+    EXPECT_EQ(h.chrAt(0x0400), 9);
+    EXPECT_EQ(h.chrAt(0x0800), 12);
+    EXPECT_EQ(h.chrAt(0x0C00), 13);
+}
+
+TEST(Mmc3, ChrInvertedLayoutSwapsTheHalves)
+{
+    Mmc3Harness h(0, 8);
+    h.cart.cpuWrite(0x8000, 0x80); // bank-select bit 7 set, register 0
+    auto set = [&](std::uint8_t reg, std::uint8_t data) {
+        h.cart.cpuWrite(0x8000, static_cast<std::uint8_t>(0x80 | reg));
+        h.cart.cpuWrite(0x8001, data);
+    };
+    set(0, 8);
+    set(1, 12);
+    set(2, 20);
+    set(3, 21);
+    set(4, 22);
+    set(5, 23);
+    EXPECT_EQ(h.chrAt(0x0000), 20);
+    EXPECT_EQ(h.chrAt(0x0400), 21);
+    EXPECT_EQ(h.chrAt(0x0800), 22);
+    EXPECT_EQ(h.chrAt(0x0C00), 23);
+    EXPECT_EQ(h.chrAt(0x1000), 8);
+    EXPECT_EQ(h.chrAt(0x1400), 9);
+    EXPECT_EQ(h.chrAt(0x1800), 12);
+    EXPECT_EQ(h.chrAt(0x1C00), 13);
+}
+
+TEST(Mmc3, ChrRamReadsSeeWhatWritesStored)
+{
+    Mmc3Harness h(0, 0); // CHR-RAM (8K)
+    h.select(2, 3);      // 1K bank 3 at $1000
+    h.cart.chrWrite(0x1000, 0x5A);
+    EXPECT_EQ(h.chrAt(0x1000), 0x5A) << "read must use the same banking";
+    h.select(2, 4);
+    EXPECT_NE(h.chrAt(0x1000), 0x5A) << "a different bank, different storage";
+    h.select(2, 3);
+    EXPECT_EQ(h.chrAt(0x1000), 0x5A);
+}
 
 TEST(Mmc3, ModeZeroFixesSecondLastAndLastBanks)
 {

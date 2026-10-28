@@ -51,6 +51,13 @@ public:
     // PRG-RAM read gate: false = the RAM is disconnected (reads return the
     // floating-bus convention, writes dropped). MMC1B's $E000 bit 4.
     virtual bool prgRamReadable() const { return true; }
+    // Offset into the PRG-RAM array for a $6000-$7FFF access (`ramSize` > 0).
+    // Boards with banked WRAM (MMC1 SXROM) override; the default mirrors.
+    virtual std::size_t prgRamOffset(std::uint16_t addr,
+        std::size_t ramSize) const
+    {
+        return addr % ramSize;
+    }
 
     // --- Mapper-owned low CPU space ($4020-$7FFF) ---------------------------
     // MMC5 decodes its registers at $5000-$5FFF, ExRAM at $5C00-$5FFF and a

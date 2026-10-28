@@ -165,6 +165,43 @@ TEST(Nes2, ParsesRegionAndPrgRamShift)
     EXPECT_EQ(cart.info.prgRamSize, 8192u);
 }
 
+// NES 2.0 byte 10: low nibble = volatile PRG-RAM shift, high nibble = battery
+// (NVRAM) shift. A shift of 0 means "none", not 64 bytes.
+TEST(Nes2, PrgRamShiftZeroMeansNoRam)
+{
+    auto rom = makeNes2(1, 1, 0, 0, 0x00);
+    cutenes::Cartridge cart;
+    ASSERT_EQ(cutenes::Cartridge::load(rom.data(), rom.size(), cart).error,
+        cutenes::LoadError::Ok);
+    EXPECT_EQ(cart.info.prgRamSize, 0u);
+    EXPECT_TRUE(cart.prgRam.empty());
+}
+
+TEST(Nes2, BatteryRamSizeComesFromTheHighNibble)
+{
+    auto rom = makeNes2(1, 1, 0, 0, 0x70); // NVRAM 64<<7 = 8K, no volatile
+    cutenes::Cartridge cart;
+    ASSERT_EQ(cutenes::Cartridge::load(rom.data(), rom.size(), cart).error,
+        cutenes::LoadError::Ok);
+    EXPECT_EQ(cart.info.prgRamSize, 8192u);
+    EXPECT_TRUE(cart.info.battery) << "NVRAM implies a battery";
+
+    auto big = makeNes2(1, 1, 0, 0, 0x90); // 64<<9 = 32K
+    cutenes::Cartridge bigCart;
+    ASSERT_EQ(cutenes::Cartridge::load(big.data(), big.size(), bigCart).error,
+        cutenes::LoadError::Ok);
+    EXPECT_EQ(bigCart.info.prgRamSize, 32768u);
+}
+
+TEST(Nes2, VolatileAndBatteryRamAreAdded)
+{
+    auto rom = makeNes2(1, 1, 0, 0, 0x77); // 8K volatile + 8K NVRAM
+    cutenes::Cartridge cart;
+    ASSERT_EQ(cutenes::Cartridge::load(rom.data(), rom.size(), cart).error,
+        cutenes::LoadError::Ok);
+    EXPECT_EQ(cart.info.prgRamSize, 16384u);
+}
+
 TEST(Nes2, ChrRamShiftSizing)
 {
     auto rom = makeNes2(1, 0, 0, 0, 0, 0, 9); // 64 << 9 = 32K CHR-RAM

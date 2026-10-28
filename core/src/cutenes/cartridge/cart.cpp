@@ -22,7 +22,8 @@ std::uint8_t Cartridge::cpuRead(std::uint16_t addr)
             || (mapper && !mapper->prgRamReadable())) {
             return 0;
         }
-        return prgRam[addr % prgRam.size()];
+        return prgRam[mapper ? mapper->prgRamOffset(addr, prgRam.size())
+                             : addr % prgRam.size()];
     }
     return mapper ? mapper->cpuRead(addr) : 0;
 }
@@ -36,7 +37,8 @@ void Cartridge::cpuWrite(std::uint16_t addr, std::uint8_t value)
         }
         if (addr >= 0x6000 && !prgRam.empty()
             && (!mapper || mapper->prgRamWritable())) {
-            prgRam[addr % prgRam.size()] = value;
+            prgRam[mapper ? mapper->prgRamOffset(addr, prgRam.size())
+                          : addr % prgRam.size()] = value;
         }
         return;
     }
