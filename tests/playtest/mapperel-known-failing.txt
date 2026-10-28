@@ -11,50 +11,7 @@
 # `ctest -L known-failing`). Each entry states the correct hardware result;
 # it fails because the emulator disagrees. Move an entry to mapperel.txt when
 # it is fixed.
-#  - MMC1 SUROM (512K PRG): detailed result 0300 instead of 0000.
 #  - MMC3 (M4_*): the ROM never draws a result screen.
-entry mapperel-m1-p512k-cr8k-s32k
-rom ../../third_party/holy-mapperel/testroms/M1_P512K_CR8K_S32K.nes
-font a1
-run 1200 none
-expect-text 001 S
-expect-text 512K PRG ROM
-expect-text 8K CHR RAM OK
-expect-text DETAILED TEST RESULT: 0000
-expect-text 32K PRG RAM OK
-end
-
-entry mapperel-m1-p512k-cr8k-s8k
-rom ../../third_party/holy-mapperel/testroms/M1_P512K_CR8K_S8K.nes
-font a1
-run 1200 none
-expect-text 001 S
-expect-text 512K PRG ROM
-expect-text 8K CHR RAM OK
-expect-text DETAILED TEST RESULT: 0000
-expect-text 8K PRG RAM OK
-end
-
-entry mapperel-m1-p512k-s32k
-rom ../../third_party/holy-mapperel/testroms/M1_P512K_S32K.nes
-font a1
-run 1200 none
-expect-text 001 S
-expect-text 512K PRG ROM
-expect-text DETAILED TEST RESULT: 0000
-expect-text 32K PRG RAM OK
-end
-
-entry mapperel-m1-p512k-s8k
-rom ../../third_party/holy-mapperel/testroms/M1_P512K_S8K.nes
-font a1
-run 1200 none
-expect-text 001 S
-expect-text 512K PRG ROM
-expect-text DETAILED TEST RESULT: 0000
-expect-text 8K PRG RAM OK
-end
-
 entry mapperel-m4-p128k
 rom ../../third_party/holy-mapperel/testroms/M4_P128K.nes
 font a1

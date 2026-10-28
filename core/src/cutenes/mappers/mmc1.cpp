@@ -174,22 +174,41 @@ private:
         return static_cast<std::size_t>(bank & 0x1F) * 4096 + (addr & 0x0FFF);
     }
 
+    // SUROM (more than 256K PRG): CHR bank 0 bit 4 drives PRG A18, picking
+    // the 256K half all windows show; the 4-bit PRG register then selects
+    // within that half, and the fixed bank is the last bank of the half.
     std::size_t prgBankFor(std::uint16_t addr) const
     {
         const std::size_t banks = m_cart.prg.size() / 0x4000;
+        const std::size_t window = banks > 16 ? 16 : banks; // reachable by $E000
+        const std::size_t outer =
+            banks > 16 ? ((m_chrBank0 >> 4) & 1) * 16 : 0;
         const std::uint8_t mode = (m_control >> 2) & 3;
-        const std::size_t bank = m_prgBank & (banks > 0 ? banks - 1 : 0);
+        const std::size_t mask = window > 0 ? window - 1 : 0;
+        const std::size_t bank = m_prgBank & mask;
         switch (mode) {
         case 0:
         case 1: { // 32K switchable at $8000
-            const std::size_t b32 = (m_prgBank & 0x0E) & (banks - 1);
-            return (addr < 0xC000) ? b32 : (b32 + 1) & (banks - 1);
+            const std::size_t b32 = (m_prgBank & 0x0E) & mask;
+            return outer + ((addr < 0xC000) ? b32 : (b32 + 1) & mask);
         }
         case 2: // 16K fixed low, switchable high
-            return (addr < 0xC000) ? fixedBank(banks, 0) : bank;
+            return outer + ((addr < 0xC000) ? fixedBank(window, 0) : bank);
         default: // 3: switchable low, fixed high
-            return (addr < 0xC000) ? bank : fixedBank(banks, banks - 1);
+            return outer
+                + ((addr < 0xC000) ? bank : fixedBank(window, window - 1));
         }
+    }
+
+    // SXROM (more than 8K WRAM): CHR bank 0 bits 2-3 select the 8K bank.
+    std::size_t prgRamOffset(std::uint16_t addr,
+        std::size_t ramSize) const override
+    {
+        if (ramSize > 0x2000) {
+            const std::size_t bank = (m_chrBank0 >> 2) & 3;
+            return (bank * 0x2000 + (addr & 0x1FFF)) % ramSize;
+        }
+        return addr % ramSize;
     }
 
     // The fixed window's bank. On the MMC1A with the $E000 bypass bit set,

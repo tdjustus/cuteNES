@@ -13,7 +13,7 @@ namespace {
 // PRG-RAM. Mapper and PRG bank count are parameterized for the revision
 // tests (mapper 155 = MMC1A; 16 banks = 256 KiB for the A17 bypass).
 std::vector<std::uint8_t> makeMmc1Rom(std::uint16_t mapper = 1,
-    int prgBanks = 8)
+    int prgBanks = 8, int ramBanks = 0)
 {
     std::vector<std::uint8_t> rom{
         'N', 'E', 'S', 0x1A,
@@ -23,6 +23,7 @@ std::vector<std::uint8_t> makeMmc1Rom(std::uint16_t mapper = 1,
     // 7-4 (byte 7 bit 3 is the NES 2.0 flag — keep it clear).
     rom[6] = static_cast<std::uint8_t>((rom[6] & 0x0F) | (mapper << 4));
     rom[7] = static_cast<std::uint8_t>(mapper & 0xF0);
+    rom[8] = static_cast<std::uint8_t>(ramBanks); // iNES PRG-RAM, 8K units
     const std::size_t prgSize = static_cast<std::size_t>(prgBanks) * 16384;
     const std::size_t chrSize = 16 * 4096;
     rom.resize(16 + prgSize + chrSize, 0);
@@ -40,8 +41,9 @@ struct Mmc1Harness {
     cutenes::Cartridge cart;
     cutenes::Scheduler sched{cutenes::regionProfile(cutenes::Region::Ntsc)};
 
-    explicit Mmc1Harness(std::uint16_t mapper = 1, int prgBanks = 8)
-        : rom(makeMmc1Rom(mapper, prgBanks))
+    explicit Mmc1Harness(std::uint16_t mapper = 1, int prgBanks = 8,
+        int ramBanks = 0)
+        : rom(makeMmc1Rom(mapper, prgBanks, ramBanks))
     {
         const auto result = cutenes::Cartridge::load(rom.data(), rom.size(), cart);
         EXPECT_EQ(result.error, cutenes::LoadError::Ok);
@@ -242,6 +244,69 @@ TEST(Mmc1, ConsecutiveCycleWriteDataBitIgnoredButResetNever)
     h.serialWrite(0xE000, 4);
     EXPECT_EQ(h.prgAt(0x8000), 4) << "reset applied on a consecutive cycle";
     EXPECT_EQ(h.prgAt(0xC000), 7);
+}
+
+// --- MMC1 large boards (SUROM 512K PRG, SXROM 32K WRAM) -----------------------
+
+// SUROM: with more than 256K of PRG, bit 4 of the CHR bank 0 register picks
+// which 256K half every PRG window shows (it drives PRG A18); the fixed bank
+// is the last bank of the selected half.
+TEST(Mmc1, SuromChrBitFourSelectsThe256KPrgHalf)
+{
+    Mmc1Harness h(1, 32); // 512 KiB PRG: 32 x 16K, bank index in byte 0
+    h.serialWrite(0xE000, 3);
+    EXPECT_EQ(h.prgAt(0x8000), 3);
+    EXPECT_EQ(h.prgAt(0xC000), 15) << "fixed bank of the lower half";
+
+    h.serialWrite(0xA000, 0x10);
+    EXPECT_EQ(h.prgAt(0x8000), 16 + 3);
+    EXPECT_EQ(h.prgAt(0xC000), 31) << "fixed bank of the upper half";
+
+    h.serialWrite(0xA000, 0x00);
+    EXPECT_EQ(h.prgAt(0x8000), 3);
+}
+
+TEST(Mmc1, SuromHalfSelectAppliesInThirtyTwoKilobyteMode)
+{
+    Mmc1Harness h(1, 32);
+    h.serialWrite(0x8000, 0x00); // PRG mode 0: 32K switchable (also 1-screen)
+    h.serialWrite(0xE000, 4);    // 32K pair = banks 4,5
+    h.serialWrite(0xA000, 0x10);
+    EXPECT_EQ(h.prgAt(0x8000), 16 + 4);
+    EXPECT_EQ(h.prgAt(0xC000), 16 + 5);
+}
+
+TEST(Mmc1, ChrBitFourDoesNotBankA256KBoard)
+{
+    Mmc1Harness h(1, 16); // 256 KiB: bit 4 has no PRG A18 to drive
+    h.serialWrite(0xE000, 3);
+    h.serialWrite(0xA000, 0x10);
+    EXPECT_EQ(h.prgAt(0x8000), 3);
+    EXPECT_EQ(h.prgAt(0xC000), 15);
+}
+
+// SXROM: with 32K of WRAM, CHR bank 0 bits 2-3 select the 8K bank at $6000.
+TEST(Mmc1, SxromChrBitsSelectTheWramBank)
+{
+    Mmc1Harness h(1, 8, 4); // 4 x 8K = 32K PRG-RAM
+    h.cart.cpuWrite(0x6000, 0x11);
+    h.serialWrite(0xA000, 0x04); // WRAM bank 1
+    EXPECT_EQ(h.cart.cpuRead(0x6000), 0x00) << "bank 1 is separate storage";
+    h.cart.cpuWrite(0x6000, 0x22);
+    h.serialWrite(0xA000, 0x0C); // WRAM bank 3
+    EXPECT_EQ(h.cart.cpuRead(0x6000), 0x00);
+    h.serialWrite(0xA000, 0x00); // back to bank 0
+    EXPECT_EQ(h.cart.cpuRead(0x6000), 0x11);
+    h.serialWrite(0xA000, 0x04);
+    EXPECT_EQ(h.cart.cpuRead(0x6000), 0x22);
+}
+
+TEST(Mmc1, EightKilobyteWramIgnoresTheBankBits)
+{
+    Mmc1Harness h(1, 8, 1);
+    h.cart.cpuWrite(0x6000, 0x33);
+    h.serialWrite(0xA000, 0x0C);
+    EXPECT_EQ(h.cart.cpuRead(0x6000), 0x33);
 }
 
 // --- MMC1 mirroring --------------------------------------------------------
