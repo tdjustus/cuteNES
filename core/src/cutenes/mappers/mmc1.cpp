@@ -132,15 +132,25 @@ public:
         }
     }
 
+    // Control bits 0-1: 0 = one-screen low page, 1 = one-screen high page,
+    // 2 = vertical, 3 = horizontal. The one-screen modes are served through
+    // ntSource() (all four slots on one CIRAM page).
     Mirroring mirroring() const override
     {
         switch (m_control & 3) {
-        case 0: return Mirroring::Vertical;    // one-screen lo uses NT $2000
-        case 1: return Mirroring::Horizontal;
-        case 2: return Mirroring::Vertical; // approximation: one-screen lo
-        case 3: return Mirroring::Horizontal; // approximation: one-screen hi
+        case 2: return Mirroring::Vertical;
+        case 3: return Mirroring::Horizontal;
+        default: return Mirroring::MapperControlled;
         }
-        return m_cart.info.mirroring;
+    }
+
+    NtSource ntSource(std::uint16_t /*addr*/) const override
+    {
+        switch (m_control & 3) {
+        case 0: return NtSource::Ciram0;
+        case 1: return NtSource::Ciram1;
+        default: return NtSource::Default;
+        }
     }
 
 private:

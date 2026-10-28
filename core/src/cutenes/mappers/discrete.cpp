@@ -29,7 +29,8 @@ public:
     std::uint8_t cpuRead(std::uint16_t addr) override
     {
         const std::size_t banks = m_cart.prg.size() / 0x8000;
-        const std::size_t bank = m_bank & (banks ? banks - 1 : 0);
+        // Bits 0-3 pick the PRG bank; bit 4 (mirroring page) is kept in m_bank.
+        const std::size_t bank = (m_bank & 0x0F) & (banks ? banks - 1 : 0);
         return m_cart.prg[(bank * 0x8000 + (addr & 0x7FFF))
             % m_cart.prg.size()];
     }
@@ -37,15 +38,19 @@ public:
     void cpuWrite(std::uint16_t addr, std::uint8_t value) override
     {
         if (addr >= 0x8000) {
-            m_bank = static_cast<std::uint8_t>(value & 0x0F);
+            m_bank = static_cast<std::uint8_t>(value & 0x1F);
         }
     }
 
-    // One-screen: the single physical nametable is selected by bit 4.
+    // One-screen: bit 4 selects which CIRAM page all four slots show.
     Mirroring mirroring() const override
     {
-        return (m_bank & 0x10) != 0 ? Mirroring::Horizontal
-                                    : Mirroring::Vertical;
+        return Mirroring::MapperControlled;
+    }
+
+    NtSource ntSource(std::uint16_t /*addr*/) const override
+    {
+        return (m_bank & 0x10) != 0 ? NtSource::Ciram1 : NtSource::Ciram0;
     }
 
     void saveState(StateWriter& w) const override
