@@ -363,32 +363,49 @@ TEST(AxRom, BankBitFourSelectsTheSingleNametablePage)
     expectOneScreen(h.cart, cutenes::Mapper::NtSource::Ciram1);
 }
 
-// Action 53's $5000 register select does not currently reach the mapper
-// through the cartridge (the bus only forwards low space to boards that own
-// it), so these drive the mapper object directly.
+// Action 53 registers are selected by a write to $5000-$5FFF and written at
+// $8000+. The select must reach the mapper through the cartridge.
 TEST(Action53, OneScreenModesPinEveryNametableToOnePage)
 {
     Mmc1Harness h(28, 8);
-    auto& m = *h.cart.mapper;
-    m.cpuWrite(0x5000, 0x80); // select the mode register
-    m.cpuWrite(0x8000, 0x00); // mode bits 0-1 = 0: one-screen
-    m.cpuWrite(0x5000, 0x01); // select the inner-bank register
-    m.cpuWrite(0x8000, 0x00); // bit 4 clear: low page
+    h.cart.cpuWrite(0x5000, 0x80); // select the mode register
+    h.cart.cpuWrite(0x8000, 0x02); // leave the power-on one-screen mode...
+    EXPECT_EQ(h.cart.ntSource(0x2000), cutenes::Mapper::NtSource::Default);
+    h.cart.cpuWrite(0x8000, 0x00); // ...and return: mode bits 0-1 = 0
+    h.cart.cpuWrite(0x5000, 0x01); // select the inner-bank register
+    h.cart.cpuWrite(0x8000, 0x00); // bit 4 clear: low page
     expectOneScreen(h.cart, cutenes::Mapper::NtSource::Ciram0);
-    m.cpuWrite(0x8000, 0x10); // bit 4 set: high page
+    h.cart.cpuWrite(0x8000, 0x10); // bit 4 set: high page
     expectOneScreen(h.cart, cutenes::Mapper::NtSource::Ciram1);
 }
 
 TEST(Action53, TwoScreenModesUseTheDefaultMapping)
 {
     Mmc1Harness h(28, 8);
-    auto& m = *h.cart.mapper;
-    m.cpuWrite(0x5000, 0x80);
-    m.cpuWrite(0x8000, 0x02); // vertical
+    h.cart.cpuWrite(0x5000, 0x80);
+    h.cart.cpuWrite(0x8000, 0x02); // vertical
     EXPECT_EQ(h.cart.ntSource(0x2000), cutenes::Mapper::NtSource::Default);
     EXPECT_EQ(h.cart.mirroring(), cutenes::Mirroring::Vertical);
-    m.cpuWrite(0x8000, 0x03); // horizontal
+    h.cart.cpuWrite(0x8000, 0x03); // horizontal
     EXPECT_EQ(h.cart.mirroring(), cutenes::Mirroring::Horizontal);
+}
+
+TEST(Action53, RegisterSelectDoesNotTakeOverPrgRam)
+{
+    Mmc1Harness h(28, 8, 1); // 8K PRG-RAM
+    h.cart.cpuWrite(0x6000, 0x4D);
+    EXPECT_EQ(h.cart.cpuRead(0x6000), 0x4D);
+    h.cart.cpuWrite(0x5000, 0x80);
+    h.cart.cpuWrite(0x6001, 0x2B);
+    EXPECT_EQ(h.cart.cpuRead(0x6001), 0x2B);
+}
+
+TEST(Action53, RegisterSelectIsWriteOnly)
+{
+    Mmc1Harness h(28, 8);
+    h.cart.cpuWrite(0x5000, 0x81);
+    EXPECT_NE(h.cart.cpuRead(0x5000), 0x81)
+        << "the select register cannot be read back";
 }
 
 // --- MMC3 PRG banking ---------------------------------------------------------

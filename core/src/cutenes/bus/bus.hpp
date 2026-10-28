@@ -19,6 +19,9 @@ public:
     // $4020-$5FFF decode claim (MMC5 registers/ExRAM). Devices that do not
     // override leave the range open bus, as on a stock NES.
     virtual bool decodesLowCpuSpace() const { return false; }
+    // $4020-$5FFF write-only registers (Action 53's $5000 select) that do not
+    // claim reads or the rest of the low space.
+    virtual bool decodesLowCpuWrites() const { return false; }
 };
 
 // CPU bus: 2KB work RAM with $0800 mirroring, register routing, and an
