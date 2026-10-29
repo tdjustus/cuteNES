@@ -32,14 +32,14 @@ public:
 
     std::uint8_t cpuRead(std::uint16_t addr) override
     {
-        if (addr >= 0x5000 && addr < 0x6000) {
-            return m_sel;
-        }
         if (addr >= 0x8000) {
             return prgByte(addr);
         }
         return 0;
     }
+
+    // The register select at $5000-$5FFF is write-only: reads are open bus.
+    bool decodesLowWrites() const override { return true; }
 
     void cpuWrite(std::uint16_t addr, std::uint8_t value) override
     {

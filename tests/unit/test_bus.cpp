@@ -16,6 +16,18 @@ struct FakeDevice final : cutenes::CpuBusDevice {
     std::pair<std::uint16_t, std::uint8_t> lastWrite{0, 0};
 };
 
+// A cartridge with a write-only register in $5000-$5FFF (Action 53) that does
+// not claim the whole low space.
+struct WriteOnlyLowDevice final : cutenes::CpuBusDevice {
+    std::uint8_t cpuRead(std::uint16_t) override { return 0xEE; }
+    void cpuWrite(std::uint16_t addr, std::uint8_t value) override
+    {
+        lastWrite = {addr, value};
+    }
+    bool decodesLowCpuWrites() const override { return true; }
+    std::pair<std::uint16_t, std::uint8_t> lastWrite{0, 0};
+};
+
 } // namespace
 
 TEST(Bus, RamMirrorsEvery0x800)
@@ -64,4 +76,26 @@ TEST(Bus, OpenBusLatchesLastValue)
     cutenes::Bus bus;
     bus.write(0x0000, 0x77); // RAM write latches the bus value
     EXPECT_EQ(bus.read(0x4020), 0x77); // 0x4020-0x5FFF unmapped: open bus
+}
+
+TEST(Bus, LowWriteOnlyDeviceReceivesWritesButReadsStayOpenBus)
+{
+    WriteOnlyLowDevice cart;
+    cutenes::Bus bus;
+    bus.attachCartridge(&cart);
+    bus.write(0x5000, 0x81);
+    EXPECT_EQ(cart.lastWrite.first, 0x5000u);
+    EXPECT_EQ(cart.lastWrite.second, 0x81);
+    bus.write(0x0000, 0x3C); // leave a known value on the data bus
+    (void)bus.read(0x0000);
+    EXPECT_EQ(bus.read(0x5000), 0x3C) << "reads at $5000 are open bus";
+}
+
+TEST(Bus, LowSpaceWritesAreDroppedByDefaultDevices)
+{
+    FakeDevice cart;
+    cutenes::Bus bus;
+    bus.attachCartridge(&cart);
+    bus.write(0x5000, 0x81);
+    EXPECT_EQ(cart.lastWrite.first, 0u) << "stock NES leaves $5000 unmapped";
 }

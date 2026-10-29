@@ -64,6 +64,10 @@ public:
     // banked 64K PRG-RAM at $6000-$7FFF. Boards that claim the range take
     // over the Cartridge's generic PRG-RAM window completely.
     virtual bool ownsLowSpace() const { return false; }
+    // Write-only registers in $4020-$5FFF (Action 53's $5000 select). Writes
+    // there are forwarded to cpuWrite(); reads stay open bus, and the generic
+    // PRG-RAM window at $6000-$7FFF is untouched (unlike ownsLowSpace()).
+    virtual bool decodesLowWrites() const { return false; }
 
     // --- Nametable source ($2000-$2FFF) -----------------------------------
     // MMC5's $5105 maps each 1K nametable slot to CIRAM page 0/1, ExRAM or

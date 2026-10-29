@@ -28,6 +28,10 @@ struct Cartridge final : CpuBusDevice {
     {
         return ownsLowSpace(); // MMC5's $5000-$5FFF registers/ExRAM
     }
+    bool decodesLowCpuWrites() const override
+    {
+        return mapper && mapper->decodesLowWrites(); // Action 53's $5000
+    }
 
     // PPU bus ($0000-$1FFF pattern tables).
     std::uint8_t chrRead(std::uint16_t addr) const;

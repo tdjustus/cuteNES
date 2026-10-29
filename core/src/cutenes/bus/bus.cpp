@@ -85,8 +85,11 @@ void Bus::write(std::uint16_t addr, std::uint8_t value)
             m_apuIo->cpuWrite(addr, value);
         }
     } else if (addr < 0x6000) {
-        // $4020-$5FFF: mapper decode space (MMC5); otherwise unmapped.
-        if (m_cartridge != nullptr && m_cartridge->decodesLowCpuSpace()) {
+        // $4020-$5FFF: mapper decode space (MMC5 registers, Action 53's
+        // write-only select); otherwise unmapped.
+        if (m_cartridge != nullptr
+            && (m_cartridge->decodesLowCpuSpace()
+                || m_cartridge->decodesLowCpuWrites())) {
             m_cartridge->cpuWrite(addr, value);
         }
     } else if (m_cartridge != nullptr) {

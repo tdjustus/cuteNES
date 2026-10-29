@@ -35,6 +35,13 @@ void Cartridge::cpuWrite(std::uint16_t addr, std::uint8_t value)
             mapper->cpuWrite(addr, value);
             return;
         }
+        if (addr < 0x6000) {
+            // $4020-$5FFF: only boards with write-only registers there.
+            if (mapper && mapper->decodesLowWrites()) {
+                mapper->cpuWrite(addr, value);
+            }
+            return;
+        }
         if (addr >= 0x6000 && !prgRam.empty()
             && (!mapper || mapper->prgRamWritable())) {
             prgRam[mapper ? mapper->prgRamOffset(addr, prgRam.size())
