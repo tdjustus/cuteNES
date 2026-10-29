@@ -20,7 +20,8 @@ add_executable(cutenes-core-tests
     unit/test_controllers.cpp
     unit/test_save_state.cpp
     unit/test_full_control.cpp
-    unit/test_mappers.cpp)
+    unit/test_mappers.cpp
+    unit/test_mappers_discrete.cpp)
 
 target_link_libraries(cutenes-core-tests PRIVATE
     cutenes-core::cutenes-core cutenes-core-internal gtest_main)

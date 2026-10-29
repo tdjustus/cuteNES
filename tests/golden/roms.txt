@@ -18,3 +18,7 @@ m22_chr_banking   ../roms/m22chrbankingtest/0-127.nes            300
 # Action 53 (mapper 28): the Streemerz bundle boots to its title screen
 # (verified by eye: logo and "Press Start Button").
 a53_streemerz     ../roms/other/Streemerz_bundle.nes             600
+
+# BNROM (mapper 34): the 240p Test Suite About page (verified by eye: full
+# credits text; before the 32K bank-select fix the panel was nearly empty).
+bnrom_240pee      ../roms/240pee/240pee-bnrom.nes                600
