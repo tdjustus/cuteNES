@@ -9,3 +9,4 @@ golden: mmc5_test_v2       last=f664d4ff audio=239538
 golden: mmc5_exram         last=ede3cbb4 audio=239538
 golden: mmc5_firefly       last=c8cd9c42 audio=239538
 golden: m22_chr_banking    last=fa374f1b audio=239538
+golden: a53_streemerz      last=faad14a0 audio=479143
