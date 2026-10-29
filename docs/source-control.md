@@ -60,6 +60,13 @@ Defined in `.github/workflows/build.yml`.
   runner-image drift; the tag run gates releases.
 - **Jobs:** Release on Linux, macOS and Windows; Windows Debug; one Linux
   ASan + UBSan job (`-O1`, assertions on).
+- **What each runs:** the Release jobs run the full suite on every PR. The slow
+  instrumented jobs (Windows Debug and ASan + UBSan) run only the fast groups
+  (`unit`, `tier1` including the golden hashes, `behavior`) on PRs; the
+  on-screen-verdict groups (`playtest`, `tier2`, `corpus`) take about five times
+  as long and mostly re-exercise the same code. Tags (`core-v*`) and the weekly
+  schedule run everything under every job, so the full instrumented suite still
+  gates a release.
 - **`ci-ok`** aggregates them and is the only required check. Docs-only PRs
   (no change under `core/`, `tests/`, `third_party/`, `CMakeLists.txt`,
   `.gitmodules` or `.github/`) skip the build, and `ci-ok` still passes.

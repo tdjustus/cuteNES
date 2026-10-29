@@ -77,8 +77,16 @@ jobs:
         run: cmake --build build
 
       # -j: playtest entries and test ROMs are independent processes.
-      - name: Test
+      # Debug builds are slow, so on pull requests they run only the fast
+      # groups (unit, tier1 incl. goldens, behavior); the full suite runs in
+      # every Release job on every PR, and in Debug on tags and the weekly run.
+      - name: Test (full)
+        if: matrix.buildtype == 'Release' || github.event_name != 'pull_request'
         run: ctest --test-dir build --output-on-failure -j 4 -LE known-failing
+
+      - name: Test (fast groups, Debug on pull requests)
+        if: matrix.buildtype == 'Debug' && github.event_name == 'pull_request'
+        run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior" -LE known-failing
 
   # Address + undefined-behavior sanitizers with assertions on. -O1 keeps
   # the instrumented run to minutes instead of the ~45 min of an -O0 build.
@@ -109,8 +117,16 @@ jobs:
       - name: Build
         run: cmake --build build
 
-      - name: Test
+      # Instrumented runs are ~5x slower: pull requests run the fast groups
+      # (unit, tier1 incl. goldens, behavior); tags and the weekly run
+      # execute everything.
+      - name: Test (full)
+        if: github.event_name != 'pull_request'
         run: ctest --test-dir build --output-on-failure -j 4 -LE known-failing
+
+      - name: Test (fast groups, pull requests)
+        if: github.event_name == 'pull_request'
+        run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior" -LE known-failing
 
   # The single required status check for branch protection. It passes when
   # the jobs above passed or were skipped (docs-only PRs), and fails if any
