@@ -521,3 +521,84 @@ TEST(Mmc5, ExRamIsReadWriteInModeTwoAndReadOnlyInModeThree)
     m.reg(0x5C00, 0x77);
     EXPECT_EQ(m.rd(0x5C00), 0x5A) << "writes are ignored in mode 3";
 }
+
+// --- MMC5 scanline IRQ (nesdev "MMC5": $5203, $5204) ---------------------------
+// $5203 holds the compare line, $5204 bit 7 enables the IRQ on write; reading
+// $5204 returns bit 7 = IRQ pending, bit 6 = in frame, and acknowledges the
+// pending flag.
+
+namespace {
+
+void renderLines(Mmc5& m, int from, int to, bool rendering = true)
+{
+    for (int line = from; line <= to; ++line) {
+        m.cart.onScanline(line, rendering);
+    }
+}
+
+} // namespace
+
+TEST(Mmc5, ScanlineIrqFiresAtTheCompareLineWhenEnabled)
+{
+    Mmc5 m;
+    m.reg(0x5203, 5);
+    m.reg(0x5204, 0x80);
+    renderLines(m, 0, 4);
+    EXPECT_FALSE(m.cart.irqLine());
+    renderLines(m, 5, 5);
+    EXPECT_TRUE(m.cart.irqLine());
+}
+
+TEST(Mmc5, PendingFlagIsReadableEvenWhenTheIrqIsDisabled)
+{
+    Mmc5 m;
+    m.reg(0x5203, 3);
+    m.reg(0x5204, 0x00); // disabled
+    renderLines(m, 0, 3);
+    EXPECT_FALSE(m.cart.irqLine());
+    EXPECT_NE(m.rd(0x5204) & 0x80, 0);
+}
+
+TEST(Mmc5, ReadingStatusAcknowledgesTheIrq)
+{
+    Mmc5 m;
+    m.reg(0x5203, 2);
+    m.reg(0x5204, 0x80);
+    renderLines(m, 0, 2);
+    ASSERT_TRUE(m.cart.irqLine());
+    EXPECT_NE(m.rd(0x5204) & 0x80, 0); // reports pending...
+    EXPECT_FALSE(m.cart.irqLine());    // ...and clears it
+    EXPECT_EQ(m.rd(0x5204) & 0x80, 0);
+}
+
+TEST(Mmc5, InFrameBitIsSetWhileRenderingAndClearInVblank)
+{
+    Mmc5 m;
+    EXPECT_EQ(m.rd(0x5204) & 0x40, 0);
+    renderLines(m, 0, 10);
+    EXPECT_NE(m.rd(0x5204) & 0x40, 0);
+    m.cart.onScanline(241, true); // vertical blank
+    EXPECT_EQ(m.rd(0x5204) & 0x40, 0);
+}
+
+TEST(Mmc5, InFrameBitStaysClearWhenRenderingIsOff)
+{
+    Mmc5 m;
+    renderLines(m, 0, 10, /*rendering=*/false);
+    EXPECT_EQ(m.rd(0x5204) & 0x40, 0);
+}
+
+TEST(Mmc5, CounterRestartsEachFrame)
+{
+    Mmc5 m;
+    m.reg(0x5203, 4);
+    m.reg(0x5204, 0x80);
+    renderLines(m, 0, 10);
+    EXPECT_TRUE(m.cart.irqLine());
+    (void)m.rd(0x5204);
+    m.cart.onScanline(241, true);
+    renderLines(m, 0, 3);
+    EXPECT_FALSE(m.cart.irqLine());
+    renderLines(m, 4, 4);
+    EXPECT_TRUE(m.cart.irqLine()); // fires again at line 4 of the new frame
+}

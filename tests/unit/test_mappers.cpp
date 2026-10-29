@@ -401,6 +401,120 @@ TEST(Action53, PowersOnWithTheLastBankAtC000)
     }
 }
 
+namespace {
+
+// Transcription of the nesdev "Action 53 mapper/Reference implementations"
+// Python function: the 16K bank on A20-A14 for a CPU address.
+int a53ReferenceBank(unsigned address, unsigned bankMode, unsigned outer,
+    unsigned current)
+{
+    const unsigned cpuA14 = (address >> 14) & 1;
+    outer <<= 1;
+    bankMode >>= 2; // discard mirroring bits
+    if (((bankMode ^ cpuA14) & 3) == 2) {
+        bankMode = 0; // UNROM fixed bank: treated as NROM
+    }
+    if ((bankMode & 2) == 0) {
+        current = (current << 1) | cpuA14;
+    }
+    const unsigned mask = (2u << ((bankMode >> 2) & 3)) - 1;
+    return static_cast<int>((current & mask) | (outer & ~mask));
+}
+
+void a53Write(Mmc1Harness& h, std::uint8_t reg, std::uint8_t value)
+{
+    h.cart.cpuWrite(0x5000, reg);
+    h.cart.cpuWrite(0x8000, value);
+}
+
+} // namespace
+
+// The reference function gives the bank index on A20-A14; a 512K ROM (32
+// banks) ignores the higher lines. Walk every mode/size byte, a spread of
+// outer banks and all 16 inner banks, at both CPU halves.
+TEST(Action53, PrgBankingMatchesTheWikiReferenceImplementation)
+{
+    for (unsigned mode = 0; mode < 0x40; ++mode) {
+        for (const unsigned outer : {0x00u, 0x03u, 0x0Fu, 0x2Au, 0x3Cu, 0xFFu}) {
+            Mmc1Harness h(28, 32);
+            a53Write(h, 0x80, static_cast<std::uint8_t>(mode));
+            a53Write(h, 0x81, static_cast<std::uint8_t>(outer));
+            for (unsigned inner = 0; inner < 16; ++inner) {
+                a53Write(h, 0x01, static_cast<std::uint8_t>(inner));
+                for (const unsigned addr : {0x8000u, 0xC000u}) {
+                    EXPECT_EQ(h.prgAt(static_cast<std::uint16_t>(addr)),
+                        a53ReferenceBank(addr, mode, outer, inner) % 32)
+                        << "mode $" << std::hex << mode << " outer $" << outer
+                        << " inner $" << inner << " addr $" << addr;
+                }
+            }
+        }
+    }
+}
+
+// wiki: modes 0-1 = one 32K bank; 2 = UNROM #180 (fixed bottom half of the
+// outer bank at $8000); 3 = UNROM #2 (fixed top half at $C000).
+TEST(Action53, ThirtyTwoKilobyteModeSwitchesBothHalvesTogether)
+{
+    Mmc1Harness h(28, 32);
+    a53Write(h, 0x80, 0x00); // 32K mode, 32K outer size
+    a53Write(h, 0x81, 0x00);
+    a53Write(h, 0x01, 0x05);
+    EXPECT_EQ(h.prgAt(0x8000), 0); // outer 0, size 32K: inner ignored
+    a53Write(h, 0x80, 0x20); // 128K outer size: inner bits A16-A15 apply
+    a53Write(h, 0x01, 0x02);
+    EXPECT_EQ(h.prgAt(0x8000), 4);
+    EXPECT_EQ(h.prgAt(0xC000), 5);
+}
+
+TEST(Action53, UnromNumberTwoModeSwitchesLowAndFixesHigh)
+{
+    Mmc1Harness h(28, 32);
+    a53Write(h, 0x80, 0x3C); // PRG mode 3, 256K outer size
+    a53Write(h, 0x81, 0x00);
+    a53Write(h, 0x01, 0x07);
+    EXPECT_EQ(h.prgAt(0x8000), 7);
+    EXPECT_EQ(h.prgAt(0xC000), 1); // fixed half of the outer window
+    a53Write(h, 0x01, 0x03);
+    EXPECT_EQ(h.prgAt(0x8000), 3);
+    EXPECT_EQ(h.prgAt(0xC000), 1);
+}
+
+TEST(Action53, Unrom180ModeFixesLowAndSwitchesHigh)
+{
+    Mmc1Harness h(28, 32);
+    a53Write(h, 0x80, 0x38); // PRG mode 2, 256K outer size
+    a53Write(h, 0x81, 0x00);
+    a53Write(h, 0x01, 0x06);
+    EXPECT_EQ(h.prgAt(0x8000), 0);
+    EXPECT_EQ(h.prgAt(0xC000), 6);
+}
+
+TEST(Action53, MirroringBitsDoNotDisturbPrgSelection)
+{
+    Mmc1Harness h(28, 32);
+    a53Write(h, 0x81, 0x00);
+    a53Write(h, 0x01, 0x04);
+    a53Write(h, 0x80, 0x3C);
+    const int low = h.prgAt(0x8000);
+    for (const std::uint8_t mirror : {0x3D, 0x3E, 0x3F}) {
+        a53Write(h, 0x80, mirror);
+        EXPECT_EQ(h.prgAt(0x8000), low);
+    }
+}
+
+// CHR register $00: D0-D1 select the 8K CHR bank (nesdev "Action 53 mapper").
+// The harness CHR is 64K = 8 banks of 8K, each 4K page tagged with its index.
+TEST(Action53, ChrRegisterSelectsTheEightKilobyteBank)
+{
+    Mmc1Harness h(28, 8);
+    for (int bank = 0; bank < 4; ++bank) {
+        a53Write(h, 0x00, static_cast<std::uint8_t>(bank));
+        EXPECT_EQ(h.cart.chrRead(0x0000), bank * 2) << "bank " << bank;
+        EXPECT_EQ(h.cart.chrRead(0x1000), bank * 2 + 1) << "bank " << bank;
+    }
+}
+
 TEST(Action53, RegisterSelectDoesNotTakeOverPrgRam)
 {
     Mmc1Harness h(28, 8, 1); // 8K PRG-RAM
