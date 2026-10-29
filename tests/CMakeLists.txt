@@ -86,7 +86,13 @@ set(TIER1_ROMS
     cpu_exec_space/test_cpu_exec_space_apu.nes
     cpu_exec_space/test_cpu_exec_space_ppuio.nes
     ppu_read_buffer/test_ppu_read_buffer.nes
-    mmc3_test_2/rom_singles/4-scanline_timing.nes)
+    mmc3_test_2/rom_singles/4-scanline_timing.nes
+    instr_misc/rom_singles/01-abs_x_wrap.nes
+    instr_misc/rom_singles/02-branch_wrap.nes
+    instr_misc/rom_singles/03-dummy_reads.nes
+    instr_misc/rom_singles/04-dummy_reads_apu.nes
+    cpu_dummy_writes/cpu_dummy_writes_oam.nes
+    cpu_dummy_writes/cpu_dummy_writes_ppumem.nes)
 
 # All formerly known-failing ROMs have been fixed and promoted to tier 1
 # (see specs/001-emulation-core/analysis/FIX_ATTEMPTS.md).
@@ -182,3 +188,8 @@ endfunction()
 register_playtests(${CMAKE_CURRENT_SOURCE_DIR}/playtest/playtest.txt "playtest")
 # Holy Mapperel: tier-2 mapper verification asserting the result screen text.
 register_playtests(${CMAKE_CURRENT_SOURCE_DIR}/playtest/mapperel.txt "playtest;tier2")
+# Self-reporting corpus ROMs (on-screen verdicts); see docs/test-corpus.md.
+register_playtests(${CMAKE_CURRENT_SOURCE_DIR}/playtest/corpus.txt "playtest;corpus")
+register_playtests(
+    ${CMAKE_CURRENT_SOURCE_DIR}/playtest/corpus-known-failing.txt
+    "playtest;corpus;known-failing")

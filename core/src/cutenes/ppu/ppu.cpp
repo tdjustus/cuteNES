@@ -27,7 +27,6 @@ constexpr int kVisibleLines = 240;
 // razor edge of blargg 4-scanline_timing subtests #2/#3.
 constexpr int kSpriteFetchDot = 260;
 constexpr int kVblankLine = 241;
-constexpr int kPreRenderLine = 261;
 
 } // namespace
 
@@ -441,7 +440,7 @@ int Ppu::fetchScanline() const
 {
     // Pre-render fetches build line 0; end-of-line prefetches build the
     // next visible line.
-    if (m_scanline == kPreRenderLine) {
+    if (m_scanline == preRenderLine()) {
         return 0;
     }
     return m_dot >= 321 ? m_scanline + 1 : m_scanline;
@@ -954,10 +953,10 @@ void Ppu::stepDot()
     if (m_cart != nullptr && m_dot == 0) {
         m_cart->onScanline(m_scanline, renderingEnabled());
     }
-    // Pre-render line uses index 261; wrap dot/scanline with the odd-frame
-    // dot skip when rendering.
-    if (m_scanline == kPreRenderLine && m_dot == 339 && m_oddFrame
-        && renderingEnabled()) {
+    // The pre-render line is 261 (NTSC) or 311 (PAL); NTSC alone skips a dot
+    // on odd frames while rendering.
+    if (m_scanline == preRenderLine() && m_dot == 339 && m_oddFrame
+        && oddFrameSkips() && renderingEnabled()) {
         m_dot = 340; // skip the final idle dot of the odd frame
     }
 
@@ -1007,7 +1006,7 @@ void Ppu::stepDot()
                 loadSpriteUnits();
             }
         }
-    } else if (m_scanline == kPreRenderLine) {
+    } else if (m_scanline == preRenderLine()) {
         fetchCycle(static_cast<std::uint32_t>(m_dot));
         if (renderingEnabled()) {
             if (m_dot == 256) {
@@ -1034,7 +1033,7 @@ void Ppu::stepDot()
         m_status |= 0x80; // NMI line rises; the CPU samples at phi2
         if (std::getenv("RDDBG")) std::fprintf(stderr, "VBLSET master=%llu\n", (unsigned long long)m_sched.now());
     }
-    if (m_scanline == kPreRenderLine && m_dot == timing::kVblClearDot) {
+    if (m_scanline == preRenderLine() && m_dot == timing::kVblClearDot) {
         m_status &= static_cast<std::uint8_t>(~0xE0); // clear V/S0/O
         m_suppressSet = false;
         m_nmiKilled = false;
@@ -1045,7 +1044,7 @@ void Ppu::stepDot()
     if (m_dot > 340) {
         m_dot = 0;
         ++m_scanline;
-        if (m_scanline > kPreRenderLine) {
+        if (m_scanline > preRenderLine()) {
             m_scanline = 0;
         }
     }

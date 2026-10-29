@@ -36,6 +36,9 @@ void Machine::Impl::buildComponents(Region region)
 
     ppu->setVideoOutput(framebuffer.data());
     apu->setOutputRate(config.audioSampleRate);
+    if (audioSink != nullptr) {
+        apu->setAudioSink(audioSink);
+    }
 
     io = ApuIoBridge{};
     io.sched = &scheduler;
@@ -100,15 +103,10 @@ LoadResult Machine::loadCartridge(const std::uint8_t* data, std::size_t size)
     // A region change rebuilds every timing-dependent component.
     const Region region =
         result.info.region == Region::Pal ? Region::Pal : Region::Ntsc;
-    if (region != m_impl->regionId) {
-        // Region change: swap the owning pointer (never move-assign over
-        // the live Impl — components hold references into it). The local
-        // `impl` reference dies with the old object.
-        const MachineConfig config = m_impl->config;
-        m_impl = std::make_unique<Impl>(config);
-        const LoadResult again =
-            Cartridge::load(data, size, m_impl->cart);
-        (void)again;
+    if (region != impl.regionId) {
+        // Rebuild the PPU/APU/CPU for the new timing profile in place (they
+        // are recreated, so no stale references survive). Sinks are kept.
+        impl.buildComponents(region);
     }
     m_impl->ppu->attachCartridge(&m_impl->cart);
     m_impl->cart.attachScheduler(m_impl->scheduler);
@@ -323,6 +321,7 @@ ButtonSet Machine::controller(Port port) const
 void Machine::setVideoSink(IVideoSink* sink) { m_impl->videoSink = sink; }
 void Machine::setAudioSink(IAudioSink* sink)
 {
+    m_impl->audioSink = sink;
     m_impl->apu->setAudioSink(sink);
 }
 

@@ -203,6 +203,7 @@ struct Machine::Impl {
     std::unique_ptr<Cpu> cpu;
 
     IVideoSink* videoSink = nullptr;
+    IAudioSink* audioSink = nullptr; // reapplied when buildComponents() replaces the APU
     std::array<std::uint32_t, 256 * 240> framebuffer{};
     std::vector<std::uint8_t> stateBlob;
 
