@@ -652,7 +652,7 @@ int cmdSettle(const char* romPath, std::uint32_t maxFrames,
 // T059/T046: scripted game checks. The list format is documented in
 // tests/playtest/playtest.txt. Entries run in order; each records PASS/FAIL.
 struct PlaytestStep {
-    enum class Kind { Run, ExpectMem, ExpectChanges, ExpectText };
+    enum class Kind { Run, ExpectMem, ExpectChanges, ExpectText, ExpectHash };
     Kind kind = Kind::Run;
     std::string text;
     std::uint32_t frames = 0;
@@ -814,6 +814,17 @@ bool parsePlaytest(const std::string& text, std::vector<PlaytestEntry>& out,
                 return fail("expect-text needs text");
             }
             current->steps.push_back(step);
+        } else if (cmd == "expect-hash") {
+            PlaytestStep step;
+            step.kind = PlaytestStep::Kind::ExpectHash;
+            std::string hex;
+            if (current == nullptr || !(tokens >> hex) || hex.size() != 8
+                || hex.find_first_not_of("0123456789abcdefABCDEF")
+                    != std::string::npos) {
+                return fail("expect-hash needs 8 hex digits inside an entry");
+            }
+            step.value = static_cast<std::uint32_t>(std::strtoul(hex.c_str(), nullptr, 16));
+            current->steps.push_back(step);
         } else if (cmd == "expect-changes") {
             PlaytestStep step;
             step.kind = PlaytestStep::Kind::ExpectChanges;
@@ -832,7 +843,7 @@ bool parsePlaytest(const std::string& text, std::vector<PlaytestEntry>& out,
     return true;
 }
 
-bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry,
+bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry, const char* shotsDir,
     std::string& why)
 {
     std::vector<std::uint8_t> rom;
@@ -873,12 +884,15 @@ bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry,
         return false;
     }
     RecordingSink sink;
+    sink.keepLast = shotsDir != nullptr;
     machine.setVideoSink(&sink);
     machine.setAudioSink(&sink);
     machine.powerOn();
 
     std::uint32_t lastChanges = 0;
+    int stepNumber = 0;
     for (const PlaytestStep& step : entry.steps) {
+        ++stepNumber;
         switch (step.kind) {
         case PlaytestStep::Kind::Run: {
             const std::size_t before = sink.hashes.size();
@@ -892,6 +906,26 @@ bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry,
                 if (sink.hashes[i] != sink.hashes[i - 1]) {
                     ++lastChanges;
                 }
+            }
+            if (shotsDir != nullptr && !sink.last.empty()) {
+                // Inspection aid: the frame at the end of this run step,
+                // named <entry>-<step>-<hash>.ppm.
+                char name[512];
+                std::snprintf(name, sizeof name, "%s/%s-%02d-%08x.ppm", shotsDir,
+                    entry.name.c_str(), stepNumber, sink.hashes.back());
+                writePpm(name, sink.last);
+            }
+            break;
+        }
+        case PlaytestStep::Kind::ExpectHash: {
+            const std::uint32_t actual =
+                sink.hashes.empty() ? 0 : sink.hashes.back();
+            if (actual != step.value) {
+                char buf[96];
+                std::snprintf(buf, sizeof buf,
+                    "screen hash %08x, pinned %08x", actual, step.value);
+                why = buf;
+                return false;
             }
             break;
         }
@@ -946,7 +980,7 @@ bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry,
 // `only` selects a single entry by name (nullptr runs all). Exit codes: 0 all
 // ran and passed, 1 a failure, 2 usage/parse error, 77 nothing ran because
 // every selected entry needs a ROM absent from roms-local/ (ctest SKIP).
-int cmdPlaytest(const char* listPath, const char* only)
+int cmdPlaytest(const char* listPath, const char* only, const char* shotsDir)
 {
     std::vector<std::uint8_t> bytes;
     if (!readRom(listPath, bytes)) {
@@ -988,7 +1022,7 @@ int cmdPlaytest(const char* listPath, const char* only)
             continue;
         }
         std::string why;
-        const bool ok = runPlaytestEntry(dir, entry, why);
+        const bool ok = runPlaytestEntry(dir, entry, shotsDir, why);
         ++ran;
         if (ok) {
             std::printf("playtest: %s: PASS\n", entry.name.c_str());
@@ -1122,7 +1156,7 @@ void usage()
         "  settle ROM [--min-frames N] [--expect HASH] [--out F.ppm]\n"
         "  shot ROM FRAMES OUT.ppm              frame after N frames as PPM\n"
         "  text ROM FRAMES / where ROM FRAMES   debugging views (see source)\n"
-        "  playtest --list FILE [--entry N] scripted game checks (T059)\n"
+        "  playtest --list FILE [--entry N] [--shots DIR]  scripted checks (T059)\n"
         "  bench --rom R                   5s sustained-speed benchmark (T061)\n"
         "  golden --list F [--check B]     cross-platform golden hashes (T065)\n");
 }
@@ -1207,18 +1241,21 @@ int main(int argc, char** argv)
         return 2;
     }
     if (command == "nestest") return cmdNestest(argc, argv);
-    if (command == "playtest" && argc == 4
-        && std::strcmp(argv[2], "--list") == 0) {
-        return cmdPlaytest(argv[3], nullptr);
-    }
-    if (command == "playtest" && argc == 6
-        && std::strcmp(argv[2], "--list") == 0
-        && std::strcmp(argv[4], "--entry") == 0) {
-        return cmdPlaytest(argv[3], argv[5]);
+    if (command == "playtest" && argc >= 4 && std::strcmp(argv[2], "--list") == 0) {
+        const char* entry = nullptr;
+        const char* shots = nullptr;
+        for (int i = 4; i + 1 < argc; i += 2) {
+            if (std::strcmp(argv[i], "--entry") == 0) {
+                entry = argv[i + 1];
+            } else if (std::strcmp(argv[i], "--shots") == 0) {
+                shots = argv[i + 1];
+            }
+        }
+        return cmdPlaytest(argv[3], entry, shots);
     }
     if (command == "playtest") {
         std::fprintf(stderr,
-            "usage: rom_harness playtest --list FILE [--entry NAME]\n");
+            "usage: rom_harness playtest --list FILE [--entry NAME] [--shots DIR]\n");
         return 2;
     }
 
