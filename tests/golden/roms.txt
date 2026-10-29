@@ -14,3 +14,7 @@ mmc5_test_v2     ../roms/mmc5test_v2/mmc5test.nes               300
 mmc5_exram       ../roms/exram/mmc5exram.nes                    300
 mmc5_firefly     ../roms/other/firefly.nes                      300
 m22_chr_banking   ../roms/m22chrbankingtest/0-127.nes            300
+
+# Action 53 (mapper 28): the Streemerz bundle boots to its title screen
+# (verified by eye: logo and "Press Start Button").
+a53_streemerz     ../roms/other/Streemerz_bundle.nes             600

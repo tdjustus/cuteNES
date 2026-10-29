@@ -390,6 +390,17 @@ TEST(Action53, TwoScreenModesUseTheDefaultMapping)
     EXPECT_EQ(h.cart.mirroring(), cutenes::Mirroring::Horizontal);
 }
 
+// Hardware guarantees the last PRG bank is visible at $C000-$FFFF at power-on
+// (the reset vector must be readable); blargg's test28 checks it.
+TEST(Action53, PowersOnWithTheLastBankAtC000)
+{
+    for (const int banks : {2, 4, 8, 16, 32}) {
+        Mmc1Harness h(28, banks);
+        EXPECT_EQ(h.prgAt(0xC000), banks - 1)
+            << banks << " x 16K: last bank must sit at $C000 at power-on";
+    }
+}
+
 TEST(Action53, RegisterSelectDoesNotTakeOverPrgRam)
 {
     Mmc1Harness h(28, 8, 1); // 8K PRG-RAM

@@ -178,8 +178,12 @@ private:
     std::uint8_t m_sel = 0x01; // power-up: user register 1 (inner bank)
     std::uint8_t m_chrA13 = 0;
     std::uint8_t m_inner = 0;
-    std::uint8_t m_mode = 0x00; // 1-screen lo, 32K PRG, 32K outer
-    std::uint8_t m_outer = 0;
+    // Power-up: PRG mode 3 (UNROM style, last bank fixed at $C000) with the
+    // outer bank at $FF, so the last bank is visible at $C000-$FFFF and the
+    // reset vector is readable. Hardware guarantees this; blargg's test28
+    // checks it. Mirroring bits 0-1 = 0 (one-screen, low page).
+    std::uint8_t m_mode = 0x0C;
+    std::uint8_t m_outer = 0xFF;
     std::uint8_t m_oneScreen = 0;
 };
 
