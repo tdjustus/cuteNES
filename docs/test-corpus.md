@@ -66,9 +66,8 @@ passes all three; the core runs the CPU on whole 3-dot cycles with one fixed
 phase. The newer `ppu_vbl_nmi` set (tier 1, CPU-cycle precision, all 10 ROMs
 including `05-nmi_timing` and `07-nmi_on_timing`) passes, and so do tests 1-6
 of this ROM. Passing test 7 would need sub-cycle CPU/PPU phase modelling that
-the calibrated timing tests above do not require. We accept the deviation; the
-entry stays in `corpus-known-failing.txt` so a future phase model can be
-checked against it.
+the calibrated timing tests above do not require. The issue stays open in the 1.0 milestone; the
+entry stays in `corpus-known-failing.txt` until a phase model makes it pass.
 
 ## Folders added by the corpus triage
 
