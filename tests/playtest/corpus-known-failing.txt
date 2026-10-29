@@ -3,7 +3,8 @@
 # correct; it fails because the emulator disagrees. Other emulators in the
 # corpus status table (tests/roms/status.txt) pass these. Move an entry to
 # corpus.txt when it is fixed. Tracked in the GitHub 1.0 milestone:
-#  - vbl-nmi-timing 7: NMI timing.
+#  - vbl-nmi-timing 7: documented limitation (sub-cycle CPU/PPU phase), #42;
+#    see docs/test-corpus.md. Not a to-do for 1.0.
 #  - pal-apu 04-08, 10, 11: the APU has only NTSC frame-counter steps.
 
 entry vbl-nmi-timing-7-nmi-timing

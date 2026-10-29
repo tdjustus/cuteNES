@@ -57,13 +57,26 @@ verdict: `nestest`, `mmc1_a12`, `mmc5_test_v2`, `mmc5_exram`, `a53_streemerz`,
 `mmc5_test`, `mmc5_firefly`) or **WRONG** (a pinned frame known to be incorrect;
 none at present: `full_palette` was one until #49).
 
+## Documented limitation: `vbl_nmi_timing/7.nmi_timing` (#42)
+
+This 2005 ROM checks NMI delivery to one PPU clock at three CPU/PPU alignments.
+Sweeping the point at which the NMI line is seen (in PPU dots) showed that each
+alignment needs a different threshold (1, 2 and 2-3 dots), so no single rule
+passes all three; the core runs the CPU on whole 3-dot cycles with one fixed
+phase. The newer `ppu_vbl_nmi` set (tier 1, CPU-cycle precision, all 10 ROMs
+including `05-nmi_timing` and `07-nmi_on_timing`) passes, and so do tests 1-6
+of this ROM. Passing test 7 would need sub-cycle CPU/PPU phase modelling that
+the calibrated timing tests above do not require. We accept the deviation; the
+entry stays in `corpus-known-failing.txt` so a future phase model can be
+checked against it.
+
 ## Folders added by the corpus triage
 
 | Folder | ROMs | Disposition |
 |---|---|---|
 | `blargg_apu_2005.07.30` | 11 | 01-09 pass (`$01` = passed, per `tests.txt`): `corpus.txt`. 10 and 11 fail: known-failing, #43 |
 | `branch_timing_tests` | 3 | 1 and 2 pass: `corpus.txt`. 3 fails: known-failing, #41 |
-| `vbl_nmi_timing` | 7 | 1-6 pass: `corpus.txt`. 7 fails: known-failing, #42 (the newer `ppu_vbl_nmi` set passes; the old ROM may be superseded) |
+| `vbl_nmi_timing` | 7 | 1-6 pass: `corpus.txt`. 7 fails (`FAILED #3`): documented limitation, see below; kept as known-failing |
 | `pal_apu_tests` | 10 | Run as PAL (`region pal`). 01-03 pass: `corpus.txt`. 04-08, 10, 11 fail: known-failing, #44 (APU tables are NTSC-only) |
 | `cpu_dummy_writes` | 2 | Tier 1 |
 | `instr_misc` | 5 | The four `rom_singles` are tier 1. `instr_misc.nes` is the same four tests combined; not registered |
