@@ -12,9 +12,9 @@
 # name                  rom                                            frames
 # nestest: CHECKED BY EYE: nestest's menu before any test is run (all entries unmarked). No verdict here; the verdict is nestest-golden-log and the playtest nestest-all-tests-ok.
 nestest                 ../roms/other/nestest.nes                       600
-# full_palette: WRONG (#49): shows blue horizontal bands; the ROM's source says it draws the whole palette as a clean grid. The PPU does not output the palette colour at v while rendering is off. Re-record after the fix.
+# full_palette: CHECKED BY EYE: clean palette grid (hue columns x brightness rows, emphasis variants), matching full_palette.s's description. Was WRONG before #49 (PPU did not output the palette entry at v with rendering off).
 full_palette            ../roms/full_palette/full_palette.nes           300
-# litewall: UNVERIFIED: shows a clean palette-colour grid, but the folder has no documentation of the expected screen.
+# litewall: UNVERIFIED: shows a clean palette-colour grid, but the folder has no documentation of the expected screen. After #49 one pixel (x=0, y=195) is white instead of black: the ROM leaves v in palette RAM while rendering is off, which the PPU now outputs.
 litewall                ../roms/blargg_litewall/litewall3.nes           300
 # mmc1_a12: CHECKED BY EYE: the title text of Bregalad's MMC1 WRAM-disable scanline-counter test. The test is interactive (adjust DELAY with the D-pad), so no verdict is shown at boot.
 mmc1_a12                ../roms/MMC1_A12/mmc1_a12.nes                   300

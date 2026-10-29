@@ -53,8 +53,9 @@ set by viewing the frame: **VERIFIED** (the ROM's own verdict or a shipped
 reference image: `mmc3_clocking`, `apu_len_table`, `m22_chr_banking`),
 **CHECKED BY EYE** (recognisable, consistent with the ROM's documentation, but no
 verdict: `nestest`, `mmc1_a12`, `mmc5_test_v2`, `mmc5_exram`, `a53_streemerz`,
-`bnrom_240pee`), **UNVERIFIED** (no documented expected screen: `litewall`,
-`mmc5_test`, `mmc5_firefly`) or **WRONG** (`full_palette`, tracked by #49).
+`bnrom_240pee`, `full_palette`), **UNVERIFIED** (no documented expected screen: `litewall`,
+`mmc5_test`, `mmc5_firefly`) or **WRONG** (a pinned frame known to be incorrect;
+none at present: `full_palette` was one until #49).
 
 ## Folders added by the corpus triage
 
