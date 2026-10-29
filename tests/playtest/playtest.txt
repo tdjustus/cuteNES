@@ -20,16 +20,28 @@
 #   font <ascii|a1>           how expect-text decodes tiles: ascii (default) or
 #                             a1 (codes 1..26 are letters A..Z, other printable
 #                             ASCII as-is)
+#   expect-hash <8 hex>       the current frame's hash must equal this pinned value
+#                             (FNV-1a of the XRGB pixels). Pin only after viewing the
+#                             frame: run with --shots DIR, look at the PPM, then copy
+#                             the hash from its file name
 #   end                       end of entry
 #
 # Commercial titles are not checked in. Keep local copies under the
 # repository's roms-local/ folder (gitignored) and reference them as
 # ../../roms-local/<title>.nes.
 
-entry nestest-runs
+# nestest's own documented verdict (nestest.txt): after "Run all tests" the page
+# shows "OK" next to every entry; a failure shows a 2-digit error code instead.
+# Pinned after viewing the frame.
+entry nestest-all-tests-ok
 rom ../roms/other/nestest.nes
-run 120 none
-expect-changes 1
+run 60 none
+run 10 Start
+run 600 none
+expect-text OK Run all tests
+expect-text OK Branch tests
+expect-text OK Absolute,X tests
+expect-hash 5b36ccfa
 end
 
 entry not-an-ines-file-is-rejected
@@ -41,15 +53,19 @@ entry super-mario-bros-boot-changes
 rom ../../roms-local/super-mario-bros.nes
 run 600 none
 expect-changes 1
+# Pinned after viewing the frame: see docs/test-corpus.md (re-pin procedure).
+expect-hash 6cde0dac
 end
 
 entry tetris-boot-changes
 rom ../../roms-local/tetris.nes
 run 600 none
 expect-changes 1
+# Pinned after viewing the frame: see docs/test-corpus.md (re-pin procedure).
+expect-hash c592bb81
 end
 
-entry tetris-start-reaches-gameplay
+entry tetris-start-reaches-game-type-menu
 rom ../../roms-local/tetris.nes
 run 300 none
 expect-mem 00C0 00
@@ -61,12 +77,16 @@ run 120 none
 run 300 none
 expect-mem 00C0 02
 expect-changes 1
+# Pinned after viewing the frame: see docs/test-corpus.md (re-pin procedure).
+expect-hash 3feaef4f
 end
 
 entry mega-man-boot-changes
 rom ../../roms-local/mega-man.nes
 run 600 none
 expect-changes 1
+# Pinned after viewing the frame: see docs/test-corpus.md (re-pin procedure).
+expect-hash 7ab6dd10
 end
 
 entry mega-man-3-start-changes
@@ -75,12 +95,16 @@ run 600 none
 run 4 Start
 run 300 none
 expect-changes 1
+# Pinned after viewing the frame: see docs/test-corpus.md (re-pin procedure).
+expect-hash 3a8bd581
 end
 
 entry solomons-key-boot-changes
 rom ../../roms-local/solomons-key.nes
 run 600 none
 expect-changes 1
+# Pinned after viewing the frame: see docs/test-corpus.md (re-pin procedure).
+expect-hash d1d0cd07
 end
 
 entry mmc3-irq-1-clocking
@@ -140,16 +164,18 @@ run 20 A
 run 30 none
 expect-text ijjjjjjjjjjjjjjjjjjjjjk
 expect-changes 1
+# Pinned after viewing the frame: see docs/test-corpus.md (re-pin procedure).
+expect-hash 5c64dba8
 end
 
 # Zelda II (USA) — 128KB PRG + 128KB CHR-ROM MMC1 with battery: the
 # CHR-ROM banking board. The entry drives title -> story -> file
-# registration -> the overworld, then verifies Link actually responds to
-# the D-pad (different walks give different screens). Verified live:
-# the game switches CHR banks through the whole run (control writes
-# logged chr=8K; Tetris below exercises the 4K window mode).
+# registration. NOTE: the final frame (viewed) is the REGISTER YOUR NAME
+# screen, so the overworld is NOT reached and the later D-pad steps only move
+# the registration cursor; the pinned hash records that screen. Reaching the
+# overworld needs a corrected input script.
 
-entry zelda-2-boot-to-overworld
+entry zelda-2-boot-reaches-file-registration
 rom ../../roms-local/zelda-2.nes
 run 600 none
 expect-changes 10
@@ -172,6 +198,8 @@ run 120 Up
 expect-changes 20
 run 600 none
 expect-changes 50
+# Pinned after viewing the frame: see docs/test-corpus.md (re-pin procedure).
+expect-hash 29614978
 end
 
 # Final Fantasy (USA): 256KB PRG + CHR-RAM + battery. Boot sequence ->
@@ -187,68 +215,105 @@ run 300 none
 run 10 A
 expect-changes 1
 run 300 none
+# Pinned after viewing the frame: see docs/test-corpus.md (re-pin procedure).
+expect-hash 121a6e22
 end
 
 # Mega Man 2 — this local dump (md5 8e4bc5b03ffbd4ef91400e92e50dd294,
 # the GoodNES [!] verified "Megaman II (U)") is the 256KB PRG + 8KB
 # CHR-RAM MMC1 board: the full 4-bit PRG bank register spans all 16 banks
-# (no SUROM outer banking needed below 512K). The title's Start goes
-# straight to the password grid (the game's font happens to sit at ASCII
-# tile codes, so the grid is greppable). The gameplay entry types the
-# documented Normal password (A4 B3 C2 C3 C4 D4 D5 E3 E5 — 4 bosses
-# cleared, 3 E-tanks), lands on the stage select, picks a stage and
-# verifies the level actually animates — exercising CHR-RAM upload and
-# PRG bank switching across the ROM.
+# (no SUROM outer banking needed below 512K).
+#
+# Flow (each screen viewed, not assumed): ~frame 420 the attract story is
+# playing; Start skips to the title (NORMAL/DIFFICULT); Start picks NORMAL and
+# opens START/PASSWORD; Down + Start opens the password grid. Entering the
+# documented Normal password (A4 B3 C2 C3 C4 D4 D5 E3 E5: 4 bosses cleared,
+# 3 E-tanks) and Start lands on the stage select with Bubble, Quick, Metal
+# and Flash Man defeated. Launching a stage is not scripted yet.
 
 entry mega-man-2-boot-reaches-password-screen
 rom ../../roms-local/mega-man-2.nes
-run 360 none
-expect-changes 1
+run 420 none
 run 10 Start
-run 200 none
-expect-text PQRSTUVWXYZ[\]^_
-expect-changes 1
+run 90 none
+run 10 Start
+run 120 none
+run 10 Down
+run 30 none
+run 10 Start
+run 120 none
+expect-hash 6197d13f
 end
 
-entry mega-man-2-reaches-gameplay
+entry mega-man-2-password-reaches-stage-select
 rom ../../roms-local/mega-man-2.nes
-run 240 none
-run 20 Start
-run 150 none
-# Password A4 B3 C2 C3 C4 D4 D5 E3 E5 from cursor A1.
-run 4 Down
-run 4 Down
-run 4 Down
-run 4 A
+run 420 none
+run 10 Start
+run 90 none
+run 10 Start
+run 120 none
+run 10 Down
+run 30 none
+run 10 Start
+run 120 none
+# Password dots: A4, B3, C2, C3, C4, D4, D5, E3, E5 from the cursor at A1.
 run 4 Right
-run 4 Up
-run 4 A
+run 8 none
 run 4 Right
-run 4 Up
-run 4 A
-run 4 Down
-run 4 A
-run 4 Down
-run 4 A
+run 8 none
 run 4 Right
+run 8 none
 run 4 A
+run 8 none
 run 4 Down
+run 8 none
+run 4 Left
+run 8 none
 run 4 A
+run 8 none
+run 4 Down
+run 8 none
+run 4 Left
+run 8 none
+run 4 A
+run 8 none
 run 4 Right
-run 4 Up
-run 4 Up
+run 8 none
 run 4 A
-run 4 Down
-run 4 Down
+run 8 none
+run 4 Right
+run 8 none
 run 4 A
-run 4 Start
+run 8 none
+run 4 Down
+run 8 none
+run 4 A
+run 8 none
+run 4 Right
+run 8 none
+run 4 A
+run 8 none
+run 4 Down
+run 8 none
+run 4 Left
+run 8 none
+run 4 Left
+run 8 none
+run 4 A
+run 8 none
+run 4 Right
+run 8 none
+run 4 Right
+run 8 none
+run 4 A
+run 8 none
+run 30 none
+run 10 Start
 run 300 none
-expect-changes 10
-# Stage select: accept the highlighted (alive) stage.
-run 4 A
-run 150 none
-run 900 none
-expect-changes 50
+# Password accepted: the panel lists the cleared bosses and 3 E-tanks.
+expect-hash bc8548c0
+run 300 none
+expect-hash 204102f9
 end
 
 # Screen-verified suites (no $6000 protocol; result text/code on screen).

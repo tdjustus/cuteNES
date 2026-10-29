@@ -17,6 +17,33 @@ emulator's output (constitution, Principle III).
 Run everything CI runs with `ctest --test-dir build -j8 -LE known-failing`; the
 known-failing set with `ctest -L known-failing`.
 
+## Pinned screen hashes
+
+`expect-hash <8 hex>` in a playtest entry pins the exact frame (FNV-1a of the
+XRGB pixels) at that point. It is used for the commercial-ROM entries, which
+run only on a machine that has the ROMs in `roms-local/` (they are gitignored
+and skipped elsewhere), and for nestest. A scripted entry that only asserts
+"the screen changed" proves very little: a scrambled screen satisfies it, which
+is how the MMC3 CHR bug went unnoticed.
+
+**A pin is only as good as the frame it records, so view the frame first.**
+To pin or re-pin an entry:
+
+1. `build/tests/rom_harness playtest --list tests/playtest/playtest.txt --entry NAME --shots DIR`
+   writes one PPM per `run` step, named `NAME-<step>-<hash>.ppm`.
+2. Look at the frame (convert the PPM to PNG, or open it in an image viewer)
+   and confirm it shows what the entry claims.
+3. Put `expect-hash <hash>` after that `run` step.
+
+An intentional emulator change that alters pixels (a mapper fix, a PPU
+change) needs the affected pins re-viewed and re-pinned the same way; an
+unexplained change is a regression.
+
+Entry names say what the frame shows. If a script does not reach the screen its
+name suggests, the entry is named for where it actually ends (for example
+`zelda-2-boot-reaches-file-registration`) and the gap is recorded in the entry
+comment.
+
 ## Folders added by the corpus triage
 
 | Folder | ROMs | Disposition |
