@@ -13,8 +13,11 @@ strategy; the rules below are the ones that must never be missed.
 - Branch from fresh `origin/main` as `<kind>/<slug>` (`feature`, `fix`,
   `docs`, `test`, `chore`). Update a branch by merging `main` into it, never
   by rebasing or force-pushing.
-- **Never merge a PR.** Open it, keep it current, and tell the maintainer it
-  is ready. Merge commits only.
+- **Merge a PR yourself only when every required check has passed** (the
+  maintainer authorized this on 2026-10-29), with `gh pr merge N --merge`
+  (merge commits only). Never merge with a red or pending check, never use
+  admin override, and if a merge is refused, stop and tell the maintainer
+  instead of retrying. Then sync `main` before starting the next branch.
 - No `development` branch exists until v1.0. Do not create it, tag a
   release, or change branch protection without the maintainer's approval.
 - **Known bugs and features live in the GitHub milestone `1.0`.** At the

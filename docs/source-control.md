@@ -35,8 +35,11 @@ is resolved**, meaning the GitHub milestone `1.0` has no open issues (see
 6. **Keep the branch current by merging `main` into it** (no rebase). Check
    first whether the remote branch already contains `main`; the "Update
    branch" button in GitHub does the same thing.
-7. **The maintainer merges.** Automated agents open PRs and update branches
-   but never merge. Do not merge while required checks are red.
+7. **Merge once checks pass.** Since 2026-10-29 the maintainer has
+   authorized Claude Code to merge its own PRs after every required check
+   (`ci-ok`) has passed. Never merge while a check is red or pending, never
+   bypass protection, and if the merge is refused, report it instead of
+   retrying. The maintainer may still merge any PR.
 8. **Merge commits only** (squash and rebase are disabled) so each change
    keeps its own commit messages. The head branch is deleted automatically
    on merge; delete the local copy and pull `main`.
