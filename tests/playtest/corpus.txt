@@ -130,3 +130,14 @@ run 1500 none
 expect-text PASSED
 end
 
+entry apu2005-10-len-halt-timing
+rom ../roms/blargg_apu_2005.07.30/10.len_halt_timing.nes
+run 1500 none
+expect-text $01
+end
+
+entry apu2005-11-len-reload-timing
+rom ../roms/blargg_apu_2005.07.30/11.len_reload_timing.nes
+run 1500 none
+expect-text $01
+end

@@ -462,6 +462,14 @@ std::uint8_t Apu::registerRead(std::uint16_t addr)
 
 void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
 {
+    // A write landing in the cycle of (or the cycle before) a half-frame
+    // length clock is handled as simultaneous with it (blargg 10/11): the
+    // clock runs first, the new halt flag applies after it, and a length
+    // load is ignored when the counter was running (nonzero) at the clock.
+    m_clockedLen = {};
+    if (addr >= 0x4000 && addr <= 0x400F && ((addr & 3) == 0 || (addr & 3) == 3)) {
+        clockHalfFrameIfImminent();
+    }
     if (addr <= 0x4003) { // pulse 1
         switch (addr & 3) {
         case 0:
@@ -484,8 +492,7 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         default:
             m_pulse1.timerReload = static_cast<std::uint16_t>(
                 (m_pulse1.timerReload & 0x00FF) | ((value & 7) << 8));
-            m_pulse1.length =
-                m_pulse1.enabled ? kLengthTable[value >> 3] : 0;
+            loadLength(m_pulse1.length, m_pulse1.enabled, value, m_clockedLen[0]);
             m_pulse1.envStart = true;
             m_pulse1.dutyIndex = 0;
             break;
@@ -512,8 +519,7 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         default:
             m_pulse2.timerReload = static_cast<std::uint16_t>(
                 (m_pulse2.timerReload & 0x00FF) | ((value & 7) << 8));
-            m_pulse2.length =
-                m_pulse2.enabled ? kLengthTable[value >> 3] : 0;
+            loadLength(m_pulse2.length, m_pulse2.enabled, value, m_clockedLen[1]);
             m_pulse2.envStart = true;
             m_pulse2.dutyIndex = 0;
             break;
@@ -531,8 +537,7 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
         default:
             m_triangle.timerReload = static_cast<std::uint16_t>(
                 (m_triangle.timerReload & 0x00FF) | ((value & 7) << 8));
-            m_triangle.length =
-                m_triangle.enabled ? kLengthTable[value >> 3] : 0;
+            loadLength(m_triangle.length, m_triangle.enabled, value, m_clockedLen[2]);
             m_triangle.reloadFlag = true;
             break;
         }
@@ -548,8 +553,7 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
             m_noise.timerReload = kNoisePeriods[value & 0x0F] / 2; // APU cyc
             break;
         default:
-            m_noise.length =
-                m_noise.enabled ? kLengthTable[value >> 3] : 0;
+            loadLength(m_noise.length, m_noise.enabled, value, m_clockedLen[3]);
             m_noise.envStart = true;
             break;
         }
@@ -738,6 +742,14 @@ void Apu::clockSweep(Pulse& p, bool second)
     }
 }
 
+void Apu::loadLength(std::uint8_t& length, bool enabled, std::uint8_t value,
+    bool ignored)
+{
+    if (!ignored) {
+        length = enabled ? kLengthTable[value >> 3] : 0;
+    }
+}
+
 void Apu::clockLength(std::uint8_t& length, bool counting)
 {
     // `counting` is the length-counter halt flag INVERTED (set at register
@@ -918,6 +930,25 @@ const SeqEvent kClocks5[4] = {
     {22371, true, false, false},
     {37281, true, true, true},
 };
+}
+
+void Apu::clockHalfFrameIfImminent()
+{
+    if (m_sequenceStep >= 4) {
+        return;
+    }
+    const SeqEvent& e = m_frameMode5 ? kClocks5[m_sequenceStep]
+                                     : kClocks0[m_sequenceStep];
+    const std::uint64_t at = m_seqClockBase + e.cpu * m_profile.cpuDivisor;
+    if (!e.half || at < m_sched.now() || at - m_sched.now() > m_profile.cpuDivisor) {
+        return;
+    }
+    const std::uint8_t before[4] = {m_pulse1.length, m_pulse2.length,
+        m_triangle.length, m_noise.length};
+    fireSequenceEvent(at);
+    for (int i = 0; i < 4; ++i) {
+        m_clockedLen[static_cast<std::size_t>(i)] = before[i] > 0;
+    }
 }
 
 std::uint64_t Apu::nextSequenceEvent() const

@@ -173,6 +173,10 @@ private:
     void stepApuCycle();
     std::uint64_t nextSequenceEvent() const;
     void fireSequenceEvent(std::uint64_t eventMaster);
+    void clockHalfFrameIfImminent();
+    static void loadLength(std::uint8_t& length, bool enabled, std::uint8_t value,
+        bool ignored);
+    std::array<bool, 4> m_clockedLen{}; // length was running at an early-fired clock
     void quarterFrame();
     void halfFrame();
     void write4017(std::uint8_t value);

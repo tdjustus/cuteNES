@@ -159,3 +159,91 @@ TEST(Apu, DeterministicAcrossRuns)
     h2.runFrames(5);
     EXPECT_EQ(first, h2.sink.samples); // byte-identical (FR-012)
 }
+
+namespace {
+
+// Blargg 2005 APU tests 10/11: a register write in the cycle of (or the one
+// before) the second half-frame length clock is simultaneous with it; one
+// cycle earlier than that is plainly before it. In 5-step mode the $4017
+// write clocks length at once, so a length of 2 leaves 1 for the half-frame
+// clock at +14913 cycles (after the 3-cycle restart delay).
+struct HalfFrameCase {
+    ApuHarness h;
+    std::uint64_t clockAt = 0;
+
+    HalfFrameCase(std::uint8_t halt)
+    {
+        h.apu.registerWrite(0x4015, 0x01);
+        h.apu.registerWrite(0x4003, 0x18); // length 2
+        h.apu.registerWrite(0x4000, halt);
+        clockAt = h.scheduler.now();
+        h.apu.registerWrite(0x4017, 0xC0);
+        clockAt += (3 + 14913) * 12ull;
+    }
+
+    // Time-travel to `cycles` CPU cycles before the clock.
+    void advanceToBefore(int cycles)
+    {
+        h.scheduler.advanceMaster(
+            clockAt - cycles * 12ull - h.scheduler.now());
+        h.apu.runTo(h.scheduler.now());
+    }
+
+    bool playing() { return (h.apu.registerRead(0x4015) & 1) != 0; }
+
+    void finish()
+    {
+        h.scheduler.advanceMaster(20 * 12);
+        h.apu.runTo(h.scheduler.now());
+    }
+};
+
+} // namespace
+
+TEST(ApuLength, HaltWrittenOneCycleBeforeClockStillClocks)
+{
+    HalfFrameCase c(0x10);
+    c.advanceToBefore(1);
+    c.h.apu.registerWrite(0x4000, 0x30); // halt
+    c.finish();
+    EXPECT_FALSE(c.playing());
+}
+
+TEST(ApuLength, HaltWrittenTwoCyclesBeforeClockPreventsIt)
+{
+    HalfFrameCase c(0x10);
+    c.advanceToBefore(2);
+    c.h.apu.registerWrite(0x4000, 0x30);
+    c.finish();
+    EXPECT_TRUE(c.playing());
+}
+
+TEST(ApuLength, UnhaltWrittenOneCycleBeforeClockDoesNotClock)
+{
+    HalfFrameCase c(0x30);
+    c.advanceToBefore(1);
+    c.h.apu.registerWrite(0x4000, 0x10); // unhalt
+    c.finish();
+    EXPECT_TRUE(c.playing());
+}
+
+TEST(ApuLength, ReloadDuringClockIsIgnoredWhileCounterRunning)
+{
+    HalfFrameCase c(0x10);
+    c.advanceToBefore(1);
+    c.h.apu.registerWrite(0x4003, 0x38); // would load 6
+    // Ignored: the counter (1) was clocked to 0.
+    c.finish();
+    EXPECT_FALSE(c.playing());
+}
+
+TEST(ApuLength, ReloadDuringClockWorksWhenCounterIsZero)
+{
+    HalfFrameCase c(0x10);
+    c.h.apu.registerWrite(0x4015, 0x00); // length -> 0
+    c.h.apu.registerWrite(0x4015, 0x01);
+    c.advanceToBefore(1);
+    c.h.apu.registerWrite(0x4003, 0x18); // load 2, not decremented
+    c.finish();
+    EXPECT_TRUE(c.playing());
+}
