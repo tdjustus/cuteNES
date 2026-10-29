@@ -528,30 +528,20 @@ private:
         if (index < 0 || index > 11) {
             index = 11;
         }
-        const std::uint32_t bank =
+        const std::uint32_t bank1k =
             m_chrRegs[static_cast<std::size_t>(index)] & 0x3FF;
-        return bank * size + (a & (size - 1));
+        return bank1k * 0x400u + (a & (size - 1));
     }
 
+    // CHR registers hold a bank number in units of the current bank size
+    // (8K, 4K, 2K or 1K by $5101), with bits 8-9 from $5130. It is stored as
+    // a 1K bank number so every read path uses the same units.
     void writeChrReg(std::size_t index, std::uint8_t value)
     {
-        std::uint32_t v = 0;
-        switch (m_chrMode) {
-        case 3: // 1K: bits 9-8 from $5130, bits 7-0 from data
-            v = (static_cast<std::uint32_t>(m_chrUpper & 3) << 8) | value;
-            break;
-        case 2: // 2K
-            v = (static_cast<std::uint32_t>(m_chrUpper & 1) << 9)
-                | (static_cast<std::uint32_t>(value) << 1)
-                | (value & 1);
-            break;
-        case 1: // 4K
-            v = (static_cast<std::uint32_t>(value) << 2) | (value & 1);
-            break;
-        default: // 8K
-            v = (static_cast<std::uint32_t>(value & 0x7F) << 3) | (value & 1);
-            break;
-        }
+        const std::uint32_t unit = 1u << (3 - m_chrMode); // 1K banks per unit
+        const std::uint32_t number =
+            (static_cast<std::uint32_t>(m_chrUpper & 3) << 8) | value;
+        const std::uint32_t v = number * unit;
         m_chrRegs[index] = static_cast<std::uint16_t>(v & 0x3FF);
         m_lastChrSet = index < 8 ? 0 : 8;
     }

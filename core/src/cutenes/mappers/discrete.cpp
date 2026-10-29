@@ -77,14 +77,11 @@ public:
 
     std::uint8_t cpuRead(std::uint16_t addr) override
     {
-        // BNROM: the written value selects a 32K PRG region presented at
-        // $8000-$FFFF (banks come in 16K halves; the register's bit 0
-        // picks between adjacent halves on 16K-granular boards — 240pee's
-        // 64K ROM uses bits 0-1).
+        // BNROM: the written value selects a 32K PRG bank presented at
+        // $8000-$FFFF (nesdev BNROM: bank select, bits 0-1 on 128K boards).
         const std::size_t banks = m_cart.prg.size() / 0x8000;
-        const std::size_t bank = (m_bank >> 1) & (banks ? banks - 1 : 0);
-        const std::size_t pick = addr < 0xC000 ? bank * 2 : bank * 2 + 1;
-        return m_cart.prg[(pick * 0x4000 + (addr & 0x3FFF))
+        const std::size_t bank = m_bank & (banks ? banks - 1 : 0);
+        return m_cart.prg[(bank * 0x8000 + (addr & 0x7FFF))
             % m_cart.prg.size()];
     }
 

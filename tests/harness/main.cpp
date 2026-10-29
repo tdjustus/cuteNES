@@ -413,6 +413,27 @@ int cmdBench(const char* romPath, std::uint32_t seconds)
     }
 }
 
+// Write the frame shown after N frames as a binary PPM (for inspection).
+int cmdShot(const char* romPath, std::uint32_t frames, const char* outPath)
+{
+    std::vector<std::uint8_t> rom;
+    if (!readRom(romPath, rom)) {
+        return 2;
+    }
+    cutenes::Machine machine;
+    if (machine.loadCartridge(rom.data(), rom.size()).error
+        != cutenes::LoadError::Ok) {
+        return 2;
+    }
+    RecordingSink sink;
+    sink.keepLast = true;
+    machine.setVideoSink(&sink);
+    machine.setAudioSink(&sink);
+    machine.powerOn();
+    machine.runFrames(frames);
+    return writePpm(outPath, sink.last) ? 0 : 2;
+}
+
 // Debugging aid: report where the CPU is after N frames, sampling PC over the
 // next few frames (a ROM stuck in a crash handler shows a tight loop).
 // Environment variables select other views:
@@ -1088,6 +1109,7 @@ void usage()
         "  nestest [--golden-log]          CPU golden-log verification (T029)\n"
         "  savestate --rom R --at F --rerun-to F   restore round trip (T051)\n"
         "  settle ROM [--min-frames N] [--expect HASH] [--out F.ppm]\n"
+        "  shot ROM FRAMES OUT.ppm              frame after N frames as PPM\n"
         "  text ROM FRAMES / where ROM FRAMES   debugging views (see source)\n"
         "  playtest --list FILE [--entry N] scripted game checks (T059)\n"
         "  bench --rom R                   5s sustained-speed benchmark (T061)\n"
@@ -1127,6 +1149,9 @@ int main(int argc, char** argv)
             return 2;
         }
         return cmdGolden(argv[3], check);
+    }
+    if (command == "shot" && argc == 5) {
+        return cmdShot(argv[2], parseUint(argv[3]), argv[4]);
     }
     if (command == "where" && argc == 4) {
         return cmdWhere(argv[2], parseUint(argv[3]));
