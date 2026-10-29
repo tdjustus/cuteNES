@@ -73,6 +73,12 @@ run 1500 none
 expect-text PASSED
 end
 
+entry branch-timing-3-forward-branch
+rom ../roms/branch_timing_tests/3.Forward_Branch.nes
+run 1500 none
+expect-text PASSED
+end
+
 entry vbl-nmi-timing-1-frame-basics
 rom ../roms/vbl_nmi_timing/1.frame_basics.nes
 run 1500 none

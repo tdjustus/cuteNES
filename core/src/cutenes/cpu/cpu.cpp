@@ -723,8 +723,9 @@ void Cpu::branch(bool condition)
     if (crossed) {
         tick(); // page cross: one more
     }
-    // A taken non-page-crossing branch ignores IRQ/NMI during its last
-    // clock, so the next instruction runs before service (test 5).
+    // A taken non-page-crossing branch samples IRQ before its second cycle,
+    // so the next instruction runs before service (test 5). NMI is not
+    // affected (branch_timing_tests 3).
     m_branchSkipPoll = !crossed;
     m_pc = target;
 }
@@ -900,7 +901,8 @@ void Cpu::step()
         m_skipPollOnce = false;
         m_branchSkipPoll = false;
     } else {
-        if (!m_branchSkipPoll) {
+        m_branchSkipPoll = false; // consumed: only the IRQ sample uses it
+        {
             // Interrupts are effectively polled at the second-to-last cycle
             // of an instruction: an edge latched ON the final cycle defers
             // service past this boundary (05-nmi_timing, 04-nmi_control).
@@ -915,8 +917,6 @@ void Cpu::step()
             if (m_nmiPending) {
                 m_nmiStale = true; // edge landed on the last cycle: defer
             }
-        } else {
-            m_branchSkipPoll = false; // taken branch ignored its last clock
         }
         // The flag-change delay: CLI/SEI/PLP take effect for the poll after
         // the NEXT instruction (test 3). The decision uses the sample taken

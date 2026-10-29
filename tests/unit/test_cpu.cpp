@@ -187,6 +187,25 @@ TEST(Cpu, NmiPushesStateAndJumpsToVector)
     EXPECT_EQ(h.scheduler.now(), 7 * kTick + 2 * kTick);
 }
 
+// Branch Timing Tests 3 (blargg, passes on hardware): a taken branch that does
+// not cross a page delays only the IRQ poll, not NMI. An NMI that rose before
+// the branch's last cycle is serviced at the next boundary, before the next
+// instruction.
+TEST(Cpu, NmiRaisedDuringTakenBranchIsServicedAtNextBoundary)
+{
+    CpuHarness h;
+    h.prg.prg[(0xFFFA - 0x8000) & 0x3FFF] = 0x02;
+    h.prg.prg[(0xFFFB - 0x8000) & 0x3FFF] = 0xC0;
+    h.setPrg(0x8000, {0xD0, 0x01,    // BNE +1 (Z clear at reset: taken)
+                      0xEA, 0xEA});
+    h.cpu.setProgramCounter(0x8000);
+    h.cpu.step(); // the taken branch
+    EXPECT_EQ(h.cpu.state().pc, 0x8003);
+    h.cpu.assertNmi(); // rose during the branch
+    h.cpu.step();
+    EXPECT_EQ(h.cpu.state().pc, 0xC002); // serviced, NOP at $8003 not run
+}
+
 TEST(Cpu, ResetStateMatchesPowerOnConstants)
 {
     CpuHarness h;

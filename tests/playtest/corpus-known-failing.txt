@@ -3,15 +3,8 @@
 # correct; it fails because the emulator disagrees. Other emulators in the
 # corpus status table (tests/roms/status.txt) pass these. Move an entry to
 # corpus.txt when it is fixed. Tracked in the GitHub 1.0 milestone:
-#  - branch-timing 3: forward branch timing.
 #  - vbl-nmi-timing 7: NMI timing.
 #  - pal-apu 04-08, 10, 11: the APU has only NTSC frame-counter steps.
-
-entry branch-timing-3-forward-branch
-rom ../roms/branch_timing_tests/3.Forward_Branch.nes
-run 1500 none
-expect-text PASSED
-end
 
 entry vbl-nmi-timing-7-nmi-timing
 rom ../roms/vbl_nmi_timing/7.nmi_timing.nes
