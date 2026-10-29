@@ -31,7 +31,10 @@ is resolved**, meaning the GitHub milestone `1.0` has no open issues (see
 4. **Tests first for core behavior** (constitution, Principle III): write
    the test, watch it fail, then fix.
 5. **Open a PR into `main`.** If the PR resolves tracked issues, put
-   `Fixes #N` in its description so they close on merge.
+   `Fixes #N` in its description so they close on merge, but only when the
+   PR fully resolves the issue. Otherwise use `Refs #N`, in every commit
+   message too (a closing keyword anywhere in the history closes it). Never
+   close an unresolved issue; postpone it with a label or later milestone.
 6. **Keep the branch current by merging `main` into it** (no rebase). Check
    first whether the remote branch already contains `main`; the "Update
    branch" button in GitHub does the same thing.
