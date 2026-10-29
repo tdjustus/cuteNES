@@ -44,6 +44,18 @@ name suggests, the entry is named for where it actually ends (for example
 `zelda-2-boot-reaches-file-registration`) and the gap is recorded in the entry
 comment.
 
+## Golden hashes: what they prove
+
+`tests/golden/` pins 13 frames so any platform difference or unintended pixel
+change fails. A hash records what this emulator draws; it does not prove the
+picture is correct. Each entry in `tests/golden/roms.txt` states its status,
+set by viewing the frame: **VERIFIED** (the ROM's own verdict or a shipped
+reference image: `mmc3_clocking`, `apu_len_table`, `m22_chr_banking`),
+**CHECKED BY EYE** (recognisable, consistent with the ROM's documentation, but no
+verdict: `nestest`, `mmc1_a12`, `mmc5_test_v2`, `mmc5_exram`, `a53_streemerz`,
+`bnrom_240pee`), **UNVERIFIED** (no documented expected screen: `litewall`,
+`mmc5_test`, `mmc5_firefly`) or **WRONG** (`full_palette`, tracked by #49).
+
 ## Folders added by the corpus triage
 
 | Folder | ROMs | Disposition |

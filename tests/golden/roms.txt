@@ -1,27 +1,39 @@
+# Golden hashes: determinism and regression checks across platforms. A hash
+# records what THIS emulator draws; it does not prove the picture is right. Each
+# entry carries its verification status, set by viewing the frame
+# (`rom_harness shot ROM FRAMES OUT.ppm`):
+#   VERIFIED         the ROM's own verdict text, or a reference image shipped with it
+#   CHECKED BY EYE   recognisable and consistent with the ROM's documentation, but no verdict
+#   UNVERIFIED       no documentation of the expected screen was found
+#   WRONG            known to differ from the correct output; tracked by an issue
+# A hash whose frame changes after an intentional fix must be re-viewed and
+# re-recorded; an unexplained change is a regression.
 # T065 cross-platform golden set: vendored ROMs only (CI has no roms-local).
 # name                  rom                                            frames
+# nestest: CHECKED BY EYE: nestest's menu before any test is run (all entries unmarked). No verdict here; the verdict is nestest-golden-log and the playtest nestest-all-tests-ok.
 nestest                 ../roms/other/nestest.nes                       600
+# full_palette: WRONG (#49): shows blue horizontal bands; the ROM's source says it draws the whole palette as a clean grid. The PPU does not output the palette colour at v while rendering is off. Re-record after the fix.
 full_palette            ../roms/full_palette/full_palette.nes           300
+# litewall: UNVERIFIED: shows a clean palette-colour grid, but the folder has no documentation of the expected screen.
 litewall                ../roms/blargg_litewall/litewall3.nes           300
+# mmc1_a12: CHECKED BY EYE: the title text of Bregalad's MMC1 WRAM-disable scanline-counter test. The test is interactive (adjust DELAY with the D-pad), so no verdict is shown at boot.
 mmc1_a12                ../roms/MMC1_A12/mmc1_a12.nes                   300
+# mmc3_clocking: VERIFIED: the ROM's own verdict, '1-clocking ... Passed'.
 mmc3_clocking           ../roms/mmc3_test/1-clocking.nes                600
+# apu_len_table: VERIFIED: the ROM's own verdict, '2-len_table ... Passed'.
 apu_len_table           ../roms/apu_test/rom_singles/2-len_table.nes    300
 
-# MMC5 (mapper 5): ExRAM modes, 1K CHR banks, 8x16 sprite banks,
-# fill/nametable mapping and code execution from ExRAM (session 44).
+# mmc5_test: UNVERIFIED: blue field with a numbered stripe pattern; no documentation of the expected screen.
 mmc5_test        ../roms/mmc5test/mmc5test.nes                  300
+# mmc5_test_v2: CHECKED BY EYE: the test's menu with default register values (OBJ table 0000, BG table 1000); the bank-display behaviour needs button input and is not verified here.
 mmc5_test_v2     ../roms/mmc5test_v2/mmc5test.nes               300
+# mmc5_exram: CHECKED BY EYE: the description text and the coloured copper bars it describes ('each colour bar ... displayed during each frame'); matches the ROM's own text.
 mmc5_exram       ../roms/exram/mmc5exram.nes                    300
+# mmc5_firefly: UNVERIFIED: a brick background with a green sprite (the firefly demo); no documentation of the expected screen.
 mmc5_firefly     ../roms/other/firefly.nes                      300
-# VRC2a CHR banking: re-recorded after the right-shift fix; the frame shows bank 18
-# and consecutive 8-frame steps match banks 18,18,19,19,... of the ROM's own
-# reference image (0-127.png), verified with a pixel comparison.
+# m22_chr_banking: VERIFIED: bank 18 matches the ROM's reference 0-127.png; successive screens follow banks 18,18,19,19,...
 m22_chr_banking   ../roms/m22chrbankingtest/0-127.nes            300
-
-# Action 53 (mapper 28): the Streemerz bundle boots to its title screen
-# (verified by eye: logo and "Press Start Button").
+# a53_streemerz: CHECKED BY EYE: the Streemerz title screen (logo, 'Press Start Button').
 a53_streemerz     ../roms/other/Streemerz_bundle.nes             600
-
-# BNROM (mapper 34): the 240p Test Suite About page (verified by eye: full
-# credits text; before the 32K bank-select fix the panel was nearly empty).
+# bnrom_240pee: CHECKED BY EYE: the 240p Test Suite About page with its full credits text.
 bnrom_240pee      ../roms/240pee/240pee-bnrom.nes                600
