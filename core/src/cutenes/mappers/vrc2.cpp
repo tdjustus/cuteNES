@@ -12,8 +12,8 @@
 //   * CHR Select 0-7 ($B000-$E003): two-write nibble registers, low 4
 //     bits then high 4 (VRC2 has 4 high bits, 256K CHR max).
 //   * $C000-$FFFF is fixed to the last 16K of PRG.
-// VRC2a additionally swaps the CHR bank's A0/A1 lines: the effective
-// 1K bank is the register value with bits 0 and 1 exchanged.
+// VRC2a additionally drops the CHR register's low bit: the effective 1K
+// bank is the register value shifted right once.
 // Not implemented (no corpus coverage): VRC2's $6000-$6FFF Microwire
 // latch (EEPROM games) and the whole VRC4 (IRQ, $C000 bank) — mappers
 // 21/23/25 stay refused until a ROM needs them.
@@ -102,10 +102,12 @@ public:
     std::uint8_t chrRead(std::uint16_t addr) const override
     {
         const std::size_t index = (addr >> 10) & 7;
-        // VRC2a: CHR A0/A1 lines are swapped on the PCB.
+        // VRC2a: the register's low bit is not wired to CHR A10, so the
+        // 1K bank is the register value shifted right once (nesdev VRC2 and
+        // VRC4: "VRC2a ... the CHR bank number is right-shifted"). The
+        // m22chrbankingtest ROM sweeps 0-255 to reach all 128 banks.
         const std::uint8_t v = m_chrRegs[index];
-        const std::size_t bank = static_cast<std::size_t>(
-            (v & 0xFC) | ((v & 1) << 1) | ((v >> 1) & 1));
+        const std::size_t bank = static_cast<std::size_t>(v >> 1);
         if (m_cart.chr.empty()) {
             return 0;
         }

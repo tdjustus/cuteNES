@@ -210,3 +210,103 @@ TEST(ColorDreams, PrgAndChrFieldsAreIndependent)
     EXPECT_EQ(b.prg(0x8000), 0);
     EXPECT_EQ(b.chrBankAtZero(), 7);
 }
+
+// --- VRC2a (mapper 22) --------------------------------------------------------
+// Board 351618 swaps the ASIC's register-select lines: sub-registers decode
+// at $x000, $x002, $x001, $x003. PRG: $8000/$A000 = two 8K banks, $C000-$FFFF
+// = the last 16K. CHR: eight 1K windows, each a two-write nibble register,
+// and VRC2a drops the low bit of the CHR bank number (bank = value >> 1).
+
+namespace {
+
+// 128K PRG = 16 x 8K banks and 128K CHR = 128 x 1K banks. makeRom tags 16K
+// banks; re-tag every 8K bank with its own index so 8K windows are checkable.
+struct Vrc2a : Board {
+    Vrc2a() : Board(22, 8, 16)
+    {
+        for (std::size_t bank = 0; bank < 16; ++bank) {
+            rom[16 + bank * 8192] = static_cast<std::uint8_t>(bank);
+        }
+        cart = cutenes::Cartridge{};
+        const auto result = cutenes::Cartridge::load(rom.data(), rom.size(), cart);
+        EXPECT_EQ(result.error, cutenes::LoadError::Ok);
+    }
+
+    // Writes the 8-bit CHR value for window `n` (0-7) as two nibble writes.
+    void setChr(int n, std::uint8_t value)
+    {
+        const std::uint16_t base =
+            static_cast<std::uint16_t>(0xB000 + (n / 2) * 0x1000);
+        const int odd = n & 1; // reg 1 of the pair uses $x001/$x003
+        cart.cpuWrite(static_cast<std::uint16_t>(base + odd), value & 0x0F);
+        cart.cpuWrite(static_cast<std::uint16_t>(base + 2 + odd), value >> 4);
+    }
+    int chrBank(int window) { return cart.chrRead(static_cast<std::uint16_t>(window * 0x400)); }
+};
+
+} // namespace
+
+TEST(Vrc2a, PrgSelectsTwoEightKilobyteWindowsAndFixesTheLastSixteenK)
+{
+    Vrc2a b;
+    b.cart.cpuWrite(0x8000, 3);
+    b.cart.cpuWrite(0xA000, 5);
+    EXPECT_EQ(b.prg(0x8000), 3);
+    EXPECT_EQ(b.prg(0xA000), 5);
+    EXPECT_EQ(b.prg(0xC000), 14) << "second-to-last 8K bank";
+    EXPECT_EQ(b.prg(0xE000), 15) << "last 8K bank";
+}
+
+TEST(Vrc2a, PrgBankNumbersWrapToTheRomSize)
+{
+    Vrc2a b;
+    b.cart.cpuWrite(0x8000, 0x13); // 19 wraps to 3 on 16 banks
+    EXPECT_EQ(b.prg(0x8000), 3);
+}
+
+TEST(Vrc2a, MirroringRegisterSelectsVerticalOrHorizontal)
+{
+    Vrc2a b;
+    b.cart.cpuWrite(0x9000, 0);
+    EXPECT_EQ(b.cart.mirroring(), cutenes::Mirroring::Vertical);
+    b.cart.cpuWrite(0x9000, 1);
+    EXPECT_EQ(b.cart.mirroring(), cutenes::Mirroring::Horizontal);
+    b.cart.cpuWrite(0x9000, 2); // VRC2 has no one-screen modes; bit 1 ignored
+    EXPECT_EQ(b.cart.mirroring(), cutenes::Mirroring::Vertical);
+}
+
+TEST(Vrc2a, ChrBankIsTheTwoNibbleValueShiftedRightOnce)
+{
+    Vrc2a b;
+    b.setChr(1, 0x00);
+    EXPECT_EQ(b.chrBank(1), 0);
+    b.setChr(1, 0x02);
+    EXPECT_EQ(b.chrBank(1), 1);
+    b.setChr(1, 0x03);
+    EXPECT_EQ(b.chrBank(1), 1) << "the low bit is not wired";
+    b.setChr(1, 0x35);
+    EXPECT_EQ(b.chrBank(1), 0x1A);
+    b.setChr(1, 0xFE);
+    EXPECT_EQ(b.chrBank(1), 0x7F) << "reaches the last of 128 banks";
+}
+
+TEST(Vrc2a, EachOfTheEightWindowsHasItsOwnRegister)
+{
+    Vrc2a b;
+    for (int n = 0; n < 8; ++n) {
+        b.setChr(n, static_cast<std::uint8_t>((10 + n) * 2));
+    }
+    for (int n = 0; n < 8; ++n) {
+        EXPECT_EQ(b.chrBank(n), 10 + n) << "window " << n;
+    }
+}
+
+TEST(Vrc2a, NibbleWritesKeepTheOtherNibble)
+{
+    Vrc2a b;
+    b.setChr(0, 0xA6);          // value 0xA6 -> bank 0x53
+    b.cart.cpuWrite(0xB000, 0x8); // low nibble only -> 0xA8 -> bank 0x54
+    EXPECT_EQ(b.chrBank(0), 0x54);
+    b.cart.cpuWrite(0xB002, 0x1); // high nibble only -> 0x18 -> bank 0x0C
+    EXPECT_EQ(b.chrBank(0), 0x0C);
+}
