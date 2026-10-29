@@ -1,0 +1,82 @@
+# KNOWN FAILING (label known-failing; excluded from CI, run with
+# `ctest -L known-failing`). Each entry states the result the ROM documents as
+# correct; it fails because the emulator disagrees. Other emulators in the
+# corpus status table (tests/roms/status.txt) pass these. Move an entry to
+# corpus.txt when it is fixed. Tracked in the GitHub 1.0 milestone:
+#  - apu2005 10/11: length-counter halt and reload timing.
+#  - branch-timing 3: forward branch timing.
+#  - vbl-nmi-timing 7: NMI timing.
+#  - pal-apu 04-08, 10, 11: the APU has only NTSC frame-counter steps.
+
+entry apu2005-10-len-halt-timing
+rom ../roms/blargg_apu_2005.07.30/10.len_halt_timing.nes
+run 1500 none
+expect-text $01
+end
+
+entry apu2005-11-len-reload-timing
+rom ../roms/blargg_apu_2005.07.30/11.len_reload_timing.nes
+run 1500 none
+expect-text $01
+end
+
+entry branch-timing-3-forward-branch
+rom ../roms/branch_timing_tests/3.Forward_Branch.nes
+run 1500 none
+expect-text PASSED
+end
+
+entry vbl-nmi-timing-7-nmi-timing
+rom ../roms/vbl_nmi_timing/7.nmi_timing.nes
+run 1500 none
+expect-text PASSED
+end
+
+entry pal-apu-04-clock-jitter
+rom ../roms/pal_apu_tests/04.clock_jitter.nes
+region pal
+run 1500 none
+expect-text PASSED
+end
+
+entry pal-apu-05-len-timing-mode0
+rom ../roms/pal_apu_tests/05.len_timing_mode0.nes
+region pal
+run 1500 none
+expect-text PASSED
+end
+
+entry pal-apu-06-len-timing-mode1
+rom ../roms/pal_apu_tests/06.len_timing_mode1.nes
+region pal
+run 1500 none
+expect-text PASSED
+end
+
+entry pal-apu-07-irq-flag-timing
+rom ../roms/pal_apu_tests/07.irq_flag_timing.nes
+region pal
+run 1500 none
+expect-text PASSED
+end
+
+entry pal-apu-08-irq-timing
+rom ../roms/pal_apu_tests/08.irq_timing.nes
+region pal
+run 1500 none
+expect-text PASSED
+end
+
+entry pal-apu-10-len-halt-timing
+rom ../roms/pal_apu_tests/10.len_halt_timing.nes
+region pal
+run 1500 none
+expect-text PASSED
+end
+
+entry pal-apu-11-len-reload-timing
+rom ../roms/pal_apu_tests/11.len_reload_timing.nes
+region pal
+run 1500 none
+expect-text PASSED
+end

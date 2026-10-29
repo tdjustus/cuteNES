@@ -266,3 +266,63 @@ TEST(ScriptedInput, AffectsGameExecution)
     EXPECT_EQ(withA & 1, 1);
     EXPECT_EQ(withoutA & 1, 0);
 }
+
+// --- Region selection ----------------------------------------------------------
+// A NES 2.0 header's TV-system field (byte 12, bits 0-1) selects PAL or NTSC
+// timing. PAL runs 50 frames a second, so a frame is longer and produces more
+// audio samples than an NTSC frame.
+
+namespace {
+
+struct CountingAudio final : cutenes::IAudioSink {
+    void onSamples(const std::int16_t*, std::size_t count, std::uint64_t) override
+    {
+        samples += count;
+    }
+    std::size_t samples = 0;
+};
+
+std::vector<std::uint8_t> makeNes2Rom(std::uint8_t tvSystem)
+{
+    std::vector<std::uint8_t> rom = makeEchoRom();
+    rom[7] = 0x08;      // NES 2.0
+    rom[12] = tvSystem; // 0 NTSC, 1 PAL
+    return rom;
+}
+
+} // namespace
+
+TEST(Region, Nes2HeaderSelectsTheTvSystem)
+{
+    for (const auto& [tv, expected] :
+        {std::pair{std::uint8_t{0}, cutenes::Region::Ntsc},
+            std::pair{std::uint8_t{1}, cutenes::Region::Pal}}) {
+        auto rom = makeNes2Rom(tv);
+        cutenes::Machine machine;
+        ASSERT_EQ(machine.loadCartridge(rom.data(), rom.size()).error,
+            cutenes::LoadError::Ok);
+        EXPECT_EQ(machine.region(), expected) << "tv system " << int(tv);
+    }
+}
+
+TEST(Region, PalFramesCarryMoreAudioThanNtscFrames)
+{
+    std::size_t samples[2] = {0, 0};
+    for (int pal = 0; pal < 2; ++pal) {
+        auto rom = makeNes2Rom(static_cast<std::uint8_t>(pal));
+        CountingAudio audio;
+        cutenes::Machine machine;
+        machine.setAudioSink(&audio); // set before load: must survive it
+        ASSERT_EQ(machine.loadCartridge(rom.data(), rom.size()).error,
+            cutenes::LoadError::Ok);
+        machine.powerOn();
+        machine.runFrames(120);
+        samples[pal] = audio.samples;
+    }
+    EXPECT_GT(samples[0], 0u) << "NTSC sink received audio";
+    EXPECT_GT(samples[1], 0u) << "PAL sink must survive the region rebuild";
+    // 120 frames at 48 kHz: NTSC 60.0988 fps = 1.9967 s = ~95.8k samples,
+    // PAL 50.0070 fps = 2.3997 s = ~115.2k samples (within 1%).
+    EXPECT_NEAR(static_cast<double>(samples[0]), 95840.0, 960.0);
+    EXPECT_NEAR(static_cast<double>(samples[1]), 115186.0, 1152.0);
+}

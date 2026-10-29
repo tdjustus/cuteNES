@@ -113,6 +113,7 @@ int cmdRun(const char* romPath, std::uint32_t frames)
     machine.powerOn();
     machine.runFrames(frames);
 
+    std::printf("region %s; ", machine.region() == cutenes::Region::Pal ? "PAL" : "NTSC");
     std::printf("ran %llu frames; first %08x last %08x audio %llu samples\n",
         static_cast<unsigned long long>(sink.hashes.size()),
         sink.hashes.empty() ? 0 : sink.hashes.front(),
@@ -665,6 +666,7 @@ struct PlaytestEntry {
     std::string rom;
     std::string expectError;
     int forceSubmapper = -1; // test-only: patch header to NES 2.0 + submapper
+    int forceRegion = -1;    // test-only: patch header to NES 2.0 TV system (0 NTSC, 1 PAL)
     bool fontA1 = false; // tile codes 1..26 are letters A..Z (else ASCII)
     std::vector<PlaytestStep> steps;
 };
@@ -788,6 +790,13 @@ bool parsePlaytest(const std::string& text, std::vector<PlaytestEntry>& out,
                 || current->forceSubmapper > 15) {
                 return fail("force-submapper needs 0..15");
             }
+        } else if (cmd == "region") {
+            std::string name;
+            if (current == nullptr || !(tokens >> name)
+                || (name != "ntsc" && name != "pal")) {
+                return fail("region needs 'ntsc' or 'pal' inside an entry");
+            }
+            current->forceRegion = name == "pal" ? 1 : 0;
         } else if (cmd == "font") {
             std::string name;
             if (current == nullptr || !(tokens >> name)
@@ -832,18 +841,20 @@ bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry,
         why = "cannot read " + romPath;
         return false;
     }
-    if (entry.forceSubmapper >= 0 && rom.size() >= 16) {
-        // Test-only: promote the header to NES 2.0 and select the
-        // submapper (byte 7 bit 3; byte 13 low nibble). Keeps PRG/CHR
-        // sizes; RAM bytes set to a safe 8K shift.
+    if ((entry.forceSubmapper >= 0 || entry.forceRegion >= 0) && rom.size() >= 16) {
+        // Test-only: promote the header to NES 2.0 and select the submapper
+        // (byte 7 bit 3; byte 13 low nibble) and/or TV system (byte 12 bits
+        // 0-1). Keeps PRG/CHR sizes; RAM bytes set to a safe 8K shift.
         rom[7] = static_cast<std::uint8_t>((rom[7] & 0xF0) | 0x08);
         rom[8] = 0;
         rom[9] = 0;
         rom[10] = 7; // 8K PRG-RAM shift
         rom[11] = 0;
-        rom[12] = 0; // NTSC
+        rom[12] = static_cast<std::uint8_t>(
+            entry.forceRegion >= 0 ? entry.forceRegion : 0);
         rom[13] = static_cast<std::uint8_t>(
-            (rom[13] & 0xF0) | (entry.forceSubmapper & 0x0F));
+            (rom[13] & 0xF0)
+            | ((entry.forceSubmapper >= 0 ? entry.forceSubmapper : 0) & 0x0F));
         rom[14] = 0;
         rom[15] = 0;
     }

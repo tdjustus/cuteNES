@@ -114,6 +114,13 @@ private:
     void evaluateSpritesForLine0(); // pre-render: no evaluation (quirk)
     void setBackgroundShifters();
 
+    // Pre-render scanline for the region (261 NTSC, 311 PAL), and whether odd
+    // frames drop a dot while rendering (NTSC only).
+    int preRenderLine() const { return static_cast<int>(m_profile.preRenderScanline); }
+    bool oddFrameSkips() const
+    {
+        return m_profile.ppuDivisor == regionProfile(Region::Ntsc).ppuDivisor;
+    }
     std::uint16_t nametableIndex(std::uint16_t addr) const;
     std::uint8_t readNametable(std::uint16_t addr) const; // mapper-aware
     void writeNametable(std::uint16_t addr, std::uint8_t value);
