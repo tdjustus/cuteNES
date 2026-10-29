@@ -5,59 +5,9 @@
 # corpus.txt when it is fixed. Tracked in the GitHub 1.0 milestone:
 #  - vbl-nmi-timing 7: documented limitation (sub-cycle CPU/PPU phase), #42;
 #    see docs/test-corpus.md. The issue stays open.
-#  - pal-apu 04-08, 10, 11: the APU has only NTSC frame-counter steps.
 
 entry vbl-nmi-timing-7-nmi-timing
 rom ../roms/vbl_nmi_timing/7.nmi_timing.nes
-run 1500 none
-expect-text PASSED
-end
-
-entry pal-apu-04-clock-jitter
-rom ../roms/pal_apu_tests/04.clock_jitter.nes
-region pal
-run 1500 none
-expect-text PASSED
-end
-
-entry pal-apu-05-len-timing-mode0
-rom ../roms/pal_apu_tests/05.len_timing_mode0.nes
-region pal
-run 1500 none
-expect-text PASSED
-end
-
-entry pal-apu-06-len-timing-mode1
-rom ../roms/pal_apu_tests/06.len_timing_mode1.nes
-region pal
-run 1500 none
-expect-text PASSED
-end
-
-entry pal-apu-07-irq-flag-timing
-rom ../roms/pal_apu_tests/07.irq_flag_timing.nes
-region pal
-run 1500 none
-expect-text PASSED
-end
-
-entry pal-apu-08-irq-timing
-rom ../roms/pal_apu_tests/08.irq_timing.nes
-region pal
-run 1500 none
-expect-text PASSED
-end
-
-entry pal-apu-10-len-halt-timing
-rom ../roms/pal_apu_tests/10.len_halt_timing.nes
-region pal
-run 1500 none
-expect-text PASSED
-end
-
-entry pal-apu-11-len-reload-timing
-rom ../roms/pal_apu_tests/11.len_reload_timing.nes
-region pal
 run 1500 none
 expect-text PASSED
 end

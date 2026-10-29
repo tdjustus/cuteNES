@@ -31,6 +31,10 @@ public:
     void saveState(class StateWriter& w) const;
     void loadState(StateReader& r);
 
+    // Region period tables in CPU cycles (nesdev "APU Noise"/"APU DMC").
+    static std::uint16_t noisePeriod(const RegionProfile& profile, int index);
+    static std::uint16_t dmcRate(const RegionProfile& profile, int index);
+
     // $4000-$4017 (the machine's APU/IO bridge dispatches here).
     std::uint8_t registerRead(std::uint16_t addr);
     void registerWrite(std::uint16_t addr, std::uint8_t value);
@@ -235,6 +239,8 @@ private:
     static const std::array<std::uint8_t, 32> kLengthTable;
     static const std::array<std::uint16_t, 16> kNoisePeriods;
     static const std::array<std::uint16_t, 16> kDmcRates;
+    static const std::array<std::uint16_t, 16> kNoisePeriodsPal;
+    static const std::array<std::uint16_t, 16> kDmcRatesPal;
     static const std::array<std::uint8_t, 4> kDuty;
     static std::array<std::int32_t, 31> sPulseTable;   // built once
     static std::array<std::int32_t, 203> sTndTable;    // built once
