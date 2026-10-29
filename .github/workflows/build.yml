@@ -88,6 +88,20 @@ jobs:
         if: matrix.buildtype == 'Debug' && github.event_name == 'pull_request'
         run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior" -LE known-failing
 
+      # Performance gate (constitution: no regression of real-time speed).
+      # Shared runners are noisy, so CI fails only below 1.0x real-time; the
+      # measured speed goes to the job summary for trend-watching. The spec's
+      # 2x headroom is checked locally (rom_harness bench's default).
+      - name: Benchmark
+        if: matrix.os == 'ubuntu-latest' && matrix.buildtype == 'Release'
+        shell: bash
+        run: |
+          out=$(build/tests/rom_harness bench --rom tests/roms/other/BladeBuster.nes --seconds 5 --min-x 1.0) || status=$?
+          echo "$out"
+          echo "### Benchmark (ubuntu-latest, Release)" >> "$GITHUB_STEP_SUMMARY"
+          echo "$out" >> "$GITHUB_STEP_SUMMARY"
+          exit ${status:-0}
+
   # Address + undefined-behavior sanitizers with assertions on. -O1 keeps
   # the instrumented run to minutes instead of the ~45 min of an -O0 build.
   sanitize:

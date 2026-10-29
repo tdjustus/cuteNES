@@ -69,6 +69,17 @@ of this ROM. Passing test 7 would need sub-cycle CPU/PPU phase modelling that
 the calibrated timing tests above do not require. The issue stays open in the 1.0 milestone; the
 entry stays in `corpus-known-failing.txt` until a phase model makes it pass.
 
+## Performance gate
+
+The constitution forbids regressing real-time speed. `rom_harness bench --rom R
+[--seconds N] [--min-x X]` runs a ROM flat out and exits 1 below X times real
+time (default 2.0, the spec's 2x headroom; a typical development machine reaches
+about 7x). The `build` workflow runs it on the Linux Release job on every
+code-changing PR, on tags and weekly, with a floor of 1.0x because shared
+runners vary; the measured speed is written to the job summary so a slow drift
+is visible. A drop below 1.0x on CI is a real regression. Check the 2x target
+locally before releases.
+
 ## Folders added by the corpus triage
 
 | Folder | ROMs | Disposition |
