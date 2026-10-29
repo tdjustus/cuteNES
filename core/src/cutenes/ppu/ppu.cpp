@@ -932,6 +932,11 @@ void Ppu::renderPixel(std::uint32_t x)
         }
     }
 
+    // Rendering off with v inside palette RAM: the PPU drives the entry v
+    // points at instead of the backdrop (nesdev "PPU palettes").
+    if (!renderingEnabled() && (m_v & 0x3F00) == 0x3F00) {
+        index = static_cast<std::uint8_t>(m_v & 0x1F);
+    }
     std::uint8_t color = paletteRead(index);
     if ((m_mask & 0x01) != 0) { // grayscale
         color &= 0x30;

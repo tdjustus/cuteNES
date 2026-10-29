@@ -1,5 +1,5 @@
 golden: nestest            last=c3c3e1fa audio=479143
-golden: full_palette       last=4f35867e audio=239538
+golden: full_palette       last=3da6100d audio=239538
 golden: litewall           last=d8f3a605 audio=239538
 golden: mmc1_a12           last=0a3bcd6e audio=239538
 golden: mmc3_clocking      last=d108a785 audio=479143

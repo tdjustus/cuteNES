@@ -12,7 +12,7 @@
 # name                  rom                                            frames
 # nestest: CHECKED BY EYE: nestest's menu before any test is run (all entries unmarked). No verdict here; the verdict is nestest-golden-log and the playtest nestest-all-tests-ok.
 nestest                 ../roms/other/nestest.nes                       600
-# full_palette: WRONG (#49): shows blue horizontal bands; the ROM's source says it draws the whole palette as a clean grid. The PPU does not output the palette colour at v while rendering is off. Re-record after the fix.
+# full_palette: CHECKED BY EYE: clean palette grid (hue columns x brightness rows, emphasis variants), matching full_palette.s's description. Was WRONG before #49 (PPU did not output the palette entry at v with rendering off).
 full_palette            ../roms/full_palette/full_palette.nes           300
 # litewall: UNVERIFIED: shows a clean palette-colour grid, but the folder has no documentation of the expected screen.
 litewall                ../roms/blargg_litewall/litewall3.nes           300

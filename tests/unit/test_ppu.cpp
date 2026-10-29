@@ -184,3 +184,40 @@ TEST(Ppu, ColourEmphasisAttenuatesOtherChannels)
     EXPECT_EQ(px(all, 16), (px(base, 16) * 3) / 4);
     EXPECT_EQ(px(all, 8), (px(base, 8) * 3) / 4);
 }
+
+namespace {
+
+// Pixel 0 after two frames with rendering off, VRAM address `v`, backdrop
+// $3F00 = `backdrop` and $3F05 = $16.
+std::uint32_t idlePixel(std::uint16_t v, std::uint8_t backdrop)
+{
+    PpuHarness h;
+    static std::uint32_t frame[256 * 240];
+    h.ppu.setVideoOutput(frame);
+    h.ppuWrite(0x3F00, backdrop);
+    h.ppuWrite(0x3F05, 0x16);
+    h.scheduler.advanceMaster(29700 * 12);
+    h.ppu.cpuWrite(0x2001, 0x00); // rendering off
+    h.ppu.cpuWrite(0x2006, static_cast<std::uint8_t>(v >> 8));
+    h.ppu.cpuWrite(0x2006, static_cast<std::uint8_t>(v & 0xFF));
+    h.scheduler.advanceMaster(2 * kDotsPerFrame * kDot);
+    h.ppu.runTo(h.scheduler.now());
+    return frame[0];
+}
+
+} // namespace
+
+// nesdev "PPU palettes": with rendering off and v in $3F00-$3FFF, the PPU
+// outputs the palette entry v points at instead of the backdrop.
+TEST(Ppu, IdleOutputFollowsPaletteAddressInV)
+{
+    const std::uint32_t asBackdrop16 = idlePixel(0x3F00, 0x16);
+    const std::uint32_t backdrop21 = idlePixel(0x3F00, 0x21);
+    ASSERT_NE(asBackdrop16, backdrop21);
+    EXPECT_EQ(idlePixel(0x3F05, 0x21), asBackdrop16); // entry $3F05 = $16
+}
+
+TEST(Ppu, IdleOutputUsesBackdropWhenVIsOutsidePaletteRam)
+{
+    EXPECT_EQ(idlePixel(0x2005, 0x21), idlePixel(0x3F00, 0x21));
+}
