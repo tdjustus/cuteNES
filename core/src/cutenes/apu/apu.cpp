@@ -29,6 +29,28 @@ const std::array<std::uint16_t, 16> Apu::kDmcRates = {
     190, 160, 142, 128, 106, 84, 72, 54, // NTSC CPU cycles between clocks
 };
 
+// PAL tables (nesdev "APU Noise", "APU DMC"), CPU cycles.
+const std::array<std::uint16_t, 16> Apu::kNoisePeriodsPal = {
+    4, 8, 14, 30, 60, 88, 118, 148, 188, 236, 354, 472, 708, 944, 1890, 3778,
+};
+
+const std::array<std::uint16_t, 16> Apu::kDmcRatesPal = {
+    398, 354, 316, 298, 276, 236, 210, 198,
+    176, 148, 132, 118, 98, 78, 66, 50,
+};
+
+std::uint16_t Apu::noisePeriod(const RegionProfile& profile, int index)
+{
+    return (profile.cpuDivisor == 16 ? kNoisePeriodsPal : kNoisePeriods)
+        [static_cast<std::size_t>(index & 0x0F)];
+}
+
+std::uint16_t Apu::dmcRate(const RegionProfile& profile, int index)
+{
+    return (profile.cpuDivisor == 16 ? kDmcRatesPal : kDmcRates)
+        [static_cast<std::size_t>(index & 0x0F)];
+}
+
 const std::array<std::uint8_t, 4> Apu::kDuty = {
     0x40, 0x60, 0x78, 0x9F,
 };
@@ -550,7 +572,7 @@ void Apu::registerWrite(std::uint16_t addr, std::uint8_t value)
             break;
         case 2:
             m_noise.periodIndex = value & 0x0F;
-            m_noise.timerReload = kNoisePeriods[value & 0x0F] / 2; // APU cyc
+            m_noise.timerReload = noisePeriod(m_profile, value & 0x0F) / 2; // APU cyc
             break;
         default:
             loadLength(m_noise.length, m_noise.enabled, value, m_clockedLen[3]);
@@ -820,7 +842,7 @@ void Apu::advanceDmcAddress()
 void Apu::clockDmcTimer()
 {
     if (m_dmc.timer == 0) {
-        m_dmc.timer = static_cast<std::uint16_t>(kDmcRates[m_dmc.rateIndex] / 2 - 1);
+        m_dmc.timer = static_cast<std::uint16_t>(dmcRate(m_profile, m_dmc.rateIndex) / 2 - 1);
         if (!m_dmc.silence) {
             if ((m_dmc.shiftReg & 1) != 0) {
                 m_dmc.deltaCounter = static_cast<std::uint8_t>(
@@ -930,6 +952,40 @@ const SeqEvent kClocks5[4] = {
     {22371, true, false, false},
     {37281, true, true, true},
 };
+// PAL steps (nesdev "APU Frame Counter").
+const SeqEvent kClocks0Pal[4] = {
+    {8313, true, false, false},
+    {16627, true, true, false},
+    {24939, true, false, false},
+    {33253, true, true, true},
+};
+const SeqEvent kClocks5Pal[4] = {
+    {8313, true, false, false},
+    {16627, true, true, false},
+    {24939, true, false, false},
+    {41565, true, true, true},
+};
+
+bool isPal(const RegionProfile& profile) { return profile.cpuDivisor == 16; }
+
+const SeqEvent& seqEvent(const RegionProfile& profile, bool mode5, std::uint32_t step)
+{
+    const SeqEvent* t = isPal(profile) ? (mode5 ? kClocks5Pal : kClocks0Pal)
+                                       : (mode5 ? kClocks5 : kClocks0);
+    return t[step];
+}
+
+// CPU cycles from the $4017 write to the 4-step IRQ set / period wrap, and
+// the 5-step period.
+std::uint64_t irqCycles(const RegionProfile& profile)
+{
+    return isPal(profile) ? 33254u : 29830u;
+}
+
+std::uint64_t periodCycles(const RegionProfile& profile, bool mode5)
+{
+    return mode5 ? (isPal(profile) ? 41565u : 37281u) : irqCycles(profile);
+}
 }
 
 void Apu::clockHalfFrameIfImminent()
@@ -937,8 +993,7 @@ void Apu::clockHalfFrameIfImminent()
     if (m_sequenceStep >= 4) {
         return;
     }
-    const SeqEvent& e = m_frameMode5 ? kClocks5[m_sequenceStep]
-                                     : kClocks0[m_sequenceStep];
+    const SeqEvent& e = seqEvent(m_profile, m_frameMode5, m_sequenceStep);
     const std::uint64_t at = m_seqClockBase + e.cpu * m_profile.cpuDivisor;
     if (!e.half || at < m_sched.now() || at - m_sched.now() > m_profile.cpuDivisor) {
         return;
@@ -955,15 +1010,14 @@ std::uint64_t Apu::nextSequenceEvent() const
 {
     std::uint64_t best = ~static_cast<std::uint64_t>(0);
     if (m_sequenceStep < 4) {
-        const SeqEvent& e = m_frameMode5 ? kClocks5[m_sequenceStep]
-                                         : kClocks0[m_sequenceStep];
+        const SeqEvent& e = seqEvent(m_profile, m_frameMode5, m_sequenceStep);
         best = m_seqClockBase + e.cpu * m_profile.cpuDivisor;
     }
-    const std::uint64_t period = (m_frameMode5 ? 37281u : 29830u)
+    const std::uint64_t period = periodCycles(m_profile, m_frameMode5)
         * m_profile.cpuDivisor + (m_frameMode5 ? 6u : 0u);
     if (!m_frameMode5 && !m_irqFiredThisPeriod) {
         const std::uint64_t irq =
-            m_seqBaseMaster + 29830u * m_profile.cpuDivisor;
+            m_seqBaseMaster + irqCycles(m_profile) * m_profile.cpuDivisor;
         if (irq < best) {
             best = irq;
         }
@@ -982,7 +1036,7 @@ std::uint64_t Apu::nextSequenceEvent() const
 void Apu::fireSequenceEvent(std::uint64_t eventMaster)
 {
     const std::uint64_t irqAt =
-        m_seqBaseMaster + 29830u * m_profile.cpuDivisor;
+        m_seqBaseMaster + irqCycles(m_profile) * m_profile.cpuDivisor;
     if (!m_frameMode5 && !m_irqFiredThisPeriod && eventMaster == irqAt) {
         m_irqFiredThisPeriod = true;
         if (!m_inhibitIrq) {
@@ -998,7 +1052,7 @@ void Apu::fireSequenceEvent(std::uint64_t eventMaster)
         }
         return;
     }
-    const std::uint64_t period = (m_frameMode5 ? 37281u : 29830u)
+    const std::uint64_t period = periodCycles(m_profile, m_frameMode5)
         * m_profile.cpuDivisor + (m_frameMode5 ? 6u : 0u);
     if (eventMaster == m_seqBaseMaster + period) {
         // Period wrap: an event of its own, after the IRQ.
@@ -1008,8 +1062,7 @@ void Apu::fireSequenceEvent(std::uint64_t eventMaster)
         m_irqFiredThisPeriod = false;
         return;
     }
-    const SeqEvent& e = m_frameMode5 ? kClocks5[m_sequenceStep]
-                                     : kClocks0[m_sequenceStep];
+    const SeqEvent& e = seqEvent(m_profile, m_frameMode5, m_sequenceStep);
     ++m_sequenceStep;
     if (e.quarter) quarterFrame();
     if (e.half) halfFrame();

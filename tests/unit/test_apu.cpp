@@ -247,3 +247,70 @@ TEST(ApuLength, ReloadDuringClockWorksWhenCounterIsZero)
     c.finish();
     EXPECT_TRUE(c.playing());
 }
+
+// --- PAL (nesdev "APU Noise", "APU DMC", "APU Frame Counter") ----------------
+
+TEST(ApuPal, NoiseAndDmcTablesDifferFromNtscPerTheWiki)
+{
+    const auto& ntsc = cutenes::regionProfile(cutenes::Region::Ntsc);
+    const auto& pal = cutenes::regionProfile(cutenes::Region::Pal);
+    EXPECT_EQ(cutenes::Apu::noisePeriod(ntsc, 2), 16);
+    EXPECT_EQ(cutenes::Apu::noisePeriod(pal, 2), 14);
+    EXPECT_EQ(cutenes::Apu::noisePeriod(pal, 15), 3778);
+    EXPECT_EQ(cutenes::Apu::noisePeriod(ntsc, 15), 4068);
+    EXPECT_EQ(cutenes::Apu::dmcRate(ntsc, 0), 428);
+    EXPECT_EQ(cutenes::Apu::dmcRate(pal, 0), 398);
+    EXPECT_EQ(cutenes::Apu::dmcRate(pal, 15), 50);
+    EXPECT_EQ(cutenes::Apu::dmcRate(ntsc, 15), 54);
+}
+
+namespace {
+
+struct PalApuHarness {
+    cutenes::Scheduler scheduler{cutenes::regionProfile(cutenes::Region::Pal)};
+    cutenes::Bus bus;
+    cutenes::Apu apu{cutenes::regionProfile(cutenes::Region::Pal), scheduler,
+        bus};
+
+    PalApuHarness()
+    {
+        apu.reset(/*cold=*/true);
+        scheduler.reset();
+    }
+
+    void advanceCpuCycles(std::uint64_t cycles)
+    {
+        scheduler.advanceMaster(cycles * 16);
+        apu.runTo(scheduler.now());
+    }
+};
+
+} // namespace
+
+// The PAL 4-step sequence is 33254 CPU cycles long (NTSC: 29830): the frame
+// IRQ must not be visible at 29900 cycles but must be set shortly after 33254.
+TEST(ApuPal, FourStepFrameIrqComesAtThePalPeriod)
+{
+    PalApuHarness h;
+    h.apu.registerWrite(0x4017, 0x00);
+    h.advanceCpuCycles(29900);
+    EXPECT_EQ(h.apu.registerRead(0x4015) & 0x40, 0);
+    h.advanceCpuCycles(33262 - 29900);
+    EXPECT_NE(h.apu.registerRead(0x4015) & 0x40, 0);
+}
+
+// PAL half-frame length clocks at 16627 cycles (+3 restart delay in this
+// model): a length-2 counter clocked by the $4017 mode-1 write is still
+// playing at 16000 cycles and gone by 16700.
+TEST(ApuPal, HalfFrameLengthClockIsAtCycle16627)
+{
+    PalApuHarness h;
+    h.apu.registerWrite(0x4015, 0x01);
+    h.apu.registerWrite(0x4003, 0x18); // length 2
+    h.apu.registerWrite(0x4000, 0x10);
+    h.apu.registerWrite(0x4017, 0xC0); // clocks length now: 1 left
+    h.advanceCpuCycles(16000);
+    EXPECT_NE(h.apu.registerRead(0x4015) & 1, 0);
+    h.advanceCpuCycles(700);
+    EXPECT_EQ(h.apu.registerRead(0x4015) & 1, 0);
+}

@@ -76,7 +76,7 @@ entry stays in `corpus-known-failing.txt` until a phase model makes it pass.
 | `blargg_apu_2005.07.30` | 11 | 01-09 pass (`$01` = passed, per `tests.txt`): `corpus.txt`. 10 and 11 fail: known-failing, #43 |
 | `branch_timing_tests` | 3 | 1 and 2 pass: `corpus.txt`. 3 fails: known-failing, #41 |
 | `vbl_nmi_timing` | 7 | 1-6 pass: `corpus.txt`. 7 fails (`FAILED #3`): documented limitation, see below; kept as known-failing |
-| `pal_apu_tests` | 10 | Run as PAL (`region pal`). 01-03 pass: `corpus.txt`. 04-08, 10, 11 fail: known-failing, #44 (APU tables are NTSC-only) |
+| `pal_apu_tests` | 10 | Run as PAL (`region pal`). All 10 pass: `corpus.txt` (PAL frame-counter steps, noise and DMC tables) |
 | `cpu_dummy_writes` | 2 | Tier 1 |
 | `instr_misc` | 5 | The four `rom_singles` are tier 1. `instr_misc.nes` is the same four tests combined; not registered |
 
