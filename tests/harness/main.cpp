@@ -379,7 +379,7 @@ int cmdSavestate(const char* romPath, std::uint32_t atFrame,
 }
 
 // T061: sustained emulation speed vs real-time (2x headroom = SC-003).
-int cmdBench(const char* romPath, std::uint32_t seconds)
+int cmdBench(const char* romPath, std::uint32_t seconds, double minX)
 {
     std::vector<std::uint8_t> rom;
     if (!readRom(romPath, rom)) {
@@ -409,7 +409,7 @@ int cmdBench(const char* romPath, std::uint32_t seconds)
             const double fps = frames / elapsed;
             std::printf("bench: %.1f fps (%.2fx real-time)\n", fps,
                 fps / 60.0988);
-            return fps >= 120.2 ? 0 : 1; // 2x headroom gate
+            return fps / 60.0988 >= minX ? 0 : 1; // default 2x headroom gate
         }
     }
 }
@@ -1157,7 +1157,7 @@ void usage()
         "  shot ROM FRAMES OUT.ppm              frame after N frames as PPM\n"
         "  text ROM FRAMES / where ROM FRAMES   debugging views (see source)\n"
         "  playtest --list FILE [--entry N] [--shots DIR]  scripted checks (T059)\n"
-        "  bench --rom R                   5s sustained-speed benchmark (T061)\n"
+        "  bench --rom R [--seconds N] [--min-x X]  sustained speed (T061); exit 1 below X x real-time\n"
         "  golden --list F [--check B]     cross-platform golden hashes (T065)\n");
 }
 
@@ -1220,9 +1220,20 @@ int main(int argc, char** argv)
         }
         return cmdSettle(argv[2], 1800, minFrames, expect, out); // ~30s cap
     }
-    if (command == "bench" && argc == 4
+    if (command == "bench" && argc >= 4
         && std::strcmp(argv[2], "--rom") == 0) {
-        return cmdBench(argv[3], 5); // 5-second default run
+        // Optional: --seconds N (default 5), --min-x X (default 2.0 = the
+        // spec's 2x real-time headroom; CI passes a looser floor).
+        std::uint32_t seconds = 5;
+        double minX = 2.0;
+        for (int i = 4; i + 1 < argc; i += 2) {
+            if (std::strcmp(argv[i], "--seconds") == 0) {
+                seconds = parseUint(argv[i + 1]);
+            } else if (std::strcmp(argv[i], "--min-x") == 0) {
+                minX = std::strtod(argv[i + 1], nullptr);
+            }
+        }
+        return cmdBench(argv[3], seconds, minX);
     }
     if (command == "step-equiv" && argc == 4) {
         return cmdStepEquiv(argv[2], parseUint(argv[3]));
