@@ -11,7 +11,7 @@ emulator's output (constitution, Principle III).
 |---|---|---|
 | Tier 1: `$6000` protocol | `TIER1_ROMS` in `tests/CMakeLists.txt` | Self-checking blargg suites; exit code is the verdict |
 | Playtest `expect-text` | `tests/playtest/*.txt` | ROMs that print a verdict on screen (`PASSED`, `$01`, board names) |
-| Golden hash | `tests/golden/` | Cross-platform determinism for a few ROMs, each verified by eye |
+| Golden hash | `tests/golden/` | Cross-platform determinism for 13 ROMs; each has a recorded status (verified, checked by eye, unverified), see below |
 | Known-failing | `*-known-failing.txt` (label `known-failing`) | A documented emulator discrepancy; excluded from CI, tracked by an issue |
 
 Run everything CI runs with `ctest --test-dir build -j8 -LE known-failing`; the
@@ -84,8 +84,8 @@ locally before releases.
 
 | Folder | ROMs | Disposition |
 |---|---|---|
-| `blargg_apu_2005.07.30` | 11 | 01-09 pass (`$01` = passed, per `tests.txt`): `corpus.txt`. 10 and 11 fail: known-failing, #43 |
-| `branch_timing_tests` | 3 | 1 and 2 pass: `corpus.txt`. 3 fails: known-failing, #41 |
+| `blargg_apu_2005.07.30` | 11 | All 11 pass (`$01` = passed, per `tests.txt`): `corpus.txt` (10 and 11 since the half-frame write-simultaneity fix) |
+| `branch_timing_tests` | 3 | All 3 pass: `corpus.txt` (3 since a taken branch stopped delaying NMI) |
 | `vbl_nmi_timing` | 7 | 1-6 pass: `corpus.txt`. 7 fails (`FAILED #3`): documented limitation, see below; kept as known-failing |
 | `pal_apu_tests` | 10 | Run as PAL (`region pal`). All 10 pass: `corpus.txt` (PAL frame-counter steps, noise and DMC tables) |
 | `cpu_dummy_writes` | 2 | Tier 1 |

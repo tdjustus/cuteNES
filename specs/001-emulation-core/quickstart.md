@@ -71,7 +71,7 @@ per-frame video hashes and byte-identical audio; report shows zero diffs
 ### 5. Save/restore round trip
 
 ```bash
-./build/tests/rom_harness savestate --rom <game.nes> --at-frame 1000 --rerun-to 2000
+./build/tests/rom_harness savestate --rom <game.nes> --at 1000 --rerun-to 2000
 ```
 
 **Expected**: run to frame 1000, capture, continue to 2000 recording hashes;
@@ -82,13 +82,15 @@ build is refused with `IncompatibleCoreVersion`.
 ### 6. Commercial-game smoke test (mapper coverage)
 
 ```bash
-./build/tests/rom_harness playtest --list tests/roms/playtest.txt
+./build/tests/rom_harness playtest --list tests/playtest/playtest.txt
 ```
 
-**Expected**: each entry (curated list spanning mappers 0/1/2/3/4) boots,
-reaches gameplay per its scripted input, and reports per-frame hash
-stability class; unsupported-mapper ROMs exit with a named
-`UnsupportedMapper` error, never silent misbehavior (US6 scenarios).
+**Expected**: each entry boots, follows its scripted input and checks
+on-screen text or a pinned, hand-viewed frame hash. Commercial-game entries
+need ROMs in the gitignored `roms-local/` folder and skip (exit 77) without
+them. Unsupported-mapper ROMs exit with a named `UnsupportedMapper` error,
+never silent misbehavior (US6 scenarios). The ROM corpus and the pinned-hash
+procedure are described in `docs/test-corpus.md`.
 
 ### 7. Performance headroom
 
@@ -97,11 +99,15 @@ stability class; unsupported-mapper ROMs exit with a named
 ```
 
 **Expected**: sustained emulation rate >= 120 fps NTSC (2x real-time, SC-003)
-on a commodity 2020s machine, single-threaded.
+on a commodity 2020s machine, single-threaded. Pass `--min-x X` to change the
+floor (default 2.0); CI uses 1.0 because shared runners vary.
 
 ## CI
 
-`.github/workflows/build.yml` runs scenarios 1-5 on
-ubuntu/macos/windows-latest (Release + Debug) plus a Linux UBSan job.
-Tier-1 suite green on all three platforms is the merge gate
-(constitution Principle III).
+`.github/workflows/build.yml` runs on pull requests, `core-v*` tags and weekly
+(not on every push, and not again after a merge): Release on
+ubuntu/macos/windows-latest, a Windows Debug build, an ASan+UBSan build and the
+speed gate on the Linux job. Pull requests run the fast groups (unit, tier1,
+behavior) in the Debug and sanitizer jobs; tags and the weekly run execute
+everything. The single required check is `ci-ok`
+(constitution Principle III; strategy in `docs/source-control.md`).

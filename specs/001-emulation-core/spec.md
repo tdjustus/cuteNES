@@ -200,7 +200,9 @@ audio, and input.
   correct read/write side effects.
 - **FR-006**: The core MUST support the initial mapper set — NROM (0), MMC1 (1),
   UxROM (2), CNROM (3), and MMC3 (4) — including bank switching, mirroring
-  control, and battery-backed save RAM where the cartridge declares it.
+  control, and battery-backed save RAM where the cartridge declares it. The
+  implemented set has since grown (MMC5, AxROM, BNROM, Color Dreams, VRC2a,
+  Action 53, MMC1A); the list is in the README and `core/src/cutenes/mappers/nrom.cpp`.
 - **FR-007**: The core MUST accept button states for two standard controllers
   and present them to software through authentic serial controller polling
   behavior.
@@ -268,8 +270,9 @@ audio, and input.
   hardware-validated test ROM suites (e.g., the community-standard CPU/PPU/APU
   test sets); the suite's targeted ROM list is finalized during planning.
 - Both NTSC and PAL regions are in scope for the core; Famicom Disk System,
-  unlicensed/prototype mappers, and exotic later mappers are out of scope for
-  this feature and may become future features.
+  unlicensed/prototype mappers, and exotic later mappers beyond the implemented
+  set are out of scope for this feature and may become future features (VRC4
+  and NINA-001 are refused by design).
 - NSF/NSFe music playback is out of scope; this feature emulates game cartridges.
 - The core produces data; presentation (screen rendering, audio playback,
   shaders) is the consumer's responsibility per the constitution's core/UI

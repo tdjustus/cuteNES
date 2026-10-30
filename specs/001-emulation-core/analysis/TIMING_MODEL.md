@@ -151,5 +151,24 @@ single value that makes all of its tests pass together.
 
 - DMA alignment details beyond the existing approximation (T037), except as needed
   for the phi2 sample offset.
-- Region variants (PAL) — the model is parameterized by the profile, so PAL is
-  additive later.
+- Region variants (PAL) — the model is parameterized by the profile. PAL has
+  since been added (see "Later additions").
+
+## Later additions (after T069)
+
+- **Half-frame clock vs register writes.** A write to a length-halt or
+  length-load register in the cycle of, or the cycle before, a half-frame clock
+  is simultaneous with it: the clock runs first, the new halt flag applies
+  after it, and a length load is ignored if the counter was running at the
+  clock (blargg apu 2005 tests 10 and 11). Clock event times are unchanged:
+  moving them earlier fixes test 10 but breaks `5-len_timing`.
+- **PAL frame counter.** 4-step clocks at 8313/16627/24939/33253 with period
+  and IRQ at 33254 CPU cycles; 5-step ends at 41565. Noise and DMC period tables
+  are the PAL ones. Selected from the region profile.
+- **Taken branches and NMI.** The "poll before the second cycle" quirk of a taken
+  non-page-crossing branch applies to the IRQ sample only; NMI is polled at the
+  normal penultimate cycle (blargg Branch Timing Tests 3).
+- **Open: NMI visibility at one-PPU-clock precision.** `vbl_nmi_timing/7`
+  needs a different NMI-visibility threshold for each of its three CPU/PPU
+  alignments; the core runs the CPU on whole three-dot cycles with a fixed
+  phase, so no single rule passes all three (issue #42).

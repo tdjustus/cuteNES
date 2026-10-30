@@ -52,7 +52,9 @@ is resolved**, meaning the GitHub milestone `1.0` has no open issues (see
 
 - `main`: pull request required (0 approvals), required status check
   `ci-ok`, branch must be up to date, no force-push, no deletion. Admin
-  enforcement is off so the maintainer can still merge their own PRs.
+  enforcement is off so the maintainer can still merge their own PRs; it also
+  means the owner account's credentials *can* push to `main` directly, which
+  must never be done (this happened once, 2026-10-30, commit `fbade9c`).
 - Allowed merge method: merge commit. Delete-branch-on-merge: on.
 
 ## CI
@@ -65,7 +67,9 @@ Defined in `.github/workflows/build.yml`.
   post-merge run would repeat an already-tested tree. The weekly run catches
   runner-image drift; the tag run gates releases.
 - **Jobs:** Release on Linux, macOS and Windows; Windows Debug; one Linux
-  ASan + UBSan job (`-O1`, assertions on).
+  ASan + UBSan job (`-O1`, assertions on). The Linux Release job also runs
+  the speed gate (`rom_harness bench`, floor 1.0x real time; see
+  `docs/test-corpus.md`).
 - **What each runs:** the Release jobs run the full suite on every PR. The slow
   instrumented jobs (Windows Debug and ASan + UBSan) run only the fast groups
   (`unit`, `tier1` including the golden hashes, `behavior`) on PRs; the

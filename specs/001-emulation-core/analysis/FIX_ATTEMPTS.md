@@ -3,7 +3,12 @@
 Log of every attempted fix for the remaining known failures, with the outcome.
 Check this file before trying a change so the same experiment is not repeated.
 
-Remaining known failures (label `known-failing`):
+Status (updated): both failures below were fixed in the unified master-clock
+timing model and are tier-1 gated; this file is kept as history. The one test
+currently labelled `known-failing` is `vbl_nmi_timing/7.nmi_timing` (see
+`docs/test-corpus.md`, issue #42).
+
+Originally remaining known failures:
 - `ppu_vbl_nmi/03-vbl_clear_time`
 - `apu_test/5-len_timing`
 

@@ -1,12 +1,16 @@
 # Detailed Analysis of Known Failures
 
+> Historical. Every failure analysed below has been fixed; the sections are kept
+> as the diagnostic record. Current known issues live in the GitHub `1.0`
+> milestone and `docs/test-corpus.md`.
+
 ## Resolution status
 
 - RESOLVED `apu_test/7-dmc_basics`: `$4015` start fills an empty DMC sample buffer immediately; a restart resets the bit counter to 8 so a buffered byte is not drained early.
 - RESOLVED `apu_test/8-dmc_rates`: DMC timer reload is `rate/2 - 1` APU cycles (the counter takes `reload + 1` ticks per output bit).
 - RESOLVED `apu_test/1-len_ctr`: in 5-step mode the frame sequencer never scheduled its fifth checkpoint (`m_sequenceStep < 4` bound), so it stalled. The bound is now 5 for 5-step mode.
-- OPEN `apu_test/5-len_timing` (test 2 vs 3): the first mode-0 length clock must fall between two reads one CPU cycle apart. Matching both needs sub-cycle `$4017`-write-to-sequencer phase, tied to T037/T068. Nesdev values are kept.
-- OPEN `ppu_vbl_nmi/03-vbl_clear_time`: see the PPU phase trade-off below.
+- RESOLVED (unified master-clock timing model; tier-1 gated) `apu_test/5-len_timing` (test 2 vs 3): the first mode-0 length clock must fall between two reads one CPU cycle apart. Matching both needs sub-cycle `$4017`-write-to-sequencer phase, tied to T037/T068. Nesdev values are kept.
+- RESOLVED (same model; tier-1 gated) `ppu_vbl_nmi/03-vbl_clear_time`: see the PPU phase trade-off below.
 
 ## 1. ppu_vbl_nmi/03-vbl_clear_time
 **Status**: Failing  
