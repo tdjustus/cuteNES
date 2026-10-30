@@ -84,7 +84,7 @@ Example:
 - Per-request `_meta` version and capabilities (2026-07-28) are read on every
   request. An unsupported version returns `UnsupportedProtocolVersion`
   (`-32022`).
-- Handles (`uploadId`, `stateId`, slot names) are explicit tool arguments.
+- Handles (`blobId`, slot names) are explicit tool arguments.
   There is no protocol session state (2026-07-28 SEP-2567).
 - stdio: newline-delimited JSON-RPC, with nothing but protocol on stdout.
   Logs go to stderr.

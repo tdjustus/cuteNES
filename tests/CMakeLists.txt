@@ -193,3 +193,8 @@ register_playtests(${CMAKE_CURRENT_SOURCE_DIR}/playtest/corpus.txt "playtest;cor
 register_playtests(
     ${CMAKE_CURRENT_SOURCE_DIR}/playtest/corpus-known-failing.txt
     "playtest;corpus;known-failing")
+
+# cutenes-api tests (feature 002), label "api".
+if(CUTENES_BUILD_API)
+    add_subdirectory(api)
+endif()

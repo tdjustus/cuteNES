@@ -71,11 +71,12 @@ Tests are labelled in CTest. Counts are from the current tree.
 
 | Label | Tests | What it proves | Runs in CI |
 |---|---|---|---|
-| `unit` | 183 | Component behavior written from hardware docs: CPU, PPU, APU, bus, scheduler, iNES parsing, each mapper's banking/mirroring/IRQ | every PR |
+| `unit` | 185 | Component behavior written from hardware docs: CPU, PPU, APU, bus, scheduler, iNES parsing, each mapper's banking/mirroring/IRQ | every PR |
 | `tier1` | 50 | The gate ROMs (nestest, instr_test-v5, instr_timing, ppu_vbl_nmi, apu_test, apu_reset, cpu_interrupts_v2, mmc3_irq_tests, ...) plus 13 golden frame hashes | every PR |
 | `tier2` | 28 | Broader ROM suites incl. 22 Holy Mapperel board tests | every PR (Release builds) |
 | `behavior` | 18 | Determinism (run twice, byte-identical), save-state round trip, instruction-step equivalence | every PR |
 | `playtest`, `corpus` | 113 | Scripted ROM runs with on-screen text or pinned, hand-viewed frame hashes | every PR, except entries needing `roms-local/` |
+| `api` | 58 | The `cutenes-api` command layer (feature 002): every `core.*`/`session.*` command against the contracts, a test ROM's own verdict through the commands, save-slot branching, structured errors that change no state, call ordering across threads, and the frozen catalog | every PR |
 | `known-failing` | 1 | A documented hardware discrepancy (#42) | never (run with `ctest -L known-failing`) |
 
 What the numbers do not say: a golden hash records what this emulator draws,

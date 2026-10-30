@@ -50,6 +50,20 @@ void Machine::Impl::buildComponents(Region region)
     bus.attachPpu(ppu.get());
     bus.attachApuIo(&io);
     bus.attachCartridge(&cart);
+    installTrace();
+}
+
+void Machine::Impl::installTrace()
+{
+    if (!trace) {
+        cpu->setInstructionTrace(nullptr);
+        return;
+    }
+    // Impl is heap-allocated, so `this` stays valid across Machine moves;
+    // ppu is read at call time, so a rebuild is picked up.
+    cpu->setInstructionTrace([this](const CpuState& state) {
+        trace(TracePoint{state, ppu->scanline(), ppu->dot()});
+    });
 }
 
 void Machine::Impl::deliverFrame()
@@ -247,7 +261,7 @@ void Machine::writePalette(const std::uint8_t src[32])
 }
 
 namespace {
-const Machine* g_peekTarget = nullptr;
+thread_local const Machine* g_peekTarget = nullptr; // per thread: sessions may run machines on different threads
 std::uint8_t peekThunk(std::uint16_t addr)
 {
     return g_peekTarget != nullptr
@@ -507,12 +521,8 @@ void Machine::loadSram(const std::uint8_t* data, std::size_t size)
 void Machine::setInstructionTrace(
     std::function<void(const TracePoint&)> callback)
 {
-    auto& impl = *m_impl;
-    Ppu* ppu = impl.ppu.get();
-    impl.cpu->setInstructionTrace(
-        [ppu, cb = std::move(callback)](const CpuState& cpu) {
-            cb(TracePoint{cpu, ppu->scanline(), ppu->dot()});
-        });
+    m_impl->trace = std::move(callback);
+    m_impl->installTrace();
 }
 
 void Machine::debugSetProgramCounter(std::uint16_t pc)

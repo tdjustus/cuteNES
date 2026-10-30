@@ -465,3 +465,41 @@ TEST(MemoryDump, DumpMemoryWritesTheSameBytesToAFile)
     in.close();
     fs::remove_all(dir);
 }
+
+// setInstructionTrace (core-api.md "Instruction trace"): a callback is
+// called once per instruction; an empty callback turns tracing off.
+TEST(InstructionTrace, EmptyCallbackTurnsTracingOff)
+{
+    FullControlHarness h;
+    int calls = 0;
+    h.machine.setInstructionTrace([&](const cutenes::TracePoint&) { ++calls; });
+    h.machine.stepInstruction();
+    EXPECT_EQ(calls, 1);
+    h.machine.setInstructionTrace(nullptr);
+    h.machine.stepInstruction(); // must not call an empty function
+    h.machine.runFrames(1);
+    EXPECT_EQ(calls, 1);
+}
+
+// A region change rebuilds the CPU and PPU; the installed trace must follow
+// them like the media sinks do, and report the new PPU's position.
+TEST(InstructionTrace, SurvivesARegionRebuild)
+{
+    cutenes::Machine machine;
+    std::vector<cutenes::TracePoint> points;
+    machine.setInstructionTrace([&](const cutenes::TracePoint& tp) { points.push_back(tp); });
+    auto rom = makeNes2Rom(1); // PAL: rebuilds the components
+    ASSERT_EQ(machine.loadCartridge(rom.data(), rom.size()).error, cutenes::LoadError::Ok);
+    ASSERT_EQ(machine.region(), cutenes::Region::Pal);
+    machine.powerOn();
+    machine.stepInstruction();
+    machine.stepInstruction();
+    ASSERT_EQ(points.size(), 2u);
+    // $C000 LDA #$01 (2 cycles): PAL runs 3.2 dots per CPU cycle, so the
+    // second boundary is 6 or 7 dots after the first, on the same line.
+    EXPECT_EQ(points[0].cpu.pc, 0xC000);
+    EXPECT_EQ(points[1].cpu.pc, 0xC002);
+    EXPECT_EQ(points[1].scanline, points[0].scanline);
+    const auto dots = points[1].dot - points[0].dot;
+    EXPECT_TRUE(dots == 6 || dots == 7) << dots;
+}

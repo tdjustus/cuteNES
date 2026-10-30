@@ -118,8 +118,10 @@ public:
     void loadSram(const std::uint8_t* data, std::size_t size); // pad/trim
 
     // --- Harness/debug surface (not part of the stable API) ----------------
+    // Called once per instruction; an empty callback turns tracing off.
+    // The trace survives the component rebuild a region change makes.
     void setInstructionTrace(
-        std::function<void(const TracePoint&)> callback); // per instruction
+        std::function<void(const TracePoint&)> callback);
     void debugSetProgramCounter(std::uint16_t pc); // nestest entry $C000
 
     // --- Debugging (contracts/core-api.md "Memory dump") --------------------

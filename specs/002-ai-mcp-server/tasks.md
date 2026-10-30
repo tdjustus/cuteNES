@@ -34,28 +34,28 @@ feature. Each PR uses `Refs #31` until P5, which uses `Fixes #31`.
 ## Phase P1: `cutenes-api` library (branch `feature/api-library`)
 
 Setup
-- [ ] A010 Root `CMakeLists.txt`: `add_subdirectory(api)`. `api/CMakeLists.txt`: target `cutenes-api` linking `cutenes-core` PRIVATE→PUBLIC as needed, nlohmann/json via pinned FetchContent, the same warning flags as the core
-- [ ] A011 [P] Vendor `third_party/stb/stb_image_write.h` plus its licence. Add NOTICE.md entries for nlohmann/json, cpp-httplib and stb
-- [ ] A012 [P] `tests/api/CMakeLists.txt` (label `api`), wired into `tests/CMakeLists.txt`
+- [x] A010 Root `CMakeLists.txt`: `add_subdirectory(api)`. `api/CMakeLists.txt`: target `cutenes-api` linking `cutenes-core` PRIVATE→PUBLIC as needed, nlohmann/json via pinned FetchContent, the same warning flags as the core
+- [x] A011 [P] Vendor `third_party/stb/stb_image_write.h` plus its licence. Add NOTICE.md entries for nlohmann/json, cpp-httplib and stb
+- [x] A012 [P] `tests/api/CMakeLists.txt` (label `api`), wired into `tests/CMakeLists.txt`
 
 Tests first
-- [ ] A013 [P] [US1] `tests/api/test_registry.cpp`: unique names; deterministic order; schemas are valid JSON Schema 2020-12 (structural check); `api.catalog` matches the registry; `hostOnly` commands are absent without a host
-- [ ] A014 [P] [US2] `tests/api/test_core_commands.cpp`, one test per `core.*` row of command-catalog.md, run on a vendored test ROM. Includes Q3: run `instr_test-v5/official_only` through the commands and read `$6000` = 0 (the blargg protocol verdict)
-- [ ] A015 [P] [US3] `tests/api/test_branching.cpp` (Q4): 10 save/load cycles with identical hashes; slot rules (name validation, overwrite, `WrongCartridge`)
-- [ ] A016 [P] [US4] `tests/api/test_memory.cpp` (Q5): `peek` vs `read_memory` side effects at `$2002`; write/read-back; 64 KiB chunking and `LimitExceeded`
-- [ ] A017 [P] `tests/api/test_errors.cpp` (Q6): every error `name` in the contract, each leaving the state unchanged (state hash before and after)
-- [ ] A018 [P] `tests/api/test_parity.cpp` (Q2 in-process, SC-004): every capability-table row in core-api.md has its `core.*` command (the table is parsed from the markdown, so a new core row without a command fails)
-- [ ] A019 [P] `tests/api/test_concurrency.cpp` (Q8): N threads submit interleaved mutating commands. The results are consistent with one total order (each result's `frame`/`masterCycle` is monotonic in completion order) and no result is torn
-- [ ] A020 [P] `tests/api/test_determinism.cpp` (Q7 in-process): the same script on two Sessions gives identical results
+- [x] A013 [P] [US1] `tests/api/test_registry.cpp`: unique names; deterministic order; schemas are valid JSON Schema 2020-12 (structural check); `api.catalog` matches the registry; `gui.*` commands are absent without a host (a host registers them; there is no `hostOnly` flag)
+- [x] A014 [P] [US2] `tests/api/test_core_commands.cpp`, one test per `core.*` row of command-catalog.md, run on a vendored test ROM. Includes Q3: run `instr_test-v5/official_only` through the commands and read `$6000` = 0 (the blargg protocol verdict)
+- [x] A015 [P] [US3] `tests/api/test_branching.cpp` (Q4): 10 save/load cycles with identical hashes; slot rules (name validation, overwrite, `WrongCartridge`)
+- [x] A016 [P] [US4] `tests/api/test_memory.cpp` (Q5): `peek` vs `read_memory` side effects at `$2002`; write/read-back; 64 KiB chunking and `LimitExceeded`
+- [x] A017 [P] `tests/api/test_errors.cpp` (Q6): every error `name` in the contract, each leaving the state unchanged (state hash before and after)
+- [x] A018 [P] `tests/api/test_parity.cpp` (Q2 in-process, SC-004): every capability-table row in core-api.md has its `core.*` command (the table is parsed from the markdown, so a new core row without a command fails)
+- [x] A019 [P] `tests/api/test_concurrency.cpp` (Q8): N threads submit interleaved mutating commands. The results are consistent with one total order (each result's `frame`/`masterCycle` is monotonic in completion order) and no result is torn
+- [x] A020 [P] `tests/api/test_determinism.cpp` (Q7 in-process): the same script on two Sessions gives identical results
 
 Implementation
-- [ ] A021 `api/include/cutenes/api/{command.hpp,registry.hpp,session.hpp,host.hpp}`: the types in data-model.md
-- [ ] A022 Session: emulation thread, FIFO queue, run-to-completion, cancellation at frame boundaries, `pausedByAutomation` (R5)
-- [ ] A023 JSON Schema subset validator for inputs (type, required, enum, min/max, `maxItems`, pattern); `InvalidArguments` with `data.path`
-- [ ] A024 `core.*` commands in `api/src/core_commands.cpp`, following command-catalog.md
-- [ ] A025 Media: last-frame capture, FNV-1a hash, PNG via stb (`core.screen`), 10 s audio ring (`core.audio`)
-- [ ] A026 `session.*` commands: library (root confinement, symlink check), uploads, slots, state export/import, status
-- [ ] A027 `api.version`/`api.catalog`. Write `tests/api/catalog.golden.json` and the test that fails on a schema diff without a version bump (R9)
+- [x] A021 `api/include/cutenes/api/{command.hpp,registry.hpp,session.hpp,host.hpp}`: the types in data-model.md
+- [x] A022 Session: emulation thread, FIFO queue, run-to-completion, cancellation at frame boundaries, `pausedByAutomation` (R5)
+- [x] A023 JSON Schema subset validator for inputs (type, required, enum, min/max, `maxItems`, pattern); `InvalidArguments` with `data.path`
+- [x] A024 `core.*` commands in `api/src/core_commands.cpp`, following command-catalog.md
+- [x] A025 Media: last-frame capture, FNV-1a hash, PNG via stb (`core.screen`), 10 s audio ring (`core.audio`)
+- [x] A026 `session.*` commands: library (root confinement, symlink check), blob handles (uploads and every large download, replacing the separate upload and state export/import commands; command-catalog.md "Blobs"), slots, status
+- [x] A027 `api.version`/`api.catalog`. Write `tests/api/catalog.golden.json` and the test that fails on a schema diff without a version bump (R9)
 
 ## Phase P2: API server and headless executable (branch `feature/api-server`)
 
