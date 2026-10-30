@@ -44,4 +44,9 @@ else()
     target_compile_options(cutenes-api PRIVATE
         -Wall -Wextra -Wconversion -Wshadow -Werror)
     set_source_files_properties(src/stb_impl.cpp PROPERTIES COMPILE_OPTIONS "-w")
+    # GCC 13 reports a false -Wmaybe-uninitialized inside libstdc++'s
+    # <regex> (std::function in _StateT, GCC bug 105562).
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(cutenes-api PRIVATE -Wno-maybe-uninitialized)
+    endif()
 endif()
