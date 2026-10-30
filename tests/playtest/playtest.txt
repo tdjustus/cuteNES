@@ -11,6 +11,7 @@
 #   run <frames> [buttons]    run frames holding Port One buttons: "none", or
 #                             names joined by '+' (A, B, Select, Start, Up,
 #                             Down, Left, Right)
+#   reset                     press the console's Reset button (warm reset)
 #   expect-mem <hexaddr> <hexval>
 #                             CPU-visible byte (side-effect free) must equal value
 #   expect-changes <n>        at least n frame-to-frame screen changes during

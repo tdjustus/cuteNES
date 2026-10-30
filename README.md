@@ -68,19 +68,18 @@ Tests are labelled in CTest. Counts are from the current tree.
 
 | Label | Tests | What it proves | Runs in CI |
 |---|---|---|---|
-| `unit` | 177 | Component behavior written from hardware docs: CPU, PPU, APU, bus, scheduler, iNES parsing, each mapper's banking/mirroring/IRQ | every PR |
+| `unit` | 180 | Component behavior written from hardware docs: CPU, PPU, APU, bus, scheduler, iNES parsing, each mapper's banking/mirroring/IRQ | every PR |
 | `tier1` | 50 | The gate ROMs (nestest, instr_test-v5, instr_timing, ppu_vbl_nmi, apu_test, apu_reset, cpu_interrupts_v2, mmc3_irq_tests, ...) plus 13 golden frame hashes | every PR |
 | `tier2` | 28 | Broader ROM suites incl. 22 Holy Mapperel board tests | every PR (Release builds) |
 | `behavior` | 18 | Determinism (run twice, byte-identical), save-state round trip, instruction-step equivalence | every PR |
-| `playtest`, `corpus` | 112 | Scripted ROM runs with on-screen text or pinned, hand-viewed frame hashes | every PR, except entries needing `roms-local/` |
+| `playtest`, `corpus` | 113 | Scripted ROM runs with on-screen text or pinned, hand-viewed frame hashes | every PR, except entries needing `roms-local/` |
 | `known-failing` | 1 | A documented hardware discrepancy (#42) | never (run with `ctest -L known-failing`) |
 
 What the numbers do not say: a golden hash records what this emulator draws,
 not that it is right. Each of the 13 goldens carries a status (verified,
 checked by eye, or unverified) in `tests/golden/roms.txt`. Commercial-game
 playtests need ROMs you supply in the gitignored `roms-local/` folder and
-skip otherwise. Open core issues, including the Action 53 `test28` ROM
-(#38), are listed in the milestone. The corpus, how each folder is used and
+skip otherwise. Open core issues are listed in the milestone. The corpus, how each folder is used and
 the pinned-hash procedure are in [`docs/test-corpus.md`](docs/test-corpus.md).
 
 CI (`.github/workflows/build.yml`) runs on pull requests, `core-v*` tags and
