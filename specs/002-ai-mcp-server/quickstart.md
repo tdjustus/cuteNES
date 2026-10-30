@@ -1,0 +1,50 @@
+# Quickstart and validation scenarios: API and MCP (feature 002)
+
+## Build
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build -j8 -LE known-failing      # includes the api/mcp labels
+```
+
+This produces `build/server/cutenes-server`.
+
+## Headless MCP in a client (stdio)
+
+Register the command in any MCP client's standard server config:
+
+```json
+{ "mcpServers": { "cutenes": {
+    "command": "/path/to/cutenes-server",
+    "args": ["--library", "/path/to/roms"] } } }
+```
+
+## Headless API for scripts
+
+```bash
+cutenes-server --library ~/roms --api-port 8765 &
+curl -s localhost:8765/api/v1/rpc -d '{"jsonrpc":"2.0","id":1,"method":"core.load_rom","params":{"path":"game.nes"}}'
+curl -s localhost:8765/api/v1/rpc -d '{"jsonrpc":"2.0","id":2,"method":"core.run_frames","params":{"frames":120}}'
+```
+
+## Validation scenarios (each is an automated test)
+
+| # | Scenario | Spec | Test |
+|---|---|---|---|
+| Q1 | Discovery: `server/discover`, then `tools/list`, returns the full headless catalog with valid schemas. `initialize` (2025-11-25) also works | US1, FR-001, SC-001 | `mcp-discovery` (stdio, both revisions) |
+| Q2 | Catalog equality: the API `api.catalog` names equal the MCP `tools/list` names. The headless catalog has no `gui.*`. Every row of the core contract's capability table maps to a `core.*` command | SC-004, SC-007, SC-008 | `api-parity` |
+| Q3 | Play loop: load a vendored test ROM, run it, read `$6000` (blargg protocol) and the screen, and see the documented verdict | US2, SC-002 | `mcp-playloop` (`instr_test-v5` official_only) |
+| Q4 | Branching: save a slot, run 500 frames recording hashes, load the slot and rerun. Hashes are identical over 10 cycles | US3 | `api-branching` |
+| Q5 | Memory: a write to RAM reads back. `peek` of `$2002` doesn't clear VBlank, while `read_memory` does | US4 | `api-memory` |
+| Q6 | Errors: unknown command, bad arguments, no ROM, path escape and over-limit each return the named structured error and change no state | FR-005, edge cases | `api-errors` |
+| Q7 | Determinism across surfaces: the same command script over in-process, API HTTP and MCP stdio gives identical results and hashes | FR-006 | `api-determinism` |
+| Q8 | Serialization: two clients interleave mutating calls. Each result is consistent with one total order, and none sees a torn state | FR-007, SC-006 | `api-concurrency` |
+| Q9 | Host extension: with `FakeHost`, `gui.*` commands appear in both catalogs and dispatch. A `catalog_changed` event and an MCP list-changed notification are emitted | FR-023, SC-007 | `api-host` |
+| Q10 | Security: no listener with default flags; HTTP rejects a non-loopback `Host` and a foreign `Origin`; `--bind` is needed to listen elsewhere | FR-008, FR-009, SC-005 | `server-security` |
+| Q11 | Disconnect and cancel: a client drops mid-`run_frames`. The run stops at a frame boundary and the session still works for the next client | FR-013 | `mcp-disconnect` |
+| Q12 | Latency: 95% of non-emulating calls (status, peek, get_cpu, catalog) finish in under 100 ms over HTTP | SC-003 | `api-latency` (Release only) |
+
+Tests pin no frame hashes from commercial games. Hashes are compared between
+two runs in the same test (spec Assumptions: core timing changes before 1.0).
+Q3 asserts the ROM's own documented verdict.
