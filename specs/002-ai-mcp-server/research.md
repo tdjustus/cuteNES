@@ -191,7 +191,20 @@ pinned at implementation time, at releases at least two weeks old.
   validate `Origin`. Requests with a non-loopback `Host` are rejected.
 - ROM library paths are resolved inside the configured library root, and `..`
   or an absolute path is rejected (spec edge case).
-- No authentication framework (spec Assumptions). **Open item for the
-  maintainer:** a per-launch random token in the HTTP `Authorization` header
-  would protect against other local users on shared machines. It is cheap to
-  add, but it is an authentication feature, so it needs a spec amendment.
+- **Per-launch token** (FR-024, maintainer decision 2026-10-29). Each HTTP
+  listener generates 32 random bytes from the OS CSPRNG (`std::random_device`
+  is not guaranteed cryptographic, so use the platform API:
+  `getrandom`/`arc4random_buf`/`BCryptGenRandom`, behind one small
+  interface). The token is sent as `Authorization: Bearer <hex>` and compared
+  in constant time. A missing or wrong token gets 401 with no session effect.
+  - Token file: `<user state dir>/cutenes/<listener>.token` (Linux
+    `$XDG_STATE_HOME`, macOS `~/Library/Application Support`, Windows
+    `%LOCALAPPDATA%`), created with owner-only permissions (0600 /
+    owner-only ACL), replaced on each start and removed on clean exit.
+  - The file holds the URL and the token, so `--attach` and scripts need one
+    read.
+  - The token is never logged. stdio needs no token.
+  - Why a token and not OAuth: MCP's authorization spec targets remote
+    servers with an authorization server. A local single-user tool needs only
+    to keep other local accounts out, which a secret readable only by the
+    operator achieves.

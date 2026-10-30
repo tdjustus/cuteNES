@@ -19,6 +19,7 @@ cutenes-server [--library DIR] [--mcp-stdio] [--mcp-port N] [--api-port N]
 | `--api-port N` | Serve the API at `http://127.0.0.1:N/api/v1` | off |
 | `--mcp-port N` | Serve MCP Streamable HTTP at `http://127.0.0.1:N/mcp` | off |
 | `--bind ADDR` | Bind HTTP listeners to `ADDR` instead of loopback (FR-008 network exposure) | loopback |
+| `--token-file PATH` | Where to write the HTTP token file (FR-024) | per-user state dir |
 | `--attach URL` | **Bridge mode**: no session; relay stdio MCP to a running GUI's MCP endpoint | off |
 
 - Launching is the opt-in (FR-009). With no flags it opens no socket.
@@ -34,8 +35,10 @@ cutenes-server [--library DIR] [--mcp-stdio] [--mcp-port N] [--api-port N]
 - The API and MCP HTTP listeners follow the two settings toggles. Both are
   off by default, and MCP requires the API (FR-009, FR-020). Ports are
   settings.
-- Stdio-only MCP clients register `cutenes-server --attach
-  http://127.0.0.1:PORT/mcp`.
+- Stdio-only MCP clients register `cutenes-server --attach`. With no URL it
+  reads the GUI's MCP token file, which holds the URL and token. The GUI's
+  server settings show the token and offer to copy it, for HTTP clients
+  configured by hand.
 - Disabling the API closes the MCP endpoint. In-flight and queued calls
   fail with `ShuttingDown`, open streams end, and emulation continues
   (FR-020).
@@ -52,8 +55,10 @@ cutenes-server [--library DIR] [--mcp-stdio] [--mcp-port N] [--api-port N]
   removed).
 - **Discovery**: `api.catalog` returns every command with its `inputSchema`
   and `outputSchema` (JSON Schema 2020-12).
-- **Security** (R11): loopback bind by default. `Origin`, if present, must
-  be a loopback origin. A non-loopback `Host` header is rejected with 403.
+- **Security** (R11): loopback bind by default. Every request needs
+  `Authorization: Bearer <token>` (FR-024); without it the response is 401.
+  `Origin`, if present, must be a loopback origin. A non-loopback `Host`
+  header is rejected with 403.
 - **Ordering** (FR-007): calls from all clients and the GUI execute in
   arrival order on the session's command queue, one at a time and each to
   completion. A batch executes in array order and is not atomic.
@@ -84,7 +89,8 @@ Example:
 - stdio: newline-delimited JSON-RPC, with nothing but protocol on stdout.
   Logs go to stderr.
 - Streamable HTTP: a single `POST /mcp` endpoint that requires
-  `Mcp-Method`/`Mcp-Name`, has the same loopback and Origin rules as the API,
+  `Mcp-Method`/`Mcp-Name` and the bearer token, has the same loopback and
+  Origin rules as the API,
   and returns a JSON response, or SSE for runs long enough to emit
   `notifications/progress`.
 - Disconnect (FR-013): a broken stream cancels that request at the next frame

@@ -53,7 +53,7 @@ Conventions:
 | `core.screen` | `format`: `png` (default) \| `raw` | `png` or `bytes` (XRGB8888) | last `IVideoSink::onFrame` frame | MCP returns an `image` content block |
 | `core.frame_hash` | none | FNV-1a of the last frame | last frame | Same hash the playtest harness uses |
 | `core.audio` | `since`: `{ frame }` \| `{ masterCycle }`, `maxSamples` | `pcm` bytes (s16 mono), `sampleRate`, `startMasterCycle`, `truncated` | `IAudioSink::onSamples` ring | 10 s ring, 1 s per call (R6) |
-| `core.dump_memory` | none | `bytes` (dump format) | `dumpMemory` | Blocked on the file-I/O issue: the core must return bytes, not write a file |
+| `core.dump_memory` | none | `bytes` (dump format, chunked like state export) | `memoryDump` (P0, #68) | The same contents `dumpMemory` writes |
 
 `setVideoSink`/`setAudioSink` are not commands. The session owns the sinks,
 and `core.screen`/`core.audio` expose what they capture.
@@ -62,6 +62,7 @@ and `core.screen`/`core.audio` expose what they capture.
 
 | Command | Purpose |
 |---|---|
+| `session.write_dump` | Write `<datetime>.dmp` via `Machine::dumpMemory` into the server's debug directory (`--debug-dir`, default `debug/`; GUI: a setting). Returns the file name. The path is never client-supplied |
 | `session.status` | Cartridge info, run state, paused-by-automation, counters, mode (`headless`/`gui`), core version, surface version (FR-018) |
 | `session.library_list` | List ROMs under the configured library root (relative paths) |
 | `session.upload_begin` / `session.upload_chunk` / `session.upload_commit` / `session.upload_abort` | Chunked ROM upload (FR-014). `upload_begin` returns an `uploadId` handle. Chunks are at most 64 KiB. Uncommitted uploads expire after 60 s |

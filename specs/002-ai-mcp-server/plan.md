@@ -69,7 +69,7 @@ per process, with many clients sharing it.
 | Principle | How this plan satisfies it | Verdict |
 |---|---|---|
 | I. Hardware fidelity | No emulation behavior changes. Tests assert ROM-documented verdicts (Q3), never emulator output | PASS |
-| II. Core/UI separation | `cutenes-core` gains no dependency. `cutenes-api` uses only the public core API and has no Qt or MCP types. MCP is a separate library. One prerequisite: the core's `dumpMemory` does file I/O, a contract violation; it is fixed (return bytes) before `core.dump_memory` ships | PASS, with that fix |
+| II. Core/UI separation | `cutenes-core` gains no dependency. `cutenes-api` uses only the public core API and has no Qt or MCP types. MCP is a separate library. The core's `dumpMemory` does file I/O. It stays, as a documented debug-only exception, and a new `memoryDump()` returns the bytes the API needs (#68) | PASS |
 | III. Test ROMs are the gate | The full suite still gates every PR. API and MCP tests are added as their own labels | PASS |
 | IV. Cross-platform | Every dependency is portable and header-only. `cutenes-server` builds and is tested on the 3-OS matrix | PASS |
 | V. Automation parity | One registry gives the API and MCP the same catalog (SC-008). The parity test maps every core capability (SC-004). `IHost` makes every GUI action a command (FR-023) | PASS |
@@ -123,7 +123,7 @@ dependencies.
 
 | Phase | Delivers | Exit |
 |---|---|---|
-| P0 | Core prerequisites: `dumpMemory` returns bytes (fixes #68), the audit table in core-api.md is completed | Core suite green, contract updated |
+| P0 | Core prerequisites: `memoryDump()` returns the dump bytes, `dumpMemory` is kept and documented as the debug I/O exception (fixes #68), the audit table in core-api.md is completed | Core suite green, contract updated |
 | P1 | `cutenes-api`: Session, registry, every `core.*` and `session.*` command, in-process tests, parity test | Q2 (in-process), Q4-Q8 in-process |
 | P2 | API server over HTTP + SSE, plus `cutenes-server --api-port` | Q6-Q8 over HTTP, Q10, Q12 |
 | P3 | `cutenes-mcp`: stdio + Streamable HTTP, both revisions, schema test | Q1, Q2, Q3, Q11 |

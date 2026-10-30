@@ -28,6 +28,10 @@
   client starts it over stdio, and it opens no network listener unless a
   command-line flag asks for one. The GUI's off-by-default toggles apply to
   GUI mode only.
+- Q: Do the HTTP listeners need authentication? → A: Yes, a per-launch
+  token (FR-024). Every HTTP request must present a random token generated
+  when the listener starts. stdio needs none: only the client that launched
+  the process can reach it.
 - Q: The GUI does not exist yet; what is built now? → A: The API, headless
   MCP, and the extension point through which a host (the GUI) registers its
   commands, tested with a fake host. The GUI-mode transport and the GUI's
@@ -201,7 +205,11 @@ verify neither surface ever observes a torn or inconsistent machine state.
 - What happens if a save-state slot name is reused, empty, or invalid?
   (Defined overwrite/rejection behavior with explicit errors.)
 - What happens when network exposure is enabled — who may connect? (Explicit
-  opt-in only; treated as a trusted context; see Assumptions.)
+  opt-in only. Callers still need the token (FR-024); there is no other
+  authentication or TLS, so exposure is for trusted networks.)
+- What happens when another user on the same machine connects to a loopback
+  listener? (Refused without the token, which is readable only by the
+  operator's account; FR-024.)
 - What happens when a ROM path contains `..` or an absolute path? (Rejected
   with a structured error; loads stay inside the configured library.)
 - What happens when a chunked upload stalls or the client disconnects
@@ -329,6 +337,14 @@ verify neither surface ever observes a torn or inconsistent machine state.
   MUST register every user-facing action through it (menus, settings,
   windows, debug views, input mapping, speed and fast-forward). In GUI mode
   the API and MCP MUST be able to drive the GUI as fully as a user can.
+- **FR-024**: Every HTTP listener (API and MCP, both modes) MUST require a
+  bearer token. A random 256-bit token is generated each time a listener
+  starts and compared in constant time; a request without it is refused with
+  no effect on the session. The token is never logged. It is written to a
+  per-user file readable only by that user, and also shown in the GUI's
+  server settings. Headless mode prints its location to stderr and accepts
+  `--token-file` to choose it. `--attach` and local scripts read it from that
+  file. stdio transports need no token.
 - **FR-019**: The run tools MUST accept an optional per-frame input script
   for the run's duration: each frame's controller states apply before that
   frame executes; beyond the script's length the final entry is held;
@@ -370,7 +386,8 @@ verify neither surface ever observes a torn or inconsistent machine state.
   coverage by exposed MCP tools.
 - **SC-005**: In the default configuration, a network scan during acceptance
   testing finds zero remotely accessible endpoints; with exposure enabled,
-  only the explicitly configured endpoint is reachable.
+  only the explicitly configured endpoint is reachable. 100% of HTTP
+  requests without the current token are refused (FR-024).
 - **SC-007**: The headless tool catalog equals the core command set, with
   zero GUI commands. The GUI-mode catalog equals the core set plus every GUI
   action (100% of the actions listed in feature 003's spec). The same call
@@ -393,8 +410,9 @@ verify neither surface ever observes a torn or inconsistent machine state.
 - The targeted MCP specification revision is the current published standard at
   implementation time; the protocol's own versioning governs negotiation.
 - Transports: the standard local transport is the default; network exposure is
-  an explicit opt-in treated as a trusted context (no authentication
-  framework is in scope until separately specified).
+  an explicit opt-in for trusted networks. The per-launch token (FR-024) is
+  the only authentication. Accounts, OAuth and TLS are out of scope until
+  separately specified.
 - One emulation session per server instance: a single game at a time; multiple
   concurrent sessions are a possible future feature.
 - Multiple simultaneous MCP clients are permitted and share that single

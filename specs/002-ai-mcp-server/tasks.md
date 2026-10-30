@@ -24,11 +24,11 @@ feature. Each PR uses `Refs #31` until P5, which uses `Fixes #31`.
 
 ---
 
-## Phase P0: Core prerequisites (branch `fix/core-dump-memory-bytes`)
+## Phase P0: Core prerequisites (branch `fix/core-memory-dump-bytes`)
 
 - [x] A001 File the issue: `Machine::dumpMemory` writes a file from the core, contradicting core-api.md "performs no I/O" (constitution II). Filed as #68; P0's PR uses `Fixes #68`
-- [ ] A002 Test first, in `tests/unit/test_full_control.cpp`: a new `Machine::memoryDump()` returns the dump bytes (the same layout `dumpMemory` writes) and touches no filesystem
-- [ ] A003 Implement `memoryDump()` in `core/src/cutenes/system/machine.cpp`. Move the file writing out of the core, to the harness or the API consumer, and deprecate `dumpMemory` with a migration note in core-api.md (constitution II, API-change rule)
+- [ ] A002 Test first, in `tests/unit/test_full_control.cpp`: a new `Machine::memoryDump()` returns the dump bytes, byte-identical to the contents `dumpMemory` writes, and touches no filesystem. Also a regression test that `dumpMemory` still writes `<datetime>.dmp` with the same contents
+- [ ] A003 Implement `memoryDump()` in `core/src/cutenes/system/machine.cpp`, and reimplement `dumpMemory` on top of it. **`dumpMemory` stays** (maintainer, 2026-10-29: it helps debugging): same signature, same file, not deprecated. Document it in core-api.md's global rules as the core's single explicit debug I/O exception (it runs only when called and never affects emulation), and add `memoryDump` to the contract
 - [ ] A004 [P] Complete the capability table in `specs/001-emulation-core/contracts/core-api.md`: add `cartridgeInfo`, `setMmc3Revision`/`mmc3Revision`, `controller`, `peek`/`disassemble` (already there), `memoryDump`, `setInstructionTrace` (as a bounded trace command), `debugSetProgramCounter` (covered by `writeCpu`), `frameCounter`/`masterCycle`
 
 ## Phase P1: `cutenes-api` library (branch `feature/api-library`)
@@ -60,9 +60,10 @@ Implementation
 ## Phase P2: API server and headless executable (branch `feature/api-server`)
 
 - [ ] A030 [P] Tests first, in `tests/api/test_http.cpp`: JSON-RPC single/batch/notification/parse-error per the JSON-RPC 2.0 spec; the SSE `state_changed` event after `core.load_rom`; Q6-Q8 repeated over HTTP
-- [ ] A031 [P] Tests first, in `tests/api/test_security.cpp` (Q10): no listener without flags; 403 on a non-loopback `Host`; 403 on a foreign `Origin`; loopback bind
-- [ ] A032 `api/src/http_server.cpp` (cpp-httplib): `POST /api/v1/rpc`, `GET /api/v1/events`, loopback bind, `Origin`/`Host` checks
-- [ ] A033 `server/main.cpp`: `cutenes-server` with the flags and exit codes in transports.md (headless host, `--library`, `--api-port`, `--bind`)
+- [ ] A031 [P] Tests first, in `tests/api/test_security.cpp` (Q10): no listener without flags; 401 with no token, a wrong token, or the previous launch's token; 403 on a non-loopback `Host`; 403 on a foreign `Origin`; loopback bind; owner-only token file permissions (POSIX mode check; Windows ACL check); the token absent from stderr and logs
+- [ ] A032 `api/src/http_server.cpp` (cpp-httplib): `POST /api/v1/rpc`, `GET /api/v1/events`, loopback bind, `Origin`/`Host` checks, bearer-token check (constant time)
+- [ ] A032a `api/src/token.cpp`: CSPRNG behind one interface (`getrandom`/`arc4random_buf`/`BCryptGenRandom`); token file in the per-user state dir with owner-only permissions, holding the URL and token; replaced on start, removed on clean exit (R11, FR-024)
+- [ ] A033 `server/main.cpp`: `cutenes-server` with the flags and exit codes in transports.md (headless host, `--library`, `--debug-dir`, `--api-port`, `--bind`, `--token-file`; prints the token file's location, never the token, to stderr)
 - [ ] A034 `tests/api/test_latency.cpp` (Q12, Release only): p95 under 100 ms for status, peek, get_cpu, catalog
 - [ ] A035 CI: build `cutenes-server` on the 3-OS matrix and run the `api` label
 
@@ -75,14 +76,14 @@ Implementation
 - [ ] A044 [P] `tests/mcp/test_disconnect.cpp` (Q11): kill the client mid-run; the run stops with `Cancelled` and the next client sees a consistent session
 - [ ] A045 `mcp/src`: JSON-RPC dispatcher, `server/discover`, `initialize`, `tools/list`, `tools/call`, the error mapping, and the image content for `core.screen`
 - [ ] A046 stdio transport (stdout is protocol only; logs go to stderr) as the default `cutenes-server` mode
-- [ ] A047 Streamable HTTP at `POST /mcp` (`--mcp-port`): `Mcp-Method`/`Mcp-Name` headers, a JSON or SSE response, `notifications/progress` on long runs, the same security checks as the API
+- [ ] A047 Streamable HTTP at `POST /mcp` (`--mcp-port`): `Mcp-Method`/`Mcp-Name` headers, a JSON or SSE response, `notifications/progress` on long runs, the same security checks as the API (token, Host, Origin)
 
 ## Phase P4: Host extension and the attach bridge (branch `feature/api-host-extension`)
 
 - [ ] A050 [P] [US5] Tests first, in `tests/api/test_host.cpp` (Q9): `FakeHost` registers `gui.test_echo` and `gui.test_toggle`; they appear in `api.catalog` and `tools/list`; they dispatch on the emulation thread; adding or removing them emits `catalog_changed` and an MCP list-changed notification (both revisions)
-- [ ] A051 [P] `tests/mcp/test_attach.cpp`: instance A runs `--mcp-port`; instance B runs `--attach` over stdio. A stdio client through B sees A's catalog and state; with A down, B exits 4 with a message naming the setting
+- [ ] A051 [P] `tests/mcp/test_attach.cpp`: instance A runs `--mcp-port`; instance B runs `--attach` over stdio and finds A through A's token file. A stdio client through B sees A's catalog and state; with A down (no token file), B exits 4 with a message naming the setting; with a stale token, B reports 401 clearly
 - [ ] A052 `IHost` registration, event fan-out, and `catalog_changed`
-- [ ] A053 `--attach` bridge (cpp-httplib client relaying stdio to Streamable HTTP)
+- [ ] A053 `--attach` bridge (cpp-httplib client relaying stdio to Streamable HTTP; reads the URL and token from the token file, or `--token-file`)
 - [ ] A054 Add the `gui.*` command requirement to issue #32 and to the feature 003 spec input: every GUI action gets a command, plus the host lifecycle (register at startup, marshal to the GUI thread)
 
 ## Phase P5: Docs and client verification (branch `docs/mcp-usage`)

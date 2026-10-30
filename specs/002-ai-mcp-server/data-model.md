@@ -11,8 +11,9 @@
 | **Invocation** | queue | client id (transport + connection), command, args, completion promise, cancel flag | Runs to completion in arrival order. Cancellation is checked at frame boundaries only |
 | **SaveSlot** | Session | `name`, state bytes, `frame`, `masterCycle`, `cartridgeId` | In memory, per session. Loading a slot from another cartridge returns `LoadStateError: WrongCartridge` |
 | **Upload** / **StateImport** | Session | handle, expected size, received bytes, deadline | Expires 60 s after the last chunk. Never loadable before `commit` (spec edge case) |
+| **ListenerToken** | each HTTP listener | 32 random bytes (hex), token file path | New on every start. The file is owner-only and removed on clean exit. Never logged or persisted in settings (FR-024) |
 | **Event** | Session | type, `frame`, `masterCycle`, payload | Fanned out to API SSE subscribers and the host. The `frame` event is rate-limited to 10 per second |
-| **ServerConfig** | host | API on/off, MCP on/off, ports, bind address, library root | GUI: persisted settings, off by default (FR-009). Headless: command-line flags only, never a config file |
+| **ServerConfig** | host | API on/off, MCP on/off, ports, bind address, library root, debug dir, token file path | GUI: persisted settings, off by default (FR-009). Headless: command-line flags only, never a config file |
 
 ## State transitions
 
