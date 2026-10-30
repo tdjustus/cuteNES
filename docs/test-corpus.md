@@ -41,7 +41,7 @@ unexplained change is a regression.
 
 Entry names say what the frame shows. If a script does not reach the screen its
 name suggests, the entry is named for where it actually ends (for example
-`zelda-2-boot-reaches-file-registration`) and the gap is recorded in the entry
+`mega-man-2-boot-reaches-password-screen`) and the gap is recorded in the entry
 comment.
 
 ## Golden hashes: what they prove

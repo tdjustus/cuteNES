@@ -169,13 +169,14 @@ expect-hash 5c64dba8
 end
 
 # Zelda II (USA) — 128KB PRG + 128KB CHR-ROM MMC1 with battery: the
-# CHR-ROM banking board. The entry drives title -> story -> file
-# registration. NOTE: the final frame (viewed) is the REGISTER YOUR NAME
-# screen, so the overworld is NOT reached and the later D-pad steps only move
-# the registration cursor; the pinned hash records that screen. Reaching the
-# overworld needs a corrected input script.
+# CHR-ROM banking board. The entry drives title -> story -> REGISTER YOUR NAME
+# (pinned), types nothing (the default AAA is kept), cycles the cursor to END
+# with Select (slot 1 -> 2 -> 3 -> END), confirms with Start, starts the AAA
+# file (pinned: the palace opening scene) and walks Left out of the palace onto
+# the overworld (pinned: Link beside the North Palace in its lake). Each pin was
+# viewed first; see docs/test-corpus.md.
 
-entry zelda-2-boot-reaches-file-registration
+entry zelda-2-registers-name-and-reaches-overworld
 rom ../../roms-local/zelda-2.nes
 run 600 none
 expect-changes 10
@@ -200,6 +201,24 @@ run 600 none
 expect-changes 50
 # Pinned after viewing the frame: see docs/test-corpus.md (re-pin procedure).
 expect-hash 29614978
+# Select moves the cursor through the three name slots and END.
+run 4 Select
+run 20 none
+run 4 Select
+run 20 none
+run 4 Select
+run 30 none
+run 4 Start
+run 200 none
+# File select, AAA registered; Start begins that file.
+run 4 Start
+run 600 none
+# Palace opening scene.
+expect-hash f481fb5d
+run 400 Left
+run 60 none
+# Overworld: Link beside the North Palace.
+expect-hash 997de488
 end
 
 # Final Fantasy (USA): 256KB PRG + CHR-RAM + battery. Boot sequence ->
@@ -229,7 +248,8 @@ end
 # opens START/PASSWORD; Down + Start opens the password grid. Entering the
 # documented Normal password (A4 B3 C2 C3 C4 D4 D5 E3 E5: 4 bosses cleared,
 # 3 E-tanks) and Start lands on the stage select with Bubble, Quick, Metal
-# and Flash Man defeated. Launching a stage is not scripted yet.
+# and Flash Man defeated. The cursor starts on the locked Dr. Wily tile, so the
+# script moves Up to Air Man and presses Start (boss intro, then the stage).
 
 entry mega-man-2-boot-reaches-password-screen
 rom ../../roms-local/mega-man-2.nes
@@ -245,7 +265,7 @@ run 120 none
 expect-hash 6197d13f
 end
 
-entry mega-man-2-password-reaches-stage-select
+entry mega-man-2-password-launches-air-man-stage
 rom ../../roms-local/mega-man-2.nes
 run 420 none
 run 10 Start
@@ -314,6 +334,15 @@ run 300 none
 expect-hash bc8548c0
 run 300 none
 expect-hash 204102f9
+# The cursor starts on the locked Dr. Wily tile: move Up to Air Man, Start.
+run 10 Up
+run 30 none
+run 10 Start
+run 300 none
+# Boss-intro card (AIRMAN), then the stage: Mega Man on the first platform.
+expect-hash a441514d
+run 400 none
+expect-hash b88c63c5
 end
 
 # Screen-verified suites (no $6000 protocol; result text/code on screen).
