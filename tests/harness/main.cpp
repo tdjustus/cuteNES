@@ -652,7 +652,7 @@ int cmdSettle(const char* romPath, std::uint32_t maxFrames,
 // T059/T046: scripted game checks. The list format is documented in
 // tests/playtest/playtest.txt. Entries run in order; each records PASS/FAIL.
 struct PlaytestStep {
-    enum class Kind { Run, ExpectMem, ExpectChanges, ExpectText, ExpectHash };
+    enum class Kind { Run, Reset, ExpectMem, ExpectChanges, ExpectText, ExpectHash };
     Kind kind = Kind::Run;
     std::string text;
     std::uint32_t frames = 0;
@@ -774,6 +774,10 @@ bool parsePlaytest(const std::string& text, std::vector<PlaytestEntry>& out,
                 return fail("unknown button name");
             }
             step.kind = PlaytestStep::Kind::Run;
+            current->steps.push_back(step);
+        } else if (cmd == "reset") {
+            PlaytestStep step;
+            step.kind = PlaytestStep::Kind::Reset;
             current->steps.push_back(step);
         } else if (cmd == "expect-mem") {
             PlaytestStep step;
@@ -917,6 +921,9 @@ bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry, const 
             }
             break;
         }
+        case PlaytestStep::Kind::Reset:
+            machine.reset(); // the console's Reset button
+            break;
         case PlaytestStep::Kind::ExpectHash: {
             const std::uint32_t actual =
                 sink.hashes.empty() ? 0 : sink.hashes.back();

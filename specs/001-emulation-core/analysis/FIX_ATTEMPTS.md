@@ -1653,3 +1653,19 @@ OAMADDR decay conventions). No failing test indicates more hardware
 fidelity is needed.
 
 ctest 160/160. All 14 CI jobs green on PRs #16 and #17.
+
+## RESOLVED: Action 53 test28 "Fail! 2, bus conflict" (#38, 2026-10-29)
+
+Tracing the vendored `other/test28.nes` showed that check 2 writes mode `$00`,
+then outer `$FF` at `$FFF6` (ROM byte `$00`), and fails unless `$BFF8` reads
+`$00`. With outer `$FF` in 32K mode, `$8000` is bank 30 (tag `$1E`), and a
+bus conflict would give bank 0, so this build passes only a mapper that HAS
+the conflict. The test's own CHANGES.txt: "0.01: fixed bus conflict
+detection". 0.04's `verify_bus_conflict` tests `is_last_bank` (`$FFF9`)
+instead. 0.04 passed the boot checks unchanged. Its automated test then
+found a real bug: "Page in 1-screen mirroring should use the last value
+written to $00 D4, $01 D4, or $80 D0". The mapper kept the page in a separate
+field that a mode write never touched. Fix: mirroring bit 0 is `m_mode` bit
+0, and D4 of `$00`/`$01` writes it while the mode is one-screen. With that,
+every automated test passes and the reset step prints "PASS!". 0.04 is
+vendored in `third_party/test28/`, and the playtest gained a `reset` step.

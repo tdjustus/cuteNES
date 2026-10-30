@@ -91,6 +91,17 @@ locally before releases.
 | `cpu_dummy_writes` | 2 | Tier 1 |
 | `instr_misc` | 5 | The four `rom_singles` are tier 1. `instr_misc.nes` is the same four tests combined; not registered |
 
+## Action 53: `test28` (#38)
+
+The submodule's `other/test28.nes` is a 2012 build older than 0.01. Its
+bus-conflict check reads `$BFF8` (the bank at `$8000`) after writing outer
+bank `$FF` in mode `$00`, and expects bank 0, which is wrong by the mapper
+spec. The author's CHANGES.txt says "0.01: fixed bus conflict detection".
+That build is **not registered**. The current release, 0.04, is vendored in
+`third_party/test28/` (provenance in `third_party/NOTICE.md`). Its playtest
+`action53-test28-v004` presses Start to run the automated tests and Reset for
+the final test, then pins the "PASS! RESET LEAVES BANK UNCHANGED." screen.
+
 ## Superseded older versions (pass, deliberately not registered)
 
 `instr_test-v3` (17 ROMs), `nes_instr_test` (11) and `blargg_nes_cpu_test5` (2)

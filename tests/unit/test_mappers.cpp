@@ -391,7 +391,7 @@ TEST(Action53, TwoScreenModesUseTheDefaultMapping)
 }
 
 // Hardware guarantees the last PRG bank is visible at $C000-$FFFF at power-on
-// (the reset vector must be readable); blargg's test28 checks it.
+// (the reset vector must be readable); test28 checks it.
 TEST(Action53, PowersOnWithTheLastBankAtC000)
 {
     for (const int banks : {2, 4, 8, 16, 32}) {
@@ -488,6 +488,47 @@ TEST(Action53, Unrom180ModeFixesLowAndSwitchesHigh)
     a53Write(h, 0x01, 0x06);
     EXPECT_EQ(h.prgAt(0x8000), 0);
     EXPECT_EQ(h.prgAt(0xC000), 6);
+}
+
+// Mirroring bit 0 is one bit with three writers: mode ($80) D0, and D4 of
+// $00 and $01 while the mode is one-screen; the last write wins (nesdev
+// "Action 53 mapper"; test28 0.04 README, automated CHR bank test steps 2-3).
+TEST(Action53, ModeBitZeroSelectsTheOneScreenPage)
+{
+    Mmc1Harness h(28, 8);
+    a53Write(h, 0x80, 0x3D); // one-screen, upper page
+    expectOneScreen(h.cart, cutenes::Mapper::NtSource::Ciram1);
+    a53Write(h, 0x80, 0x3C); // one-screen, lower page
+    expectOneScreen(h.cart, cutenes::Mapper::NtSource::Ciram0);
+}
+
+TEST(Action53, LastWriterOfMirroringBitZeroWins)
+{
+    Mmc1Harness h(28, 8);
+    a53Write(h, 0x80, 0x3C);
+    a53Write(h, 0x00, 0x10); // CHR D4 sets the upper page
+    expectOneScreen(h.cart, cutenes::Mapper::NtSource::Ciram1);
+    a53Write(h, 0x01, 0x10);
+    a53Write(h, 0x80, 0x3C); // mode written last overrides D4
+    expectOneScreen(h.cart, cutenes::Mapper::NtSource::Ciram0);
+    a53Write(h, 0x80, 0x3D);
+    a53Write(h, 0x00, 0x00); // CHR D4 clear returns to the lower page
+    expectOneScreen(h.cart, cutenes::Mapper::NtSource::Ciram0);
+    a53Write(h, 0x80, 0x3D);
+    a53Write(h, 0x01, 0x00); // so does inner-bank D4
+    expectOneScreen(h.cart, cutenes::Mapper::NtSource::Ciram0);
+}
+
+TEST(Action53, RegisterBitFourIsIgnoredInTwoScreenModes)
+{
+    Mmc1Harness h(28, 8);
+    a53Write(h, 0x80, 0x3E); // vertical
+    a53Write(h, 0x00, 0x10);
+    a53Write(h, 0x01, 0x10);
+    EXPECT_EQ(h.cart.mirroring(), cutenes::Mirroring::Vertical);
+    a53Write(h, 0x80, 0x3F); // horizontal
+    a53Write(h, 0x00, 0x00);
+    EXPECT_EQ(h.cart.mirroring(), cutenes::Mirroring::Horizontal);
 }
 
 TEST(Action53, MirroringBitsDoNotDisturbPrgSelection)

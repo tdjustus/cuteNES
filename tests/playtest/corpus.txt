@@ -196,3 +196,23 @@ region pal
 run 1500 none
 expect-text PASSED
 end
+
+# test28 0.04 (third_party/test28, README.md): Start runs the automated tests
+# (PRG banking for every mode/outer/inner combination, about 17 s on a 512K
+# cart, then CHR banking and mirroring). When they all pass it maps the first
+# bank into $C000 and asks for Reset; the reset entry in that bank prints
+# "PASS!" if the bank was kept (src/wrongbanks.s). The submodule's
+# other/test28.nes is an older build with a broken bus-conflict check.
+# The ROM's fonts are not ASCII tiles, so both screens are pinned by hash,
+# each viewed first: "One last thing: Please press the Reset Button", then
+# "PASS! RESET LEAVES BANK UNCHANGED."
+entry action53-test28-v004
+rom ../../third_party/test28/test28.nes
+run 120 none
+run 10 Start
+run 1500 none
+expect-hash 21c2b5de
+reset
+run 60 none
+expect-hash 085c2845
+end
