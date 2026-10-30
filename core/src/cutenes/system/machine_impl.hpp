@@ -204,6 +204,10 @@ struct Machine::Impl {
 
     IVideoSink* videoSink = nullptr;
     IAudioSink* audioSink = nullptr; // reapplied when buildComponents() replaces the APU
+    // Reinstalled when buildComponents() replaces the CPU and PPU; empty
+    // means tracing is off.
+    std::function<void(const TracePoint&)> trace;
+    void installTrace();
     std::array<std::uint32_t, 256 * 240> framebuffer{};
     std::vector<std::uint8_t> stateBlob;
 

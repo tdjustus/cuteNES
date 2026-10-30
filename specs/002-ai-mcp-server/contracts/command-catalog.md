@@ -8,18 +8,21 @@ code and are frozen by `tests/api/catalog.golden.json` (research R9).
 
 Conventions:
 - Binary data is base64 (`bytes`). Every read is capped at 64 KiB and chunked
-  with `offset`/`length` (FR-012).
+  with `offset`/`length` (FR-012). Larger data (uploads, save states, memory
+  dumps, raw screens) moves through **blob handles** (`blobId`, see
+  `session.blob_*`).
 - `buttons` is an array of names from `A B Select Start Up Down Left Right`.
 - Commands flagged **needs ROM** fail with `NoCartridge` when nothing is
   loaded.
 - Every result includes `frame` and `masterCycle`: the emulation instant the
-  command saw or left (spec "Tool Invocation").
+  command saw or left (spec "Tool Invocation"). The registry adds both to
+  every output schema, host commands included.
 
 ## `core.*`: one command per public `Machine` operation (FR-022)
 
 | Command | Arguments | Result | Machine call | Notes |
 |---|---|---|---|---|
-| `core.load_rom` | `path` (library-relative) **or** `uploadId` | `cartridge` info | `loadCartridge` | Errors: `LoadError` name + `detail`; `PathOutsideLibrary` |
+| `core.load_rom` | `path` (library-relative) **or** `blobId` (a committed upload); `powerOn` (default true) | `cartridge` info | `loadCartridge`, then `powerOn` | Errors: `LoadError` name + `detail`; `PathOutsideLibrary`; `NotFound`. The ROM is checked on a scratch machine first, so a rejected ROM leaves the loaded game in place |
 | `core.eject` | none | none | `ejectCartridge` | |
 | `core.cartridge_info` | none | format, mapper, mirroring, battery, sizes, region | `cartridgeInfo` | needs ROM |
 | `core.set_mmc3_revision` | `revision`: `auto` \| `A` \| `B` | none | `setMmc3Revision` | |
@@ -34,7 +37,7 @@ Conventions:
 | `core.set_controller` | `port` 1\|2, `buttons` | none | `setController` | |
 | `core.get_controller` | `port` | `buttons` | `controller` | |
 | `core.read_memory` | `addr`, `length` | `bytes` | `readMemory` | Read side effects apply (e.g. `$2002`) |
-| `core.peek` | `addr`, `length` | `bytes` | `peek` per byte | No side effects |
+| `core.peek` | `addr`, `length` | `bytes` | `peek` per byte | No side effects. The register space (`$2000-$5FFF`) reads as placeholders; observe registers with `core.read_ppu_registers` |
 | `core.write_memory` | `addr`, `bytes` | none | `writeMemory` | Errors: `WriteError` name |
 | `core.write_cpu_register` | `addr`, `value` | none | `writeCpuRegister` | |
 | `core.get_cpu` | none | `a x y s p pc masterCycle` | `cpu` | |
@@ -44,16 +47,16 @@ Conventions:
 | `core.read_vram` / `core.write_vram` | `addr`, `length` / `bytes` | `bytes` / none | `readVram` / `writeVram` | Mirroring resolved |
 | `core.read_oam` / `core.write_oam` | none / 256 `bytes` | `bytes` / none | `readOam` / `writeOam` | |
 | `core.read_palette` / `core.write_palette` | none / 32 `bytes` | `bytes` / none | `readPalette` / `writePalette` | |
-| `core.capture_state` | none | `bytes` (chunked; see `session.state_export`) | `captureState` | |
-| `core.load_state` | `bytes` or `stateId` | none | `loadState` | Errors: `LoadStateError` name |
-| `core.read_sram` / `core.load_sram` | `offset`, `length` / `bytes` | `bytes` / none | `sram` / `loadSram` | needs battery cartridge |
+| `core.capture_state` | none | `blobId`, `size` | `captureState` | Read the bytes with `session.blob_read` |
+| `core.load_state` | `bytes` or `blobId` | none | `loadState` | Errors: `LoadStateError` name |
+| `core.read_sram` / `core.load_sram` | `offset`, `length` / `bytes` | `bytes`, `size` / none | `sram` / `loadSram` | needs ROM; `NoBattery` unless the header sets the battery flag |
 | `core.region` | none | `region` | `region` | |
 | `core.counters` | none | `frame`, `masterCycle` | `frameCounter` / `masterCycle` | |
-| `core.trace` | `instructions` (1-100000) | `lines[]` (nestest format) | `setInstructionTrace` around `stepInstruction` | Bounded capture; the callback never leaves the emulation thread |
-| `core.screen` | `format`: `png` (default) \| `raw` | `png` or `bytes` (XRGB8888) | last `IVideoSink::onFrame` frame | MCP returns an `image` content block |
+| `core.trace` | `instructions` (1-256) | `lines[]`: `cpu`, `scanline`, `dot`, `text` (nestest format) | `setInstructionTrace` around `stepInstruction` | Bounded capture (256 keeps a result under 64 KiB); the callback never leaves the emulation thread |
+| `core.screen` | `format`: `png` (default) \| `raw` | `png` inline, or `blobId`/`size` (XRGB8888 little-endian); `frameIndex`, `hasFrame`, `frameHash` | last `IVideoSink::onFrame` frame | MCP returns an `image` content block. A PNG is returned whole |
 | `core.frame_hash` | none | FNV-1a of the last frame | last frame | Same hash the playtest harness uses |
-| `core.audio` | `since`: `{ frame }` \| `{ masterCycle }`, `maxSamples` | `pcm` bytes (s16 mono), `sampleRate`, `startMasterCycle`, `truncated` | `IAudioSink::onSamples` ring | 10 s ring, 1 s per call (R6) |
-| `core.dump_memory` | none | `bytes` (dump format, chunked like state export) | `memoryDump` (P0, #68) | The same contents `dumpMemory` writes |
+| `core.audio` | `sinceMasterCycle` (default 0), `maxSamples` (1-32768) | `pcm` bytes (s16le mono), `samples`, `sampleRate`, `startMasterCycle`, `next`, `truncated`, `dropped` | `IAudioSink::onSamples` ring | 10 s ring (R6). Whole core chunks starting at or after `sinceMasterCycle`; pass `next` to continue. 32768 samples keep a call under 64 KiB. `dropped` means samples after `since` left the ring |
+| `core.dump_memory` | none | `blobId`, `size` (dump format) | `memoryDump(0)` (P0, #68) | The same contents `dumpMemory` writes, with timestamp 0 so it is deterministic |
 
 `setVideoSink`/`setAudioSink` are not commands. The session owns the sinks,
 and `core.screen`/`core.audio` expose what they capture.
@@ -65,9 +68,16 @@ and `core.screen`/`core.audio` expose what they capture.
 | `session.write_dump` | Write `<datetime>.dmp` via `Machine::dumpMemory` into the server's debug directory (`--debug-dir`, default `debug/`; GUI: a setting). Returns the file name. The path is never client-supplied |
 | `session.status` | Cartridge info, run state, paused-by-automation, counters, mode (`headless`/`gui`), core version, surface version (FR-018) |
 | `session.library_list` | List ROMs under the configured library root (relative paths) |
-| `session.upload_begin` / `session.upload_chunk` / `session.upload_commit` / `session.upload_abort` | Chunked ROM upload (FR-014). `upload_begin` returns an `uploadId` handle. Chunks are at most 64 KiB. Uncommitted uploads expire after 60 s |
+| `session.blob_begin` / `session.blob_chunk` / `session.blob_commit` | Chunked upload of a ROM or a save state (FR-014, FR-017). `blob_begin(size)` returns a `blobId`. Chunks are at most 64 KiB and arrive in order (`offset` = bytes so far). Uncommitted blobs expire 60 s after the last chunk and are never usable before `commit` |
+| `session.blob_read` / `session.blob_delete` | Chunked download (`offset`, `length` up to 64 KiB, `eof`) of any committed blob: captured states, memory dumps, raw screens, uploads. `blob_delete` discards a blob or abandons an upload |
 | `session.save_slot` / `session.load_slot` / `session.list_slots` / `session.delete_slot` | Named in-memory save-state slots. Names are `[A-Za-z0-9_-]{1,64}`, and saving to an existing name overwrites it (spec edge case) |
-| `session.state_export` / `session.state_import_begin` / `..._chunk` / `..._commit` | Raw state blob transfer (FR-017), chunked like uploads; import validates through `loadState` |
+
+Blobs are held in memory: at most 16 MiB each and 64 MiB in total. A new
+blob evicts the oldest committed ones (later reads of those give
+`UnknownHandle`), so a client that keeps a state should keep its bytes or a
+slot. One handle mechanism replaces the separate upload and state
+export/import commands of the first draft: every large transfer works the
+same way.
 
 ## `api.*`: surface metadata
 
@@ -100,6 +110,9 @@ failures are returned as a tool result with `isError: true` and the same
 | `LoadStateError`, `WriteError` | `data.error` is the core enum name |
 | `PathOutsideLibrary` | `..`, an absolute path, or a symlink escaping the root |
 | `LimitExceeded` | Over a per-call bound; `data.max` gives it |
-| `UnknownHandle` | Expired or unknown `uploadId`/`stateId`/slot |
+| `UnknownHandle` | Expired, evicted or unknown `blobId`, or an unknown slot |
+| `NotFound` | A library path that is not a file, or a missing library root |
+| `NoBattery` | `core.read_sram`/`core.load_sram` on a cartridge without the battery flag |
 | `Cancelled` | A run interrupted at a frame boundary (disconnect or GUI stop) |
 | `ShuttingDown` | The API was disabled while the call was queued (FR-020) |
+| `InternalError` | A handler fault, or (with output validation on, as in the tests) a result that breaks its output schema |

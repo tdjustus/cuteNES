@@ -39,7 +39,7 @@ curl -s -H "Authorization: Bearer $TOKEN" localhost:8765/api/v1/rpc \
 | Q2 | Catalog equality: the API `api.catalog` names equal the MCP `tools/list` names. The headless catalog has no `gui.*`. Every row of the core contract's capability table maps to a `core.*` command | SC-004, SC-007, SC-008 | `api-parity` |
 | Q3 | Play loop: load a vendored test ROM, run it, read `$6000` (blargg protocol) and the screen, and see the documented verdict | US2, SC-002 | `mcp-playloop` (`instr_test-v5` official_only) |
 | Q4 | Branching: save a slot, run 500 frames recording hashes, load the slot and rerun. Hashes are identical over 10 cycles | US3 | `api-branching` |
-| Q5 | Memory: a write to RAM reads back. `peek` of `$2002` doesn't clear VBlank, while `read_memory` does | US4 | `api-memory` |
+| Q5 | Memory: a write to RAM reads back. `peek` of `$2002` doesn't clear VBlank, while `read_memory` does (the flag is observed through `read_ppu_registers`) | US4 | `api-memory` |
 | Q6 | Errors: unknown command, bad arguments, no ROM, path escape and over-limit each return the named structured error and change no state | FR-005, edge cases | `api-errors` |
 | Q7 | Determinism across surfaces: the same command script over in-process, API HTTP and MCP stdio gives identical results and hashes | FR-006 | `api-determinism` |
 | Q8 | Serialization: two clients interleave mutating calls. Each result is consistent with one total order, and none sees a torn state | FR-007, SC-006 | `api-concurrency` |

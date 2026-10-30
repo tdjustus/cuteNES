@@ -34,6 +34,7 @@ jobs:
           filters: |
             code:
               - 'core/**'
+              - 'api/**'
               - 'tests/**'
               - 'third_party/**'
               - 'CMakeLists.txt'
@@ -78,7 +79,7 @@ jobs:
 
       # -j: playtest entries and test ROMs are independent processes.
       # Debug builds are slow, so on pull requests they run only the fast
-      # groups (unit, tier1 incl. goldens, behavior); the full suite runs in
+      # groups (unit, tier1 incl. goldens, behavior, api); the full suite runs in
       # every Release job on every PR, and in Debug on tags and the weekly run.
       - name: Test (full)
         if: matrix.buildtype == 'Release' || github.event_name != 'pull_request'
@@ -86,7 +87,7 @@ jobs:
 
       - name: Test (fast groups, Debug on pull requests)
         if: matrix.buildtype == 'Debug' && github.event_name == 'pull_request'
-        run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior" -LE known-failing
+        run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior|api" -LE known-failing
 
       # Performance gate (constitution: no regression of real-time speed).
       # Shared runners are noisy, so CI fails only below 1.0x real-time; the
@@ -132,7 +133,8 @@ jobs:
         run: cmake --build build
 
       # Instrumented runs are ~5x slower: pull requests run the fast groups
-      # (unit, tier1 incl. goldens, behavior); tags and the weekly run
+      # (unit, tier1 incl. goldens, behavior, api: the threaded session code
+      # runs under ASan/UBSan); tags and the weekly run
       # execute everything.
       - name: Test (full)
         if: github.event_name != 'pull_request'
@@ -140,7 +142,7 @@ jobs:
 
       - name: Test (fast groups, pull requests)
         if: github.event_name == 'pull_request'
-        run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior" -LE known-failing
+        run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior|api" -LE known-failing
 
   # The single required status check for branch protection. It passes when
   # the jobs above passed or were skipped (docs-only PRs), and fails if any

@@ -1,0 +1,2758 @@
+{
+  "commands": [
+    {
+      "description": "Every command in this mode with its input and output schemas",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "api.catalog",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "commands": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 100000,
+            "type": "array"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "surface": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "surface",
+          "commands",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Surface version (MAJOR.MINOR), core version and mode",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "api.version",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "core": {
+            "type": "string"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "headless",
+              "gui"
+            ],
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "surface",
+          "core",
+          "mode",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Recent audio (10 s ring): s16le mono chunks starting at or after sinceMasterCycle",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "maxSamples": {
+            "description": "default 32768",
+            "maximum": 32768,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sinceMasterCycle": {
+            "description": "default 0",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.audio",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dropped": {
+            "type": "boolean"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "next": {
+            "description": "sinceMasterCycle for the next call",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pcm": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 65536
+          },
+          "sampleRate": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "samples": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "startMasterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pcm",
+          "samples",
+          "sampleRate",
+          "startMasterCycle",
+          "next",
+          "truncated",
+          "dropped",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Capture a save state into a blob (read it with session.blob_read)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.capture_state",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blobId": {
+            "type": "string"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blobId",
+          "size",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Header facts of the loaded cartridge",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.cartridge_info",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cartridge": {
+            "additionalProperties": false,
+            "properties": {
+              "battery": {
+                "type": "boolean"
+              },
+              "chrSize": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "format": {
+                "enum": [
+                  "iNES",
+                  "NES 2.0"
+                ],
+                "type": "string"
+              },
+              "mapper": {
+                "maximum": 65535,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "mirroring": {
+                "enum": [
+                  "Horizontal",
+                  "Vertical",
+                  "FourScreen",
+                  "MapperControlled"
+                ],
+                "type": "string"
+              },
+              "prgRamSize": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "prgSize": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "region": {
+                "enum": [
+                  "NTSC",
+                  "PAL",
+                  "Unspecified"
+                ],
+                "type": "string"
+              },
+              "submapper": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "format",
+              "mapper",
+              "submapper",
+              "mirroring",
+              "battery",
+              "prgSize",
+              "chrSize",
+              "prgRamSize",
+              "region"
+            ],
+            "type": "object"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cartridge",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Frame counter and master cycle",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.counters",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Disassemble forward from an address without executing",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "addr": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "count": {
+            "maximum": 256,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "addr",
+          "count"
+        ],
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.disassemble",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lines": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "addr": {
+                  "maximum": 65535,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "addr",
+                "text"
+              ],
+              "type": "object"
+            },
+            "maxItems": 256,
+            "type": "array"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lines",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "The memory dump bytes (the format dumpMemory writes) as a blob",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.dump_memory",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blobId": {
+            "type": "string"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blobId",
+          "size",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Remove the cartridge",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.eject",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Run exactly one frame",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.frame_advance",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "frameHash": {
+            "description": "FNV-1a of the last frame",
+            "pattern": "^[0-9a-f]{8}$",
+            "type": "string"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frameHash",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "FNV-1a of the last frame (the playtest harness hash)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.frame_hash",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "frameHash": {
+            "description": "FNV-1a of the last frame",
+            "pattern": "^[0-9a-f]{8}$",
+            "type": "string"
+          },
+          "hasFrame": {
+            "type": "boolean"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frameHash",
+          "hasFrame",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "The buttons held on a port",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "port": {
+            "description": "controller port",
+            "maximum": 2,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "port"
+        ],
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.get_controller",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "buttons": {
+            "items": {
+              "enum": [
+                "A",
+                "B",
+                "Select",
+                "Start",
+                "Up",
+                "Down",
+                "Left",
+                "Right"
+              ],
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "buttons",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "CPU registers",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.get_cpu",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu": {
+            "additionalProperties": false,
+            "properties": {
+              "a": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "p": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pc": {
+                "maximum": 65535,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "s": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "a",
+              "x",
+              "y",
+              "s",
+              "p",
+              "pc"
+            ],
+            "type": "object"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cpu",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "The MMC3 IRQ revision setting",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.get_mmc3_revision",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revision": {
+            "enum": [
+              "auto",
+              "A",
+              "B"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Load an iNES/NES 2.0 ROM from the library (path) or an upload (blobId), then power on",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blobId": {
+            "description": "a committed upload",
+            "type": "string"
+          },
+          "path": {
+            "description": "library-relative path",
+            "type": "string"
+          },
+          "powerOn": {
+            "description": "power on after loading (default true)",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.load_rom",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cartridge": {
+            "additionalProperties": false,
+            "properties": {
+              "battery": {
+                "type": "boolean"
+              },
+              "chrSize": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "format": {
+                "enum": [
+                  "iNES",
+                  "NES 2.0"
+                ],
+                "type": "string"
+              },
+              "mapper": {
+                "maximum": 65535,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "mirroring": {
+                "enum": [
+                  "Horizontal",
+                  "Vertical",
+                  "FourScreen",
+                  "MapperControlled"
+                ],
+                "type": "string"
+              },
+              "prgRamSize": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "prgSize": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "region": {
+                "enum": [
+                  "NTSC",
+                  "PAL",
+                  "Unspecified"
+                ],
+                "type": "string"
+              },
+              "submapper": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "format",
+              "mapper",
+              "submapper",
+              "mirroring",
+              "battery",
+              "prgSize",
+              "chrSize",
+              "prgRamSize",
+              "region"
+            ],
+            "type": "object"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cartridge",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Replace battery-backed RAM (padded or trimmed to its size)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 65536
+          }
+        },
+        "required": [
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.load_sram",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Load a save state from a blob or inline bytes",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blobId": {
+            "type": "string"
+          },
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 65536
+          }
+        },
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.load_state",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Pause autonomous pacing",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.pause",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pausedByAutomation": {
+            "type": "boolean"
+          },
+          "runState": {
+            "enum": [
+              "NeedsRom",
+              "Paused",
+              "Running"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "runState",
+          "pausedByAutomation",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Read the CPU bus without side effects; registers ($2000-$5FFF) read as placeholders, see core.read_ppu_registers",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "addr": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 65536,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "addr",
+          "length"
+        ],
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.peek",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 65536
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Cold boot",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.power_on",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Read the CPU bus with read side effects (e.g. $2002 clears VBlank)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "addr": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 65536,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "addr",
+          "length"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.read_memory",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 65536
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Read sprite memory (256 bytes)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.read_oam",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 256
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Read palette RAM ($3F00-$3F1F)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.read_palette",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 32
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "The eight PPU registers, without latch side effects",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.read_ppu_registers",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 8
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Read battery-backed cartridge RAM",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "length": {
+            "maximum": 65536,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 16777216,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "offset",
+          "length"
+        ],
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.read_sram",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 65536
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "size",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Read the PPU bus ($0000-$3FFF, mirroring resolved)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "addr": {
+            "maximum": 16383,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 16384,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "addr",
+          "length"
+        ],
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.read_vram",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 16384
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "The timing region of the loaded cartridge",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.region",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "region": {
+            "enum": [
+              "NTSC",
+              "PAL",
+              "Unspecified"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "region",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Press the reset button",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.reset",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Resume autonomous pacing",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.resume",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pausedByAutomation": {
+            "type": "boolean"
+          },
+          "runState": {
+            "enum": [
+              "NeedsRom",
+              "Paused",
+              "Running"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "runState",
+          "pausedByAutomation",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Run whole frames, optionally with per-frame controller 1 input (the last entry is held)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frames": {
+            "maximum": 216000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "script": {
+            "description": "buttons per frame",
+            "items": {
+              "items": {
+                "enum": [
+                  "A",
+                  "B",
+                  "Select",
+                  "Start",
+                  "Up",
+                  "Down",
+                  "Left",
+                  "Right"
+                ],
+                "type": "string"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "maxItems": 216000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "frames"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.run_frames",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "frameHash": {
+            "description": "FNV-1a of the last frame",
+            "pattern": "^[0-9a-f]{8}$",
+            "type": "string"
+          },
+          "framesRun": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "framesRun",
+          "frameHash",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Run state and whether automation paused it",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.run_state",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pausedByAutomation": {
+            "type": "boolean"
+          },
+          "runState": {
+            "enum": [
+              "NeedsRom",
+              "Paused",
+              "Running"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "runState",
+          "pausedByAutomation",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "The last frame: a 256x240 PNG inline, or raw XRGB8888 as a blob",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "description": "default png",
+            "enum": [
+              "png",
+              "raw"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.screen",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blobId": {
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "png",
+              "raw"
+            ],
+            "type": "string"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "frameHash": {
+            "description": "FNV-1a of the last frame",
+            "pattern": "^[0-9a-f]{8}$",
+            "type": "string"
+          },
+          "frameIndex": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hasFrame": {
+            "type": "boolean"
+          },
+          "height": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "png": {
+            "description": "base64 PNG",
+            "type": "string"
+          },
+          "size": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "width": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "format",
+          "width",
+          "height",
+          "frameIndex",
+          "hasFrame",
+          "frameHash",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Replace the buttons held on a port",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "buttons": {
+            "items": {
+              "enum": [
+                "A",
+                "B",
+                "Select",
+                "Start",
+                "Up",
+                "Down",
+                "Left",
+                "Right"
+              ],
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "port": {
+            "description": "controller port",
+            "maximum": 2,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "port",
+          "buttons"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.set_controller",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Write any of the CPU registers (P bit 5 stays set)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "p": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pc": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "s": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "x": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "y": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.set_cpu",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu": {
+            "additionalProperties": false,
+            "properties": {
+              "a": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "p": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pc": {
+                "maximum": 65535,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "s": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "a",
+              "x",
+              "y",
+              "s",
+              "p",
+              "pc"
+            ],
+            "type": "object"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cpu",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Choose the MMC3 IRQ revision (auto follows the header)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "enum": [
+              "auto",
+              "A",
+              "B"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.set_mmc3_revision",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Execute CPU instructions",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "default 1",
+            "maximum": 100000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.step_instruction",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu": {
+            "additionalProperties": false,
+            "properties": {
+              "a": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "p": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pc": {
+                "maximum": 65535,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "s": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "a",
+              "x",
+              "y",
+              "s",
+              "p",
+              "pc"
+            ],
+            "type": "object"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cpu",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Step instructions and return each one's registers and PPU position",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "instructions": {
+            "maximum": 256,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "instructions"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.trace",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lines": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "cpu": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "a": {
+                      "maximum": 255,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "p": {
+                      "maximum": 255,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "pc": {
+                      "maximum": 65535,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "s": {
+                      "maximum": 255,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "x": {
+                      "maximum": 255,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "y": {
+                      "maximum": 255,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "a",
+                    "x",
+                    "y",
+                    "s",
+                    "p",
+                    "pc"
+                  ],
+                  "type": "object"
+                },
+                "dot": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "scanline": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cpu",
+                "scanline",
+                "dot",
+                "text"
+              ],
+              "type": "object"
+            },
+            "maxItems": 256,
+            "type": "array"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lines",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Write one PPU/APU/IO register ($2000-$401F)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "addr": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "value": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "addr",
+          "value"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.write_cpu_register",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Write bytes to the CPU bus",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "addr": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 65536
+          }
+        },
+        "required": [
+          "addr",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.write_memory",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Replace sprite memory (256 bytes)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 256
+          }
+        },
+        "required": [
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.write_oam",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Replace palette RAM ($3F00-$3F1F)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 32
+          }
+        },
+        "required": [
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.write_palette",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Write the PPU bus",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "addr": {
+            "maximum": 16383,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 16384
+          }
+        },
+        "required": [
+          "addr",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.write_vram",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Start an upload (a ROM or a save state); send it with blob_chunk, then blob_commit",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "size": {
+            "description": "total bytes",
+            "maximum": 16777216,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "size"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "session.blob_begin",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blobId": {
+            "type": "string"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blobId",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Append up to 64 KiB to an upload; offset must equal the bytes received so far",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blobId": {
+            "description": "a blob handle",
+            "type": "string"
+          },
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 65536
+          },
+          "offset": {
+            "maximum": 16777216,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blobId",
+          "offset",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "session.blob_chunk",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "received": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "received",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Finish an upload; only committed blobs can be used",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blobId": {
+            "description": "a blob handle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "blobId"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "session.blob_commit",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "size",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Discard a blob or abandon an upload",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blobId": {
+            "description": "a blob handle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "blobId"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "session.blob_delete",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Read up to 64 KiB of a committed blob",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "blobId": {
+            "description": "a blob handle",
+            "type": "string"
+          },
+          "length": {
+            "maximum": 65536,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 16777216,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blobId",
+          "offset",
+          "length"
+        ],
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "session.blob_read",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 65536
+          },
+          "eof": {
+            "type": "boolean"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "size",
+          "eof",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Delete a named slot",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "slot name",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "session.delete_slot",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "ROM files under the library root (relative paths)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "session.library_list",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "roms": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "roms",
+          "truncated",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Saved slots, by name",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "session.list_slots",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "slots": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "frame": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "masterCycle": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "size",
+                "frame",
+                "masterCycle"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "slots",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Load a named slot",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "slot name",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "session.load_slot",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Save the state into a named slot (overwrites)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "slot name",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "session.save_slot",
+      "needsRom": true,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "size",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Cartridge, run state, mode and versions (FR-018)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "session.status",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cartridge": {
+            "type": "object"
+          },
+          "cartridgeLoaded": {
+            "type": "boolean"
+          },
+          "coreVersion": {
+            "type": "string"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "libraryConfigured": {
+            "type": "boolean"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "headless",
+              "gui"
+            ],
+            "type": "string"
+          },
+          "pausedByAutomation": {
+            "type": "boolean"
+          },
+          "runState": {
+            "enum": [
+              "NeedsRom",
+              "Paused",
+              "Running"
+            ],
+            "type": "string"
+          },
+          "surfaceVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runState",
+          "pausedByAutomation",
+          "mode",
+          "coreVersion",
+          "surfaceVersion",
+          "cartridgeLoaded",
+          "libraryConfigured",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Write <datetime>.dmp (Machine::dumpMemory) into the server's debug directory",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "session.write_dump",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "surface": "0.1"
+}

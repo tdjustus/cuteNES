@@ -39,6 +39,32 @@ constitution's licensing rules (research.md D11).
   2012 build older than 0.01, whose bus-conflict check was wrong (CHANGES.txt:
   "0.01: fixed bus conflict detection")
 
+## nlohmann/json v3.12.0 (Niels Lohmann) — fetched at configure time
+
+- **Origin**: https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+  (release 2025-04-11), SHA-256
+  `42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa`,
+  pinned in `api/CMakeLists.txt`
+- **License**: MIT
+- **Used by**: `cutenes-api` (feature 002). Not vendored; not used by the core
+
+## third_party/stb — stb_image_write.h v1.16 (Sean Barrett)
+
+- **Origin**: https://github.com/nothings/stb, file `stb_image_write.h` at
+  commit `1ee679ca2ef753a528db5ba6801e1067b40481b8`, SHA-256
+  `cbd5f0ad7a9cf4468affb36354a1d2338034f2c12473cf1a8e32053cb6914a05`
+- **License**: dual public domain (Unlicense) / MIT; the text is at the end
+  of the vendored file
+- **Used by**: `cutenes-api` PNG screenshots (`core.screen`), in memory only
+  (`STBI_WRITE_NO_STDIO`)
+
+## cpp-httplib (Yuji Hirose) — planned, feature 002 phase P2
+
+- **Origin**: https://github.com/yhirose/cpp-httplib (a release at least two
+  weeks old will be pinned by version and hash when P2 adds it)
+- **License**: MIT
+- **Used by**: the API and MCP HTTP listeners (not yet added)
+
 ## No other third-party code is redistributed in this repository.
 
 GoogleTest (BSD-3-Clause) is fetched at configure time for standalone test
