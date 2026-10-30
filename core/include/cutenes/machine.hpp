@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace cutenes {
 
@@ -121,7 +122,15 @@ public:
         std::function<void(const TracePoint&)> callback); // per instruction
     void debugSetProgramCounter(std::uint16_t pc); // nestest entry $C000
 
-    // --- Debugging ---------------------------------------------------------
+    // --- Debugging (contracts/core-api.md "Memory dump") --------------------
+    // The dump bytes: header (magic, the caller's timestamp, frame counter,
+    // master cycle), CPU bus $0000-$FFFF, PPU registers, OAM, palette,
+    // PRG-RAM, and the PPU bus $0000-$3FFF. Read side-effect free; no I/O,
+    // no clock.
+    std::vector<std::uint8_t> memoryDump(std::uint64_t timestamp = 0) const;
+    // Writes memoryDump(now) to <debugDir>/<YYYYmmddHHMMSS>.dmp and returns
+    // the path. The core's one explicit I/O exception: it runs only when
+    // called and never affects emulation.
     std::string dumpMemory(const std::string& debugDir = "debug") const;
 
     // --- Region & counters -------------------------------------------------

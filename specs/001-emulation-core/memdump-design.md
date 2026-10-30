@@ -3,6 +3,11 @@
 **Feature**: 001-emulation-core  
 **Purpose**: Provide memory dump capability for debugging emulator state
 
+**Status**: implemented. The authoritative layout is `contracts/core-api.md`
+"Memory dump". `memoryDump()` returns the bytes and `dumpMemory()` writes them
+(#68). The VRAM section holds the whole PPU bus `$0000-$3FFF`; before #68 it
+was written as zeros.
+
 ## Requirements
 
 - Add memdump function to core (Machine API)

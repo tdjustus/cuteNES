@@ -16,6 +16,10 @@ grow by appending fields only.
 - **Single-threaded.** The core spawns no threads, reads no wall clock, and
   performs no I/O. All state is instance state (see data-model integrity
   rules). Consumers may call from one thread at a time.
+  - **One exception: `dumpMemory`.** It reads the clock for its file name and
+    writes the file. It runs only when called, changes no machine state, and
+    has a pure counterpart, `memoryDump`, for consumers that must not touch
+    the filesystem (#68).
 - **Determinism.** Identical (ROM, operation sequence, input sequence,
   starting state) ⇒ byte-identical sinks output and identical observable
   state (FR-012).
@@ -207,6 +211,34 @@ void      Machine::loadSram(const std::uint8_t* data, std::size_t size); // pad/
 Blob layout: [save-state-format.md](save-state-format.md). Mismatch ⇒ reject,
 never guess (research D9).
 
+## Memory dump (debugging)
+
+```cpp
+std::vector<std::uint8_t> Machine::memoryDump(std::uint64_t timestamp = 0) const;
+std::string Machine::dumpMemory(const std::string& debugDir = "debug") const;
+```
+
+`memoryDump` returns the dump bytes. It reads every section side-effect free
+and does no I/O. `dumpMemory` writes `memoryDump(now)` to
+`<debugDir>/<YYYYmmddHHMMSS>.dmp` and returns the path. Layout (integers
+little-endian):
+
+| Offset | Size | Content |
+|---|---|---|
+| 0 | 8 | `CUNEDMP1` |
+| 8 | 8 | timestamp (the caller's; `dumpMemory` uses Unix seconds) |
+| 16 | 8 | `frameCounter()` |
+| 24 | 8 | `masterCycle()` |
+| 32 | 65536 | CPU bus `$0000-$FFFF` via `peek` |
+| +0 | 8 | `readPpuRegisters` |
+| +8 | 256 | `readOam` |
+| +264 | 32 | `readPalette` |
+| +296 | 4 | PRG-RAM size N |
+| +300 | N | PRG-RAM contents |
+| +300+N | 4 | `VRAM` |
+| +304+N | 4 | 16384 |
+| +308+N | 16384 | PPU bus `$0000-$3FFF` via `readVram` (pattern tables, nametables, palette) |
+
 ## Region and counters
 
 ```cpp
@@ -233,21 +265,28 @@ table is therefore part of the contract:
 | Capability (spec FR) | API |
 |---|---|
 | Load/eject ROM (FR-001) | `loadCartridge` / `ejectCartridge` |
+| Cartridge info (FR-001) | `cartridgeInfo` |
+| MMC3 revision (mapper 4) | `setMmc3Revision` / `mmc3Revision` |
 | Run/pause/frame/run-N (FR-008) | `runFrames` `frameAdvance` `pause` `resume` |
 | Single-step (FR-008) | `stepInstruction` |
 | Power/reset (FR-008) | `powerOn` `reset` |
-| Input inject (FR-007) | `setController` |
+| Input inject (FR-007) | `setController` / `controller` |
 | Save/load/list states (FR-011) | `captureState` / `loadState` (+ slot mgmt is consumer-side naming) |
 | Memory r/w (FR-016) | `readMemory` `writeMemory` `writeCpuRegister` |
 | CPU state (FR-016) | `cpu()` |
 | Screen capture (FR-009) | `IVideoSink::onFrame` (consumer retains) |
 | Audio (FR-010) | `IAudioSink::onSamples` |
 | Region detect (FR-014) | `region()` |
+| Counters | `frameCounter` / `masterCycle` |
+| Run state (FR-008) | `runState` |
 | SRAM persistence (FR-006) | `sram()` / `loadSram` |
 | CPU state write (002 FR-002) | `writeCpu` |
 | PPU debug access (002 FR-015) | `readPpuRegisters` `readVram` `writeVram` `readOam` `writeOam` `readPalette` `writePalette` |
 | Side-effect-free peek (002 FR-002) | `peek` / `disassemble` |
 | Scripted input runs (002 FR-019) | `runFrames(n, InputScript*)` |
+| Memory dump (debugging) | `memoryDump` / `dumpMemory` |
+| Instruction trace (harness/debug) | `setInstructionTrace` (002 exposes it as a bounded capture) |
+| Set PC (harness/debug) | `debugSetProgramCounter` (002 covers it with `writeCpu`) |
 | Status/info (002 FR-018) | `cartridgeInfo` `region` `frameCounter` `masterCycle` `runState` + `coreVersionString` |
 
 ### Debug memory dump (debugging)
