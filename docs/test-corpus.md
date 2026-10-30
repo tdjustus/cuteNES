@@ -70,9 +70,11 @@ of this ROM. A second, master-tick-resolution attempt (2026-10-29,
 sample placement nor a Mesen2-style read/write split passes it. The ROM's
 `$2002`-based sync routines do not land one PPU clock apart in this core, so
 the fix is a redesign of the `$2002` status-read model (previous-dot lag,
-race and kill windows), not an NMI change. The issue stays open in the 1.0
-milestone; the entry stays in `corpus-known-failing.txt` until that redesign
-makes it pass.
+race and kill windows), not an NMI change. That redesign is in
+`specs/001-emulation-core/analysis/STATUS_READ_MODEL.md`. It is scheduled
+after the MCP server and the GUI, and it must land before 1.0. The issue
+stays open in the 1.0 milestone; the entry stays in `corpus-known-failing.txt`
+until the redesign makes it pass.
 
 ## Performance gate
 

@@ -344,3 +344,15 @@ verify neither surface ever observes a torn or inconsistent machine state.
   feature is specified.
 - Tool names, argument shapes, and schema details are finalized during
   planning; the spec fixes the capability set, not the naming.
+- **Core timing will still change before 1.0.** Issue #42 replaces the core's
+  `$2002` status-read and NMI timing model
+  (`specs/001-emulation-core/analysis/STATUS_READ_MODEL.md`) after this
+  feature and the GUI are built. Two consequences for this feature:
+  - Tests assert through the tool surface (state, memory, errors, schema,
+    determinism between two runs) and do not pin exact frame hashes or exact
+    cycle counts. Pin a frame only where nothing else can express the check,
+    and then only after viewing it, as `docs/test-corpus.md` requires.
+  - Save-state blobs are not a stable format before 1.0. Do not commit
+    save-state fixtures. Tests create states at run time. The core already
+    rejects states from another core version (`IncompatibleCoreVersion`), and
+    #42 will raise the format version.

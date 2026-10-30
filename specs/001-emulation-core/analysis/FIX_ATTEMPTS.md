@@ -1731,3 +1731,4 @@ and no separate race/kill windows. Getting there means replacing
 `$2002`/NMI ROM (ppu_vbl_nmi 01-10, vbl_nmi_timing 1-7, cpu_interrupts_v2,
 the Holy Mapperel vsync poll and the sprdma boot alignment). That is a
 redesign, not a recalibration, and needs its own design before work starts.
+That design is `STATUS_READ_MODEL.md`.
