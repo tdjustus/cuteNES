@@ -4,9 +4,38 @@
 
 **Created**: 2026-10-17
 
-**Status**: Draft
+**Status**: Draft (amended 2026-10-29: run modes, public API, GUI control)
 
 **Input**: User description: "ai mcp server"
+
+## Clarifications
+
+### Session 2026-10-29
+
+- Q: Which surfaces exist? → A: Two layers. A **public API** (versioned,
+  documented, usable directly by scripts and tools) has full control over the
+  core. The **MCP server** is a protocol adapter over the same API, so MCP and
+  the API can never diverge.
+- Q: How is the emulator run? → A: In two modes, both required. **Headless
+  mode**: a standalone executable with no GUI, where the API and MCP control
+  the core. **GUI mode**: the Qt application (feature 003, #32) hosts the
+  session, and the API and MCP control the core and every GUI action.
+- Q: What does "full control over the GUI" cover? → A: Every GUI action. Each
+  menu action, setting, window and debug view is a command the API (and so
+  MCP) can call; nothing is GUI-only (constitution Principle V).
+- Q: How is headless mode enabled, given that servers are off by default? →
+  A: Launching the headless executable is the operator's opt-in. An MCP
+  client starts it over stdio, and it opens no network listener unless a
+  command-line flag asks for one. The GUI's off-by-default toggles apply to
+  GUI mode only.
+- Q: Do the HTTP listeners need authentication? → A: Yes, a per-launch
+  token (FR-024). Every HTTP request must present a random token generated
+  when the listener starts. stdio needs none: only the client that launched
+  the process can reach it.
+- Q: The GUI does not exist yet; what is built now? → A: The API, headless
+  MCP, and the extension point through which a host (the GUI) registers its
+  commands, tested with a fake host. The GUI-mode transport and the GUI's
+  commands land with feature 003.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -176,7 +205,11 @@ verify neither surface ever observes a torn or inconsistent machine state.
 - What happens if a save-state slot name is reused, empty, or invalid?
   (Defined overwrite/rejection behavior with explicit errors.)
 - What happens when network exposure is enabled — who may connect? (Explicit
-  opt-in only; treated as a trusted context; see Assumptions.)
+  opt-in only. Callers still need the token (FR-024); there is no other
+  authentication or TLS, so exposure is for trusted networks.)
+- What happens when another user on the same machine connects to a loopback
+  listener? (Refused without the token, which is readable only by the
+  operator's account; FR-024.)
 - What happens when a ROM path contains `..` or an absolute path? (Rejected
   with a structured error; loads stay inside the configured library.)
 - What happens when a chunked upload stalls or the client disconnects
@@ -196,9 +229,12 @@ verify neither surface ever observes a torn or inconsistent machine state.
   stay disabled; nothing listens; installing or registering the MCP server
   anywhere requires enabling the API first.)
 - What happens when the GUI is not yet available (feature 003 pending)?
-  (A documented config-file mechanism is the interim enable path for
-  development and testing; the GUI becomes the canonical surface when it
-  ships.)
+  (Headless mode is the complete surface; GUI-mode commands do not exist
+  and are not listed.)
+- What happens when a GUI command is called in headless mode? (It is not
+  listed; calling it by name returns a structured "unknown command" error.)
+- What happens when the GUI user and an API client act at the same time?
+  (Both go through the session's single command queue; see FR-007.)
 
 ## Requirements *(mandatory)*
 
@@ -236,15 +272,19 @@ verify neither surface ever observes a torn or inconsistent machine state.
 - **FR-008**: The server MUST accept local connections by default and MUST
   refuse non-local connections until the operator explicitly enables network
   exposure.
-- **FR-009**: The application MUST ship with both the API server and the
-  MCP server **disabled by default**. Enabling or disabling either is a
-  manual action performed in the application GUI, and the setting persists
+- **FR-009**: In GUI mode the application MUST ship with both the API server
+  and the MCP server **disabled by default**. Enabling or disabling either is
+  a manual action performed in the application GUI, and the setting persists
   across restarts. Disabled servers MUST have no observable effect on the
-  emulator (no listeners, no sockets, no background work).
+  emulator (no listeners, no sockets, no background work). In headless mode
+  (FR-021) launching the executable is the opt-in. It serves MCP over stdio
+  by default, and it opens a network listener only when a command-line flag
+  explicitly requests one.
 - **FR-020**: The MCP server MUST depend on the API server: the MCP
   endpoint cannot be enabled, installed, or registered with a client while
-  the API server is disabled — the GUI MUST present this dependency and
-  offer to enable the API as part of MCP setup. Disabling the API while
+  the API server is disabled. In GUI mode the GUI MUST present this
+  dependency and offer to enable the API as part of MCP setup. (In headless
+  mode the MCP adapter always runs on an in-process API.) Disabling the API while
   MCP clients are connected MUST terminate those sessions gracefully
   (structured shutdown messages; emulation continues unaffected).
 - **FR-010**: The tool surface MUST carry an explicit version identifier, and
@@ -275,6 +315,36 @@ verify neither surface ever observes a torn or inconsistent machine state.
 - **FR-018**: A status tool MUST report cartridge info (format, mapper,
   sizes, battery, region), run state, frame and master-cycle counters, and
   the core and tool-surface versions.
+- **FR-021**: The system MUST support two run modes with the same API and
+  tool surface:
+  (a) **headless**: a standalone executable with no GUI or Qt dependency,
+  serving MCP over stdio and, on explicit flags, the API and MCP over local
+  HTTP;
+  (b) **GUI**: the Qt application hosts the session and serves the API and
+  MCP over local HTTP when enabled, with a stdio bridge so stdio-only MCP
+  clients can attach to the running application.
+  Both modes MUST expose every core command. GUI mode additionally exposes
+  every GUI command (FR-023). A tool that needs the GUI MUST NOT be listed in
+  headless mode.
+- **FR-022**: The API MUST be public: a versioned, schema-documented local
+  protocol that scripts and tools can call directly, with full control over
+  the core. Every public operation of `cutenes::Machine` MUST map to an API
+  command (the core contract's capability table is the checklist). MCP tools
+  MUST be generated from the same command registry, so the two surfaces can't
+  diverge.
+- **FR-023**: The API MUST provide an extension point through which the host
+  registers its own commands, with schemas, in the same registry. The GUI
+  MUST register every user-facing action through it (menus, settings,
+  windows, debug views, input mapping, speed and fast-forward). In GUI mode
+  the API and MCP MUST be able to drive the GUI as fully as a user can.
+- **FR-024**: Every HTTP listener (API and MCP, both modes) MUST require a
+  bearer token. A random 256-bit token is generated each time a listener
+  starts and compared in constant time; a request without it is refused with
+  no effect on the session. The token is never logged. It is written to a
+  per-user file readable only by that user, and also shown in the GUI's
+  server settings. Headless mode prints its location to stderr and accepts
+  `--token-file` to choose it. `--attach` and local scripts read it from that
+  file. stdio transports need no token.
 - **FR-019**: The run tools MUST accept an optional per-frame input script
   for the run's duration: each frame's controller states apply before that
   frame executes; beyond the script's length the final entry is held;
@@ -316,32 +386,41 @@ verify neither surface ever observes a torn or inconsistent machine state.
   coverage by exposed MCP tools.
 - **SC-005**: In the default configuration, a network scan during acceptance
   testing finds zero remotely accessible endpoints; with exposure enabled,
-  only the explicitly configured endpoint is reachable.
+  only the explicitly configured endpoint is reachable. 100% of HTTP
+  requests without the current token are refused (FR-024).
+- **SC-007**: The headless tool catalog equals the core command set, with
+  zero GUI commands. The GUI-mode catalog equals the core set plus every GUI
+  action (100% of the actions listed in feature 003's spec). The same call
+  gives the same result in both modes.
+- **SC-008**: Every API command is reachable through MCP and every MCP tool
+  maps to exactly one API command (automated catalog-equality test).
 - **SC-006**: In interleaved human-plus-AI sessions, every tested combination
   of concurrent operations from both surfaces leaves both observing the same
   consistent state (100% of scenarios tested).
 
 ## Assumptions
 
-- **Two-layer server model**: the application exposes an API server (the
-  transport/control layer) and the MCP server as the protocol surface on
-  top of it. Both are disabled by default, enabled manually in the GUI,
-  and MCP requires the API (FR-009/FR-020). Until the GUI (feature 003)
-  exists, a config-file mechanism is the documented interim enable path.
+- **Two-layer server model**: the API is the control layer (public, FR-022)
+  and the MCP server is the protocol surface on top of it. In GUI mode both
+  are disabled by default, enabled manually in the GUI, and MCP requires the
+  API (FR-009/FR-020). In headless mode launching the executable is the
+  opt-in (FR-021).
 - This feature depends on the emulation core (`specs/001-emulation-core`) for
   every capability it exposes; the core's public surface is its contract.
 - The targeted MCP specification revision is the current published standard at
   implementation time; the protocol's own versioning governs negotiation.
 - Transports: the standard local transport is the default; network exposure is
-  an explicit opt-in treated as a trusted context (no authentication
-  framework is in scope until separately specified).
+  an explicit opt-in for trusted networks. The per-launch token (FR-024) is
+  the only authentication. Accounts, OAuth and TLS are out of scope until
+  separately specified.
 - One emulation session per server instance: a single game at a time; multiple
   concurrent sessions are a possible future feature.
 - Multiple simultaneous MCP clients are permitted and share that single
   session; commands serialize in arrival order, with no per-client isolation.
-- The graphical frontend feature does not exist yet; the parity requirement
-  (FR-003) applies to the core now and extends to frontend features when that
-  feature is specified.
+- The graphical frontend feature does not exist yet. The host extension
+  point (FR-023) is built and tested now with a fake host. The GUI's own
+  commands and the GUI-mode transport are delivered with feature 003 (#32),
+  whose spec MUST list each GUI action's command.
 - Tool names, argument shapes, and schema details are finalized during
   planning; the spec fixes the capability set, not the naming.
 - **Core timing will still change before 1.0.** Issue #42 replaces the core's
