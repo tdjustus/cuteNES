@@ -27,9 +27,9 @@ feature. Each PR uses `Refs #31` until P5, which uses `Fixes #31`.
 ## Phase P0: Core prerequisites (branch `fix/core-memory-dump-bytes`)
 
 - [x] A001 File the issue: `Machine::dumpMemory` writes a file from the core, contradicting core-api.md "performs no I/O" (constitution II). Filed as #68; P0's PR uses `Fixes #68`
-- [ ] A002 Test first, in `tests/unit/test_full_control.cpp`: a new `Machine::memoryDump()` returns the dump bytes, byte-identical to the contents `dumpMemory` writes, and touches no filesystem. Also a regression test that `dumpMemory` still writes `<datetime>.dmp` with the same contents
-- [ ] A003 Implement `memoryDump()` in `core/src/cutenes/system/machine.cpp`, and reimplement `dumpMemory` on top of it. **`dumpMemory` stays** (maintainer, 2026-10-29: it helps debugging): same signature, same file, not deprecated. Document it in core-api.md's global rules as the core's single explicit debug I/O exception (it runs only when called and never affects emulation), and add `memoryDump` to the contract
-- [ ] A004 [P] Complete the capability table in `specs/001-emulation-core/contracts/core-api.md`: add `cartridgeInfo`, `setMmc3Revision`/`mmc3Revision`, `controller`, `peek`/`disassemble` (already there), `memoryDump`, `setInstructionTrace` (as a bounded trace command), `debugSetProgramCounter` (covered by `writeCpu`), `frameCounter`/`masterCycle`
+- [x] A002 Test first, in `tests/unit/test_full_control.cpp`: a new `Machine::memoryDump()` returns the dump bytes, byte-identical to the contents `dumpMemory` writes, and touches no filesystem. Also a regression test that `dumpMemory` still writes `<datetime>.dmp` with the same contents
+- [x] A003 Implement `memoryDump()` in `core/src/cutenes/system/machine.cpp`, and reimplement `dumpMemory` on top of it. **`dumpMemory` stays** (maintainer, 2026-10-29: it helps debugging): same signature, same file, not deprecated. Document it in core-api.md's global rules as the core's single explicit debug I/O exception (it runs only when called and never affects emulation), and add `memoryDump` to the contract
+- [x] A004 [P] Complete the capability table in `specs/001-emulation-core/contracts/core-api.md`: add `cartridgeInfo`, `setMmc3Revision`/`mmc3Revision`, `controller`, `peek`/`disassemble` (already there), `memoryDump`, `setInstructionTrace` (as a bounded trace command), `debugSetProgramCounter` (covered by `writeCpu`), `frameCounter`/`masterCycle`
 
 ## Phase P1: `cutenes-api` library (branch `feature/api-library`)
 

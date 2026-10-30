@@ -537,6 +537,60 @@ std::uint64_t Machine::masterCycle() const { return m_impl->scheduler.now(); }
 
 namespace cutenes {
 
+namespace {
+
+void putLe(std::vector<std::uint8_t>& out, std::uint64_t value, int bytes)
+{
+    for (int i = 0; i < bytes; ++i) {
+        out.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
+    }
+}
+
+} // namespace
+
+std::vector<std::uint8_t> Machine::memoryDump(std::uint64_t timestamp) const
+{
+    // Layout: memdump-design.md / contracts/core-api.md "Memory dump".
+    // Integers are little-endian so a dump reads the same on every host.
+    std::vector<std::uint8_t> out;
+    const auto& prgRam = m_impl->cart.prgRam;
+    out.reserve(32 + 0x10000 + 8 + 256 + 32 + 4 + prgRam.size() + 8 + 0x4000);
+
+    static constexpr char kMagic[8] = {'C', 'U', 'N', 'E', 'D', 'M', 'P', '1'};
+    out.insert(out.end(), kMagic, kMagic + 8);
+    putLe(out, timestamp, 8);
+    putLe(out, frameCounter(), 8);
+    putLe(out, masterCycle(), 8);
+
+    for (std::uint32_t addr = 0x0000; addr < 0x10000; ++addr) {
+        out.push_back(peek(static_cast<std::uint16_t>(addr)));
+    }
+
+    std::uint8_t regs[8]{};
+    readPpuRegisters(regs);
+    out.insert(out.end(), regs, regs + 8);
+    std::uint8_t oam[256]{};
+    readOam(oam);
+    out.insert(out.end(), oam, oam + 256);
+    std::uint8_t palette[32]{};
+    readPalette(palette);
+    out.insert(out.end(), palette, palette + 32);
+
+    putLe(out, prgRam.size(), 4);
+    out.insert(out.end(), prgRam.begin(), prgRam.end());
+
+    // The whole PPU bus through the debug view: pattern tables (CHR ROM or
+    // RAM), nametables with mirroring resolved, and the palette.
+    static constexpr char kVram[4] = {'V', 'R', 'A', 'M'};
+    out.insert(out.end(), kVram, kVram + 4);
+    constexpr std::size_t kPpuBus = 0x4000;
+    putLe(out, kPpuBus, 4);
+    const std::size_t at = out.size();
+    out.resize(at + kPpuBus);
+    readVram(0x0000, kPpuBus, out.data() + at);
+    return out;
+}
+
 std::string Machine::dumpMemory(const std::string& debugDir) const
 {
     namespace fs = std::filesystem;
@@ -552,69 +606,15 @@ std::string Machine::dumpMemory(const std::string& debugDir) const
 #endif
     std::stringstream ss;
     ss << std::put_time(&tm, "%Y%m%d%H%M%S");
-    std::string filename = ss.str() + ".dmp";
-    fs::path outPath = fs::path(debugDir) / filename;
+    const fs::path outPath = fs::path(debugDir) / (ss.str() + ".dmp");
 
+    const std::vector<std::uint8_t> bytes =
+        memoryDump(static_cast<std::uint64_t>(time));
     std::ofstream out(outPath, std::ios::binary);
-    if (!out) {
-        return outPath.string();
+    if (out) {
+        out.write(reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size()));
     }
-
-    // Header
-    out.write("CUNEDMP1", 8);
-    // Timestamp (seconds)
-    std::uint64_t ts = static_cast<std::uint64_t>(time);
-    out.write(reinterpret_cast<const char*>(&ts), sizeof(ts));
-    // Frame counter
-    std::uint64_t fc = frameCounter();
-    out.write(reinterpret_cast<const char*>(&fc), sizeof(fc));
-    // Master cycle
-    std::uint64_t mc = masterCycle();
-    out.write(reinterpret_cast<const char*>(&mc), sizeof(mc));
-
-    // CPU memory snapshot via peek
-    for (std::uint32_t addr = 0x0000; addr < 0x10000; ++addr) {
-        std::uint8_t v = peek(static_cast<std::uint16_t>(addr));
-        out.put(static_cast<char>(v));
-    }
-
-    // PPU registers
-    std::uint8_t preg[8]{};
-    readPpuRegisters(preg);
-    out.write(reinterpret_cast<const char*>(preg), 8);
-
-    // OAM
-    std::uint8_t oam[256]{};
-    readOam(oam);
-    out.write(reinterpret_cast<const char*>(oam), 256);
-
-    // Palette
-    std::uint8_t pal[32]{};
-    readPalette(pal);
-    out.write(reinterpret_cast<const char*>(pal), 32);
-
-    // Cartridge PRG RAM
-    const auto& ram = m_impl->cart.prgRam;
-    std::uint32_t prgramSize = static_cast<std::uint32_t>(ram.size());
-    out.write(reinterpret_cast<const char*>(&prgramSize), 4);
-    if (prgramSize > 0) {
-        out.write(reinterpret_cast<const char*>(ram.data()), prgramSize);
-    }
-
-    // PPU VRAM snapshot
-    std::array<std::uint8_t, 0x2000> vram{};
-    for (std::size_t i = 0; i < vram.size(); ++i) {
-        vram[i] = peek(static_cast<std::uint16_t>(0x2000 + i)); // not directly accessible, but try bus
-    }
-    // Better: use readVram via bus view - read from $0000-$1FFF mapped
-    out.write("VRAM", 4);
-    std::uint32_t vramSize = 0x2000;
-    out.write(reinterpret_cast<const char*>(&vramSize), 4);
-    std::array<std::uint8_t, 0x2000> vram2{};
-    // Try to read through cart/ppu if possible - write zeros as fallback
-    out.write(reinterpret_cast<const char*>(vram2.data()), vramSize);
-
-    out.close();
     return outPath.string();
 }
 

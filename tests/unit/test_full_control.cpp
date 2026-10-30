@@ -8,6 +8,10 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <vector>
 
 namespace {
@@ -325,4 +329,139 @@ TEST(Region, PalFramesCarryMoreAudioThanNtscFrames)
     // PAL 50.0070 fps = 2.3997 s = ~115.2k samples (within 1%).
     EXPECT_NEAR(static_cast<double>(samples[0]), 95840.0, 960.0);
     EXPECT_NEAR(static_cast<double>(samples[1]), 115186.0, 1152.0);
+}
+
+// Memory dump (issue #68; specs/001-emulation-core/memdump-design.md and
+// contracts/core-api.md "Memory dump"). memoryDump() returns the bytes
+// dumpMemory() writes, so API clients can get a dump without file I/O.
+// Every section is checked against the side-effect-free accessor that
+// defines it; integers are little-endian.
+namespace {
+
+std::uint64_t le64(const std::vector<std::uint8_t>& b, std::size_t at)
+{
+    std::uint64_t v = 0;
+    for (int i = 7; i >= 0; --i) {
+        v = (v << 8) | b.at(at + static_cast<std::size_t>(i));
+    }
+    return v;
+}
+
+std::uint32_t le32(const std::vector<std::uint8_t>& b, std::size_t at)
+{
+    std::uint32_t v = 0;
+    for (int i = 3; i >= 0; --i) {
+        v = (v << 8) | b.at(at + static_cast<std::size_t>(i));
+    }
+    return v;
+}
+
+} // namespace
+
+TEST(MemoryDump, SectionsMatchTheDebugAccessors)
+{
+    FullControlHarness h;
+    h.machine.runFrames(3);
+    // Distinctive content in every PPU region the dump covers.
+    const std::uint8_t nt[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+    h.machine.writeVram(0x2123, nt, sizeof nt);
+    std::uint8_t oam[256];
+    for (int i = 0; i < 256; ++i) {
+        oam[i] = static_cast<std::uint8_t>(255 - i);
+    }
+    h.machine.writeOam(oam);
+    const std::uint8_t ram[2] = {0x5A, 0xA5};
+    ASSERT_EQ(h.machine.writeMemory(0x0300, ram, sizeof ram),
+        cutenes::WriteError::Ok);
+
+    const std::vector<std::uint8_t> d = h.machine.memoryDump(0x1122334455667788ull);
+    ASSERT_GE(d.size(), 8u + 24u + 0x10000u + 8u + 256u + 32u + 4u);
+    EXPECT_EQ(std::string(d.begin(), d.begin() + 8), "CUNEDMP1");
+    EXPECT_EQ(le64(d, 8), 0x1122334455667788ull) << "timestamp is the caller's";
+    EXPECT_EQ(le64(d, 16), h.machine.frameCounter());
+    EXPECT_EQ(le64(d, 24), h.machine.masterCycle());
+
+    std::size_t at = 32;
+    for (std::uint32_t a = 0; a < 0x10000; ++a) {
+        ASSERT_EQ(d[at + a], h.machine.peek(static_cast<std::uint16_t>(a)))
+            << "CPU byte " << a;
+    }
+    EXPECT_EQ(d[at + 0x0300], 0x5A);
+    at += 0x10000;
+
+    std::uint8_t regs[8];
+    h.machine.readPpuRegisters(regs);
+    EXPECT_EQ(0, std::memcmp(d.data() + at, regs, 8));
+    at += 8;
+    std::uint8_t oamBack[256];
+    h.machine.readOam(oamBack);
+    EXPECT_EQ(0, std::memcmp(d.data() + at, oamBack, 256));
+    at += 256;
+    std::uint8_t pal[32];
+    h.machine.readPalette(pal);
+    EXPECT_EQ(0, std::memcmp(d.data() + at, pal, 32));
+    at += 32;
+
+    const std::uint32_t prgRam = le32(d, at);
+    EXPECT_EQ(prgRam, h.machine.cartridgeInfo().prgRamSize);
+    at += 4;
+    for (std::uint32_t i = 0; i < prgRam && i < 0x2000; ++i) {
+        ASSERT_EQ(d[at + i], h.machine.peek(static_cast<std::uint16_t>(0x6000 + i)))
+            << "PRG-RAM byte " << i;
+    }
+    at += prgRam;
+
+    // The whole PPU bus: pattern tables, nametables, palette.
+    ASSERT_EQ(std::string(d.begin() + static_cast<std::ptrdiff_t>(at),
+                  d.begin() + static_cast<std::ptrdiff_t>(at + 4)),
+        "VRAM");
+    at += 4;
+    ASSERT_EQ(le32(d, at), 0x4000u);
+    at += 4;
+    std::vector<std::uint8_t> vram(0x4000);
+    h.machine.readVram(0x0000, vram.size(), vram.data());
+    EXPECT_EQ(0, std::memcmp(d.data() + at, vram.data(), vram.size()));
+    EXPECT_EQ(d[at + 0x2123], 0xDE) << "nametable bytes are dumped, not zeros";
+    at += 0x4000;
+    EXPECT_EQ(at, d.size()) << "no trailing bytes";
+}
+
+TEST(MemoryDump, IsDeterministicAndHasNoSideEffects)
+{
+    FullControlHarness h;
+    h.machine.runFrames(2);
+    const auto before = h.machine.cpu();
+    const auto a = h.machine.memoryDump(7);
+    const auto b = h.machine.memoryDump(7);
+    EXPECT_EQ(a, b);
+    const auto after = h.machine.cpu();
+    EXPECT_EQ(before.pc, after.pc);
+    EXPECT_EQ(before.masterCycle, after.masterCycle);
+    std::uint8_t regs[8];
+    h.machine.readPpuRegisters(regs);
+    EXPECT_EQ(h.machine.memoryDump(7), a) << "reading registers changed nothing";
+}
+
+// dumpMemory keeps working (maintainer, 2026-10-29: it helps debugging):
+// it writes <datetime>.dmp whose bytes are memoryDump() of the same instant.
+TEST(MemoryDump, DumpMemoryWritesTheSameBytesToAFile)
+{
+    namespace fs = std::filesystem;
+    FullControlHarness h;
+    h.machine.runFrames(2);
+    const fs::path dir = fs::temp_directory_path()
+        / ("cutenes-dump-test-" + std::to_string(h.machine.masterCycle()));
+    fs::remove_all(dir);
+    const std::string written = h.machine.dumpMemory(dir.string());
+    ASSERT_TRUE(fs::exists(written)) << written;
+    EXPECT_EQ(fs::path(written).parent_path(), dir);
+    EXPECT_EQ(fs::path(written).extension(), ".dmp");
+
+    std::ifstream in(written, std::ios::binary);
+    const std::vector<std::uint8_t> file(
+        (std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    ASSERT_GE(file.size(), 16u);
+    EXPECT_EQ(file, h.machine.memoryDump(le64(file, 8)));
+    in.close();
+    fs::remove_all(dir);
 }
