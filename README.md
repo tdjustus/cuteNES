@@ -1,154 +1,134 @@
 # cuteNES
 
+[![build](https://github.com/tdjustus/cuteNES/actions/workflows/build.yml/badge.svg)](https://github.com/tdjustus/cuteNES/actions/workflows/build.yml)
+
 An open-source, cross-platform NES emulator built on a hardware-accurate,
-headless, deterministic emulation core — with a first-class MCP server so
-AI agents can connect to and drive the emulator.
+headless, deterministic emulation core, with a planned MCP server so AI agents
+can connect to and drive the emulator.
 
-- **Core**: native C++20, no runtime dependencies, byte-identical
-  cross-platform output, validated against the community test-ROM suites.
-- **Frontends** (planned): Qt 6 desktop app; MCP server for AI automation.
-- **Normative hardware reference**: the [NESdev NES Reference Guide]
-  (https://www.nesdev.org/wiki/NES_reference_guide).
+- **Core** (`core/`): native C++20, no runtime dependencies, deterministic
+  (the same ROM and inputs give byte-identical video and audio on every
+  platform), validated against community test-ROM suites.
+- **Frontends** (planned, not started): a Qt 6 desktop app and an MCP server
+  ([`specs/002-ai-mcp-server`](specs/002-ai-mcp-server)).
+- **Normative hardware reference**: the
+  [NESdev NES Reference Guide](https://www.nesdev.org/wiki/NES_reference_guide).
 
-## Building the core
+## Status
+
+The emulation core ([spec 001](specs/001-emulation-core/spec.md)) is
+feature-complete for the mappers below and is hardened toward version 1.0.
+What is left is tracked in the GitHub
+[1.0 milestone](https://github.com/tdjustus/cuteNES/milestone/1): a small
+number of timing edge cases, the MCP server and the Qt frontend. See
+"Testing" for what has actually been verified.
+
+| | Supported |
+|---|---|
+| CPU/PPU/APU | Cycle-stepped 6502 including unofficial opcodes, dot-stepped PPU, APU with DMC DMA |
+| Regions | NTSC and PAL (PAL is validated per frame and for the APU, not per PPU dot) |
+| Mappers | 0 NROM, 1/155 MMC1 (incl. SUROM/SXROM), 2 UxROM, 3 CNROM, 4 MMC3, 5 MMC5 (no expansion audio), 7 AxROM, 11 Color Dreams, 22 VRC2a, 28 Action 53, 34 BNROM |
+| Headers | iNES 1.0 and NES 2.0 (RAM sizes, TV system, submappers) |
+| Save states | Byte-identical round trip |
+
+Revision-dependent mapper behavior (MMC1A/B, MMC3 A/B) is documented in
+[`docs/mappers.md`](docs/mappers.md).
+
+## Building
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build --output-on-failure
+ctest --test-dir build -j8 -LE known-failing
 ```
 
-Requires CMake >= 3.21 and a C++20 compiler (MSVC 2022+, AppleClang 15+,
-or GCC 12+). Tests fetch GoogleTest at configure time (standalone builds
-only) and need `git clone --recurse-submodules` for the test-ROM archive.
+Requires CMake >= 3.21 and a C++20 compiler (MSVC 2022+, AppleClang 15+, or
+GCC 12+). Clone with `--recurse-submodules` to get the test-ROM archive
+(`tests/roms`); GoogleTest is fetched at configure time.
 
-## Consuming the core
+## Using the core
 
 ```cmake
-# From the Qt app / MCP server:
-FetchContent_Declare(cutenes-core GIT_REPOSITORY ... GIT_TAG v0.1.0)
+include(FetchContent)
+FetchContent_Declare(cutenes-core
+    GIT_REPOSITORY https://github.com/tdjustus/cuteNES.git
+    GIT_TAG core-v0.1.0)
 FetchContent_MakeAvailable(cutenes-core)
 target_link_libraries(your_app PRIVATE cutenes-core::cutenes-core)
 ```
 
-Public API contract: `specs/001-emulation-core/contracts/core-api.md`.
+The public API contract is
+[`specs/001-emulation-core/contracts/core-api.md`](specs/001-emulation-core/contracts/core-api.md).
+For debugging, `Machine::dumpMemory("debug")` writes a `<datetime>.dmp` with
+CPU memory, PPU memory, OAM, palette and cartridge RAM/ROM.
 
-## MMC1 revision (mapper 1 vs 155)
+## Testing
 
-The MMC1 ASIC exists in behaviorally distinct revisions, and the difference
-is in the PRG-bank register's bit 4 (nesdev wiki, MMC1 — "ASIC
-Revisions"):
+Tests are labelled in CTest. Counts are from the current tree.
 
-- **MMC1B** ("normal", iNES mapper 1): bit 4 of `$E000` disables PRG-RAM —
-  reads float and writes are dropped while set. This is the behavior of
-  the vast majority of cartridges.
-- **MMC1A** (iNES mapper 155): PRG-RAM is always enabled. Bit 4 instead
-  makes register bit 3 drive PRG A17 directly across the entire
-  `$8000-$FFFF` range, bypassing the fixed-bank logic — visible only with
-  256 KiB PRG. Two known games rely on this (they write `$10-$1F` to the
-  PRG-bank register and expect WRAM to stay writable).
+| Label | Tests | What it proves | Runs in CI |
+|---|---|---|---|
+| `unit` | 177 | Component behavior written from hardware docs: CPU, PPU, APU, bus, scheduler, iNES parsing, each mapper's banking/mirroring/IRQ | every PR |
+| `tier1` | 50 | The gate ROMs (nestest, instr_test-v5, instr_timing, ppu_vbl_nmi, apu_test, apu_reset, cpu_interrupts_v2, mmc3_irq_tests, ...) plus 13 golden frame hashes | every PR |
+| `tier2` | 28 | Broader ROM suites incl. 22 Holy Mapperel board tests | every PR (Release builds) |
+| `behavior` | 18 | Determinism (run twice, byte-identical), save-state round trip, instruction-step equivalence | every PR |
+| `playtest`, `corpus` | 112 | Scripted ROM runs with on-screen text or pinned, hand-viewed frame hashes | every PR, except entries needing `roms-local/` |
+| `known-failing` | 1 | A documented hardware discrepancy (#42) | never (run with `ctest -L known-failing`) |
 
-Both revisions honor the consecutive-cycle write rule: a serial-port write
-on the cycle immediately after another contributes no data bit (the 6502
-read-modify-write double write), while the bit-7 reset is never ignored
-(*Bill & Ted's Excellent Adventure* and *Shinsenden* depend on this).
+What the numbers do not say: a golden hash records what this emulator draws,
+not that it is right. Each of the 13 goldens carries a status (verified,
+checked by eye, or unverified) in `tests/golden/roms.txt`. Commercial-game
+playtests need ROMs you supply in the gitignored `roms-local/` folder and
+skip otherwise. Open core issues, including the Action 53 `test28` ROM
+(#38), are listed in the milestone. The corpus, how each folder is used and
+the pinned-hash procedure are in [`docs/test-corpus.md`](docs/test-corpus.md).
 
-Select the revision through the header: mapper 155 means MMC1A; mapper 1
-(or any plain iNES 1.0 header) means MMC1B.
+CI (`.github/workflows/build.yml`) runs on pull requests, `core-v*` tags and
+weekly: Release on Linux, macOS and Windows, a Windows Debug build, and an
+ASan/UBSan build (the fast groups on pull requests, everything on tags and
+weekly), plus a speed gate on the Linux job. A development machine runs the
+core at roughly 7x real time; CI fails below 1x. Docs-only changes skip the
+build.
 
-## MMC3 revision (mapper 4 IRQ behavior)
+### Harness
 
-The MMC3 exists in two behaviorally distinct silicon revisions, and the
-difference shows only in the scanline IRQ counter (nesdev wiki, MMC3 —
-"IRQ Specifics"):
+```bash
+build/tests/rom_harness suite --rom <rom>             # blargg $6000 protocol
+build/tests/rom_harness playtest --list FILE [--entry NAME] [--shots DIR]
+build/tests/rom_harness shot ROM FRAMES out.ppm       # save a frame to look at
+build/tests/rom_harness determinism --rom R --frames N
+build/tests/rom_harness savestate --rom R --at F --rerun-to G
+build/tests/rom_harness step-equiv R N                # stepping == runFrames
+build/tests/rom_harness bench --rom R [--seconds N] [--min-x X]
+build/tests/rom_harness golden --list tests/golden/roms.txt --check tests/golden/baseline.txt
+```
 
-- **Revision B ("normal")** asserts the IRQ whenever the counter is 0, so a
-  reload value of `$00` IRQs every scanline. This is the behavior of the
-  boards in Super Mario Bros. 3 and Mega Man 3, and of the vast majority of
-  cartridges.
-- **Revision A ("alternate")** asserts only when the counter *changes* to 0 —
-  by decrementing, or by a `$C001` reload landing on 0 (the write first puts
-  the counter above 127). Found in Crystalis-era boards.
+## Project
 
-The two are mutually exclusive at the hardware level, and the emulator picks
-between them as follows:
+- Constitution: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
+- Feature specs and plans: [`specs/`](specs/)
+- Source control, CI and releases: [`docs/source-control.md`](docs/source-control.md)
+- Test-ROM provenance: [`third_party/NOTICE.md`](third_party/NOTICE.md)
+- Embeddable Qt UI design:
+  [`specs/001-emulation-core/ui-embeddable-design.md`](specs/001-emulation-core/ui-embeddable-design.md)
+- Fix history and timing analysis:
+  [`specs/001-emulation-core/analysis/`](specs/001-emulation-core/analysis/)
+- License: MIT (see `LICENSE`).
 
-1. **Header (preferred):** an NES 2.0 header selects the revision through the
-   submapper field — mapper 4, submapper 4 means revision A; submapper 0 (or
-   any plain iNES 1.0 header, which cannot express the choice) means revision
-   B. If you have a revision A dump (e.g. Crystalis), tag its header NES 2.0
-   with submapper 4 to get the exact IRQ behavior.
-2. **Manual override (any time):** `machine.setMmc3Revision(
-   Machine::Mmc3Revision::A)` forces a revision regardless of the header —
-   also `::B` to force the other way, and `::Auto` (the default) to follow
-   the header. The setting applies immediately to a loaded cartridge and to
-   subsequent loads, and it is part of the save state.
-
-All six blargg `mmc3_irq_tests` ROMs pass: 1-4 and 6 under revision B,
-`5.MMC3_rev_A` under an NES 2.0 submapper 4 header (the playtest suite does
-exactly this via its `force-submapper` directive).
-
-Caveat: for nearly all games the two revisions are indistinguishable, since
-the behavior only diverges when a game writes a reload value of `$00` or
-otherwise depends on the change-to-zero nuance. The header tagging (or manual
-override) therefore matters only for that small set of titles — Crystalis is
-the known revision A case. An untagged revision A dump still runs; it simply
-gets the revision B rule, which is byte-identical in practice for anything
-that never exercises the divergent cases.
-
-## Project governance
-
-- Constitution: `.specify/memory/constitution.md`
-- Feature specs & plans: `specs/`
-- Source control, CI and releases: `docs/source-control.md`
-- Licensing: MIT for project code (see LICENSE); test-ROM provenance in
-  `third_party/NOTICE.md`.
-
-### Branching & merging
+### Branching and merging
 
 The full strategy is in [`docs/source-control.md`](docs/source-control.md).
 In short:
 
 - `main` is protected and always green. Every change lands through a pull
-  request from a `<kind>/<slug>` branch (`feature/`, `fix/`, `docs/`,
-  `test/`, `chore/`), merged with a merge commit once the `ci-ok` check
-  passes and the branch is up to date. Merged branches are deleted
-  automatically.
+  request from a `<kind>/<slug>` branch (`feature/`, `fix/`, `docs/`, `test/`,
+  `chore/`), merged with a merge commit once the `ci-ok` check passes and the
+  branch is up to date. Merged branches are deleted automatically.
 - One branch at a time: each is merged before the next one starts, and
   branches are never stacked.
-- CI runs on pull requests, on `core-v*` tags and weekly, not on every push
-  and not again after the merge.
+- CI runs on pull requests, on tags and weekly, not on every push and not
+  again after the merge.
 - Known bugs and roadmapped features are tracked in the GitHub milestone
   **1.0**. Version 1.0 ships when that milestone is empty.
-- After 1.0, work moves to a long-lived `development` branch (never
-  deleted) and each release merges `development` into `main`.
-
-## Status
-
-Feature 001 (emulation core): see `specs/001-emulation-core/tasks.md`.
-The tier-1 gate runs the standalone sub-test ROMs for ppu_vbl_nmi and
-apu_test, the full apu_reset and oam_stress suites, plus nestest,
-instr_test-v5, instr_timing, cpu_reset, oam_read, and the six blargg
-mmc3_irq_tests ROMs. All formerly known-failing tests are fixed (T068,
-T070 and T037 closed; the MMC3 revision A/B split and the MMC1A/B
-variants are header-selectable, see above): both `sprdma_and_dmc_dma`
-variants match hardware's measured tables row for row, and
-`cpu_interrupts_v2` rom_singles 1-5 pass. Save states round-trip
-byte-identically; 600-frame determinism and
-instruction-stepping equivalence verified; ~592 fps single-threaded
-(9.9x real-time).
-
-## Harness
-
-```bash
-build/tests/rom_harness nestest                 # CPU golden log
-build/tests/rom_harness suite --rom <rom>       # blargg $6000 protocol
-build/tests/rom_harness determinism --rom R --frames N
-build/tests/rom_harness savestate --rom R --at F --rerun-to G
-build/tests/rom_harness step-equiv R N          # stepping == runFrames
-build/tests/rom_harness bench --rom R           # sustained speed
-
-- **Embeddable UI Design**: Qt 6 widget architecture designed for reuse in other applications ([specs/001-emulation-core/ui-embeddable-design.md](specs/001-emulation-core/ui-embeddable-design.md)). Strict core/UI separation via public API, OpenGL-accelerated rendering, and library-first CMake integration.
-
-### Debugging
-- `Machine::dumpMemory("debug")` creates a `<datetime>.dmp` file in the debug directory with snapshots of CPU memory, PPU memory, OAM, palette, and cartridge RAM/ROM for troubleshooting.
+- After 1.0, work moves to a long-lived `development` branch (never deleted)
+  and each release merges `development` into `main`.
