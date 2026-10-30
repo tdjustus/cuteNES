@@ -10,8 +10,6 @@
 
 
 #include "cutenes/serialize/save_state.hpp"
-#include <cstdio>
-#include <cstdlib>
 #include "cutenes/system/timing.hpp"
 
 #include "cutenes/cartridge/cart.hpp"
@@ -155,8 +153,6 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
     std::uint8_t value = decayedBusValue();
     switch (addr) {
     case 0x2002:
-        if (std::getenv("RDDBG")) std::fprintf(stderr, "RD2002 master=%llu line=%d dot=%d lag=%02X st=%02X\n",
-            (unsigned long long)m_sched.now(), m_scanline, m_dot, m_statusLag, m_status);
         // Open-bus low 5 bits decay into the returned status byte.
         value = static_cast<std::uint8_t>(
             (m_statusLag & 0xE0) | (decayedBusValue() & 0x1F));
@@ -1036,7 +1032,6 @@ void Ppu::stepDot()
     }
     if (m_scanline == kVblankLine && m_dot == timing::kVblSetDot) {
         m_status |= 0x80; // NMI line rises; the CPU samples at phi2
-        if (std::getenv("RDDBG")) std::fprintf(stderr, "VBLSET master=%llu\n", (unsigned long long)m_sched.now());
     }
     if (m_scanline == preRenderLine() && m_dot == timing::kVblClearDot) {
         m_status &= static_cast<std::uint8_t>(~0xE0); // clear V/S0/O
