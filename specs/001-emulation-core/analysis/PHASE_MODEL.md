@@ -1,5 +1,9 @@
 # CPU / APU / PPU phase model (T037, T068)
 
+> Historical: the two failures named here were fixed (see TIMING_MODEL.md, which
+> records the model that shipped). The one remaining phase-related gap is
+> `vbl_nmi_timing/7.nmi_timing` (issue #42, `docs/test-corpus.md`).
+
 Scope: the two open known failures, `ppu_vbl_nmi/03-vbl_clear_time` and
 `apu_test/5-len_timing`. Both depend on sub-cycle ordering between a CPU bus access,
 the PPU dot it lands on, and the APU frame-sequencer step.

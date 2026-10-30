@@ -10,7 +10,7 @@ A standalone, headless, deterministic NES emulation core delivered as the
 `cutenes-core` C++20 library: complete 6502/PPU/APU hardware emulation at
 the accuracy level required by the community test-ROM suites, iNES/NES 2.0
 cartridge loading with the five initial mappers (NROM, MMC1, UxROM, CNROM,
-MMC3), authentic controller polling, mid-frame save states, and
+MMC3; since extended, see Scale/Scope), authentic controller polling, mid-frame save states, and
 byte-identical video/audio output consumed via sinks. The technical approach
 is settled by [research.md](research.md): the Mesen/puNES-class hybrid
 architecture (instruction-level CPU + dot-stepped PPU caught up at every CPU
@@ -50,7 +50,9 @@ display/audio/windowing dependencies; single-threaded core with no wall-clock
 reads; save-state format unstable (reject-on-mismatch) until first stable
 release.
 
-**Scale/Scope**: mappers 0/1/2/3/4; tier-1 acceptance suite (research.md
+**Scale/Scope**: mappers 0/1/2/3/4 initially, now also 5 (MMC5, no expansion
+audio), 7, 11, 22 (VRC2a), 28 (Action 53), 34 (BNROM) and 155 (MMC1A), plus NTSC
+and PAL; tier-1 acceptance suite (research.md
 D11); 256x240@32bpp frames, 16-bit mono audio at 44.1/48/96 kHz.
 
 ## Constitution Check

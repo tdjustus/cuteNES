@@ -1,5 +1,8 @@
 # Test Analysis & Bug Resolution Plan
 
+> Historical (early 2026-10 plan). All five failures listed were fixed; see
+> `FIX_ATTEMPTS.md`. The method below is still how new failures are analysed.
+
 **Goal**: Verify each failing test against nesdev/hardware documentation, confirm accuracy of test expectations, and resolve all bugs.
 
 ## Current Known Failures
