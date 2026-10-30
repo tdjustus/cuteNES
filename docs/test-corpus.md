@@ -65,9 +65,14 @@ alignment needs a different threshold (1, 2 and 2-3 dots), so no single rule
 passes all three; the core runs the CPU on whole 3-dot cycles with one fixed
 phase. The newer `ppu_vbl_nmi` set (tier 1, CPU-cycle precision, all 10 ROMs
 including `05-nmi_timing` and `07-nmi_on_timing`) passes, and so do tests 1-6
-of this ROM. Passing test 7 would need sub-cycle CPU/PPU phase modelling that
-the calibrated timing tests above do not require. The issue stays open in the 1.0 milestone; the
-entry stays in `corpus-known-failing.txt` until a phase model makes it pass.
+of this ROM. A second, master-tick-resolution attempt (2026-10-29,
+`specs/001-emulation-core/analysis/FIX_ATTEMPTS.md`) found that neither NMI
+sample placement nor a Mesen2-style read/write split passes it. The ROM's
+`$2002`-based sync routines do not land one PPU clock apart in this core, so
+the fix is a redesign of the `$2002` status-read model (previous-dot lag,
+race and kill windows), not an NMI change. The issue stays open in the 1.0
+milestone; the entry stays in `corpus-known-failing.txt` until that redesign
+makes it pass.
 
 ## Performance gate
 

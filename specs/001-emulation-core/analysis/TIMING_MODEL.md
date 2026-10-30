@@ -171,4 +171,6 @@ single value that makes all of its tests pass together.
 - **Open: NMI visibility at one-PPU-clock precision.** `vbl_nmi_timing/7`
   needs a different NMI-visibility threshold for each of its three CPU/PPU
   alignments; the core runs the CPU on whole three-dot cycles with a fixed
-  phase, so no single rule passes all three (issue #42).
+  phase, so no single rule passes all three (issue #42). A master-tick
+  sweep and a Mesen2-style access split (FIX_ATTEMPTS.md, 2026-10-29) show
+  that the cause is the `$2002` read model, not the NMI sample point.

@@ -1669,3 +1669,65 @@ field that a mode write never touched. Fix: mirroring bit 0 is `m_mode` bit
 0, and D4 of `$00`/`$01` writes it while the mode is one-screen. With that,
 every automated test passes and the reset step prints "PASS!". 0.04 is
 vendored in `third_party/test28/`, and the playtest gained a `reset` step.
+
+## ATTEMPT (reverted): `vbl_nmi_timing/7.nmi_timing` sub-cycle phase (#42, 2026-10-29)
+
+One bounded pass (stopping rule as in PHASE_MODEL.md). All knobs were
+temporary and are reverted. The gate was the NMI/VBL/APU/DMC/MMC3/golden ctest
+subset plus 7.nmi_timing.
+
+**What test 3 does in this core** (instruction trace, `align0_30`, "too
+soon"): VBL sets at (241,1), on the third dot of PLA's second-to-last
+cycle (that cycle covers 240/340, 241/0, 241/1). The core counts it there
+and takes the NMI before `LDX #1`. Hardware takes it after `LDX`. Test 2
+(`align1_31`) puts the set on the first dot of PLA's last cycle and passes.
+
+**1. NMI sampled at cycle end** (after the second half-cycle, as `tick()`
+already does) instead of right after the bus access. 7 still FAILED #3.
+Regresses 05-nmi_timing, 07-nmi_on_timing, 08-nmi_off_timing,
+2-nmi_and_brk, golden-hashes and vbl_nmi_timing 6.
+
+**2. VBL-set NMI edge delayed by D master ticks** (not whole dots as in the
+earlier sweep). Results move only at 4-tick steps, because PPU events and CPU
+samples each sit on fixed grids, so the half-dot sample point is not the
+cause.
+
+| D (ticks) | 7.nmi_timing | other regressions |
+|---|---|---|
+| 0-6 | FAILED #3 (2 early) | none |
+| 7-12 | FAILED #4 (1 early) | 05/08 nmi, 3-nmi_and_irq, goldens, vbl_nmi 6 |
+| 13-14 | FAILED #6 (2 late) | + vbl_nmi 5 |
+| 16 | FAILED #5 (3+ late) | + 2-nmi_and_brk |
+
+One dot of delay moves the verdict from "1 early" straight to "2 late",
+so no NMI threshold passes. The inconsistency is upstream: in this core the
+ROM's three `$2002`-based sync routines do not land one PPU clock apart as
+they do on hardware.
+
+**3. Mesen2-style access split** (read at master 5 of 12, write at 7, NMI
+latched at cycle end; Mesen2 `NesCpu::StartCpuCycle/EndCpuCycle`), with
+and without the `m_statusLag` path for `$2002` reads:
+
+| read/write tick, NMI | 7.nmi_timing | NTSC regressions |
+|---|---|---|
+| 6/6 mid (baseline) | #3 | none |
+| 5/7 mid | #3 | apu2005 05/06/07/09 |
+| 5/7 end | #3 | + 05/07/08 nmi, 2-nmi_and_brk, goldens, vbl_nmi 6 |
+| 5/7 end, no lag | #3 | + 03-vbl_clear_time, vbl_nmi 4 |
+| 6/6 mid, no lag | #3 | 03-vbl_clear_time, goldens, vbl_nmi 4 |
+| 4/8 mid | #3 | 07-nmi_on, 2-nmi_and_brk, goldens, apu2005 |
+| 7/5 mid | #3 | none |
+
+(The knob hardcoded the NTSC 12-tick cycle, so PAL entries failed in every
+row; they are excluded.)
+
+**Conclusion.** Neither NMI placement nor a Mesen-style split passes test 7
+with the existing `$2002` model. Mesen passes it with a continuous model:
+the status flag is visible to a read once the PPU has run to the read's
+master time, with no previous-dot lag, no in-dot asymmetric special case
+and no separate race/kill windows. Getting there means replacing
+`m_statusLag`, the asymmetric-lag branch in `Ppu::cpuRead`, and the
+`kVblRaceDotMax`/`kNmiKill*` windows together, then recalibrating every
+`$2002`/NMI ROM (ppu_vbl_nmi 01-10, vbl_nmi_timing 1-7, cpu_interrupts_v2,
+the Holy Mapperel vsync poll and the sprdma boot alignment). That is a
+redesign, not a recalibration, and needs its own design before work starts.
