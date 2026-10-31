@@ -30,6 +30,17 @@ if(NOT CUTENES_BUILD_GUI STREQUAL "OFF")
         find_package(Qt6 6.8 QUIET COMPONENTS Widgets)
     endif()
     if(CUTENES_BUILD_API AND Qt6_FOUND)
+        # Qt before 6.9 links Apple's AGL framework through WrapOpenGL, and
+        # current macOS SDKs no longer ship it ("ld: framework 'AGL' not
+        # found"). Nothing here uses AGL, so drop it from the link.
+        if(APPLE AND TARGET WrapOpenGL::WrapOpenGL)
+            get_target_property(gl_libs WrapOpenGL::WrapOpenGL INTERFACE_LINK_LIBRARIES)
+            if(gl_libs)
+                list(FILTER gl_libs EXCLUDE REGEX "AGL")
+                set_target_properties(WrapOpenGL::WrapOpenGL PROPERTIES
+                    INTERFACE_LINK_LIBRARIES "${gl_libs}")
+            endif()
+        endif()
         add_subdirectory(qt)
         add_subdirectory(app)
     else()

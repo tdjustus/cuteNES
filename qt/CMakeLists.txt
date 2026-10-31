@@ -21,6 +21,9 @@ set(SDL_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
 foreach(subsystem VIDEO GPU RENDER CAMERA DIALOG TRAY)
     set(SDL_${subsystem} OFF CACHE BOOL "" FORCE)
 endforeach()
+# Without video SDL needs no X11 or Wayland headers. Its configure still
+# insists on them unless told that this is a console build.
+set(SDL_UNIX_CONSOLE_BUILD ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(SDL3)
 
 add_library(cutenes-qt STATIC
