@@ -12,7 +12,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
+#include <mutex>
 #include <chrono>
 #include <thread>
 #include <vector>
@@ -147,22 +149,40 @@ TEST(GuiMailbox, HandsOverTheNewestFrameOnce)
     EXPECT_TRUE(out.empty());
 }
 
-// The timer runs at its rate; a 100 Hz clock ticks about 50 times in 0.5 s.
-// The bounds leave room for a loaded CI machine.
+// The timer runs at its rate: a 100 Hz clock's ticks are 10 ms apart. The
+// median interval ignores the odd stall of a loaded CI machine (after
+// which the clock deliberately skips instead of bursting).
 TEST(GuiFrameClock, TicksAtItsRate)
 {
-    std::atomic<int> ticks{0};
-    FrameClock clock([&](std::uint32_t n) { ticks += static_cast<int>(n); });
-    clock.start(100.0);
+    using clock = std::chrono::steady_clock;
+    std::mutex mutex;
+    std::vector<clock::time_point> times;
+    FrameClock frameClock([&](std::uint32_t) {
+        std::lock_guard lock(mutex);
+        times.push_back(clock::now());
+    });
+    frameClock.start(100.0);
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    clock.stop();
-    EXPECT_GE(ticks.load(), 35);
-    EXPECT_LE(ticks.load(), 60);
-    EXPECT_NEAR(clock.rate(), 100.0, 0.01);
+    frameClock.stop();
+    EXPECT_NEAR(frameClock.rate(), 100.0, 0.01);
 
-    const int after = ticks.load();
+    std::lock_guard lock(mutex);
+    ASSERT_GE(times.size(), 10u);
+    std::vector<double> intervals;
+    for (std::size_t i = 1; i < times.size(); ++i) {
+        intervals.push_back(std::chrono::duration<double, std::milli>(times[i] - times[i - 1]).count());
+    }
+    std::nth_element(intervals.begin(), intervals.begin() + static_cast<std::ptrdiff_t>(intervals.size() / 2),
+        intervals.end());
+    const double median = intervals[intervals.size() / 2];
+    EXPECT_GT(median, 8.0);
+    EXPECT_LT(median, 12.5);
+
+    const std::size_t after = times.size();
+    mutex.unlock();
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    EXPECT_EQ(ticks.load(), after) << "ticks after stop()";
+    mutex.lock();
+    EXPECT_EQ(times.size(), after) << "ticks after stop()";
 }
 
 // R4: the queue above its target plays slightly faster, never more than
