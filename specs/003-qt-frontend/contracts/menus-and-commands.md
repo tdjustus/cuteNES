@@ -168,6 +168,31 @@ Each group's keys are an enum in its schema (data-model.md "Settings").
   `pausedByAutomation` is true.
 - Clicking it opens Settings > Servers.
 
+## Remapping shortcuts (FR-022)
+
+Every shortcut in this file is a default. Settings > Hotkeys lists every
+menu action, including the ones with no default, and lets the user:
+- **Rebind** an action. Click its binding and press a key combination or a
+  gamepad button; gamepad combinations such as Select+R are allowed, so an
+  action can be reached without a keyboard.
+- **Add a second binding**, so an action can have a keyboard and a gamepad
+  binding at once.
+- **Clear** a binding, or **reset** one action or all of them to the
+  defaults.
+
+**Conflicts** are shown before they are saved: with another hotkey, with a
+game button binding, or with a platform-reserved shortcut such as Cmd+Q on
+macOS. Saving a conflicting binding needs confirmation, and the other
+action loses that binding.
+
+**Persistence and display.** Bindings persist in the `hotkeys` settings
+group. The menus always show the current binding, never the default
+(US3-3).
+
+**Automation.** `gui.get_settings` with `group` `hotkeys` and
+`gui.set_setting` (`hotkeys.<command>`) read and change the bindings
+(FR-070), and a reset is `gui.set_setting` with value `default`.
+
 ## Game input defaults (FR-032)
 
 | Button | Player 1 keyboard | Gamepad |
