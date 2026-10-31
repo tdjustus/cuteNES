@@ -138,9 +138,25 @@ void Session::Impl::emit(const std::string& type, Json data)
     }
 }
 
+void Session::Impl::emitFrame()
+{
+    // At most 10 per second (transports.md "Events"); wall-clock time only
+    // thins the events and never touches emulation.
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastFrameEvent < std::chrono::milliseconds(100)) {
+        return;
+    }
+    lastFrameEvent = now;
+    emit("frame", {{"frameHash", media::hashHex(frame.hash())}});
+}
+
 Result Session::Impl::dispatch(Session& session, const std::string& name,
     const Json& rawArgs, const CancelFlag& cancel)
 {
+    if (cancel && cancel->load()) {
+        // Cancelled while queued (a client gone, or a listener closing).
+        return Result::fail("Cancelled", "the call was cancelled before it ran");
+    }
     expireUploads();
     const auto command = registry.find(name);
     if (!command) {
@@ -158,6 +174,7 @@ Result Session::Impl::dispatch(Session& session, const std::string& name,
         return Result::fail("NoCartridge", name + " needs a loaded cartridge");
     }
 
+    const std::uint64_t frameBefore = machine.frameCounter();
     const RunState runBefore = machine.runState();
     const bool pausedBefore = pausedByAutomation;
     CallContext ctx{session, [this, cancel] {
@@ -186,6 +203,9 @@ Result Session::Impl::dispatch(Session& session, const std::string& name,
     }
     if (stateChangingCommands().count(name)) {
         emit("state_changed", {{"command", name}});
+    }
+    if (machine.frameCounter() != frameBefore) {
+        emitFrame();
     }
     if (machine.runState() != runBefore || pausedByAutomation != pausedBefore) {
         emit("run_state_changed", {{"runState", runStateName(machine.runState())},

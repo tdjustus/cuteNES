@@ -59,13 +59,13 @@ Implementation
 
 ## Phase P2: API server and headless executable (branch `feature/api-server`)
 
-- [ ] A030 [P] Tests first, in `tests/api/test_http.cpp`: JSON-RPC single/batch/notification/parse-error per the JSON-RPC 2.0 spec; the SSE `state_changed` event after `core.load_rom`; Q6-Q8 repeated over HTTP
-- [ ] A031 [P] Tests first, in `tests/api/test_security.cpp` (Q10): no listener without flags; 401 with no token, a wrong token, or the previous launch's token; 403 on a non-loopback `Host`; 403 on a foreign `Origin`; loopback bind; owner-only token file permissions (POSIX mode check; Windows ACL check); the token absent from stderr and logs
-- [ ] A032 `api/src/http_server.cpp` (cpp-httplib): `POST /api/v1/rpc`, `GET /api/v1/events`, loopback bind, `Origin`/`Host` checks, bearer-token check (constant time)
-- [ ] A032a `api/src/token.cpp`: CSPRNG behind one interface (`getrandom`/`arc4random_buf`/`BCryptGenRandom`); token file in the per-user state dir with owner-only permissions, holding the URL and token; replaced on start, removed on clean exit (R11, FR-024)
-- [ ] A033 `server/main.cpp`: `cutenes-server` with the flags and exit codes in transports.md (headless host, `--library`, `--debug-dir`, `--api-port`, `--bind`, `--token-file`; prints the token file's location, never the token, to stderr)
-- [ ] A034 `tests/api/test_latency.cpp` (Q12, Release only): p95 under 100 ms for status, peek, get_cpu, catalog
-- [ ] A035 CI: build `cutenes-server` on the 3-OS matrix and run the `api` label
+- [x] A030 [P] Tests first, in `tests/api/test_http.cpp`: JSON-RPC single/batch/notification/parse-error per the JSON-RPC 2.0 spec; the SSE `state_changed` event after `core.load_rom`; Q6-Q8 repeated over HTTP
+- [x] A031 [P] Tests first, in `tests/api/test_security.cpp` (Q10): no listener without flags; 401 with no token, a wrong token, or the previous launch's token; 403 on a non-loopback `Host`; 403 on a foreign `Origin`; loopback bind; owner-only token file permissions (POSIX mode check; Windows ACL check); the token absent from stderr and logs
+- [x] A032 `api/src/http_server.cpp` (cpp-httplib): `POST /api/v1/rpc`, `GET /api/v1/events`, loopback bind, `Origin`/`Host` checks, bearer-token check (constant time)
+- [x] A032a `api/src/token.cpp`: CSPRNG behind one interface (`getrandom`/`arc4random_buf`/`BCryptGenRandom`); token file in the per-user state dir with owner-only permissions, holding the URL and token; replaced on start, removed on clean exit (R11, FR-024)
+- [x] A033 `server/main.cpp`: `cutenes-server` with the flags and exit codes in transports.md (headless host, `--library`, `--debug-dir`, `--api-port`, `--bind`, `--token-file`; prints the token file's location, never the token, to stderr)
+- [x] A034 `tests/api/test_latency.cpp` (Q12, Release only): p95 under 100 ms for status, peek, get_cpu, catalog
+- [x] A035 CI: build `cutenes-server` on the 3-OS matrix and run the `api` label (the server is part of the default build; `api` runs in every job, including the Debug and sanitizer fast groups)
 
 ## Phase P3: MCP adapter (branch `feature/mcp-adapter`)
 

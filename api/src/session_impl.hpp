@@ -84,6 +84,8 @@ struct Session::Impl {
     std::map<int, std::function<void(const Event&)>> listeners;
     int nextListener = 1;
     void emit(const std::string& type, Json data = Json::object());
+    std::chrono::steady_clock::time_point lastFrameEvent{};
+    void emitFrame();
 
     Result dispatch(Session& session, const std::string& name, const Json& args,
         const CancelFlag& cancel);

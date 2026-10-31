@@ -13,9 +13,14 @@ add_executable(cutenes-api-tests
     test_concurrency.cpp
     test_determinism.cpp
     test_host.cpp
-    test_catalog_golden.cpp)
+    test_catalog_golden.cpp
+    test_jsonrpc.cpp
+    test_http.cpp
+    test_security.cpp
+    test_latency.cpp)
 
-target_link_libraries(cutenes-api-tests PRIVATE cutenes-api gtest_main)
+target_link_libraries(cutenes-api-tests PRIVATE
+    cutenes-api cutenes-server-lib cutenes-httplib gtest_main)
 # Internal headers (media helpers) for the encoding tests.
 target_include_directories(cutenes-api-tests PRIVATE ${PROJECT_SOURCE_DIR}/api/src)
 target_compile_definitions(cutenes-api-tests PRIVATE

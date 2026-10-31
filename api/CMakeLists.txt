@@ -11,6 +11,21 @@ FetchContent_Declare(nlohmann_json
 set(JSON_Install OFF CACHE INTERNAL "")
 FetchContent_MakeAvailable(nlohmann_json)
 
+# cpp-httplib v0.61.0 (2026-10-14), header-only. SOURCE_SUBDIR points at a
+# directory that does not exist, so its CMakeLists (which would look for
+# OpenSSL) never runs: only the header is used.
+FetchContent_Declare(httplib
+    URL https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.61.0.tar.gz
+    URL_HASH SHA256=f03bdb0bee4911d6db0335bc103f0f441ae70c527e993c1f4b3f177586b042d3
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR header-only)
+FetchContent_MakeAvailable(httplib)
+add_library(cutenes-httplib INTERFACE)
+target_include_directories(cutenes-httplib SYSTEM INTERFACE ${httplib_SOURCE_DIR})
+if(WIN32)
+    target_link_libraries(cutenes-httplib INTERFACE ws2_32)
+endif()
+
 add_library(cutenes-api
     src/registry.cpp
     src/schema.cpp
@@ -18,7 +33,10 @@ add_library(cutenes-api
     src/core_commands.cpp
     src/session_commands.cpp
     src/media.cpp
-    src/stb_impl.cpp)
+    src/stb_impl.cpp
+    src/token.cpp
+    src/jsonrpc.cpp
+    src/http_server.cpp)
 
 add_library(cutenes-api::cutenes-api ALIAS cutenes-api)
 
@@ -36,6 +54,11 @@ target_include_directories(cutenes-api SYSTEM PUBLIC ${_json_includes})
 
 find_package(Threads REQUIRED)
 target_link_libraries(cutenes-api PUBLIC cutenes-core::cutenes-core Threads::Threads)
+target_link_libraries(cutenes-api PRIVATE cutenes-httplib)
+if(WIN32)
+    # BCryptGenRandom and the token file's owner-only DACL.
+    target_link_libraries(cutenes-api PRIVATE bcrypt advapi32)
+endif()
 
 if(MSVC)
     target_compile_options(cutenes-api PRIVATE /permissive- /W4 /WX)

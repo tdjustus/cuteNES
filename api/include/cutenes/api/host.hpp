@@ -11,7 +11,9 @@ class Registry;
 
 // A session event (contracts/transports.md "Events").
 struct Event {
-    std::string type;          // state_changed, run_state_changed, catalog_changed
+    // state_changed, run_state_changed, frame (at most 10 per second),
+    // catalog_changed
+    std::string type;
     std::uint64_t frame = 0;
     std::uint64_t masterCycle = 0;
     Json data = Json::object();
