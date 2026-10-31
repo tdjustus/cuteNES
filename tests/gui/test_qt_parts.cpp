@@ -149,11 +149,13 @@ TEST(GuiMailbox, HandsOverTheNewestFrameOnce)
     EXPECT_TRUE(out.empty());
 }
 
-// The timer runs at its rate: a 100 Hz clock's ticks are 10 ms apart. The
-// median interval ignores the odd stall of a loaded CI machine (after
-// which the clock deliberately skips instead of bursting); the upper bound
-// allows for a virtual machine's timer slack (13 ms seen on CI's macOS).
-// Pacing under load is soak-tested with a simulated clock in G9 (A15).
+// The timer runs at its rate: a 100 Hz clock ticks 100 times a second on
+// average. It keeps a fixed schedule, so a tick that comes late (a virtual
+// machine's timer slack) is followed by a quick one; single intervals say
+// little, the average says whether the game runs at speed. After a stall
+// it skips ahead instead of bursting: it catches up on at most 4 periods,
+// so any 8 ticks span at least one period. Pacing under load is soak-tested
+// with a simulated clock in G9 (A15).
 TEST(GuiFrameClock, TicksAtItsRate)
 {
     using clock = std::chrono::steady_clock;
@@ -170,15 +172,13 @@ TEST(GuiFrameClock, TicksAtItsRate)
 
     std::lock_guard lock(mutex);
     ASSERT_GE(times.size(), 10u);
-    std::vector<double> intervals;
-    for (std::size_t i = 1; i < times.size(); ++i) {
-        intervals.push_back(std::chrono::duration<double, std::milli>(times[i] - times[i - 1]).count());
+    const double seconds = std::chrono::duration<double>(times.back() - times.front()).count();
+    const double hz = static_cast<double>(times.size() - 1) / seconds;
+    EXPECT_GT(hz, 70.0); // stalls only ever slow it down
+    EXPECT_LT(hz, 105.0);
+    for (std::size_t i = 8; i < times.size(); ++i) {
+        EXPECT_GE(times[i] - times[i - 8], std::chrono::milliseconds(10)) << "a burst at tick " << i;
     }
-    std::nth_element(intervals.begin(), intervals.begin() + static_cast<std::ptrdiff_t>(intervals.size() / 2),
-        intervals.end());
-    const double median = intervals[intervals.size() / 2];
-    EXPECT_GT(median, 8.0);
-    EXPECT_LT(median, 20.0);
 
     const std::size_t after = times.size();
     mutex.unlock();
