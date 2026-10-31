@@ -2,20 +2,32 @@
 
 #include "about_dialog.hpp"
 
+#include <cutenes/qt/audio_output.hpp>
+#include <cutenes/qt/emulation_view.hpp>
+#include <cutenes/qt/frame_clock.hpp>
+
 #include <QAction>
+#include <QtMath>
 #include <QApplication>
-#include <QLabel>
+#include <QDir>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QFileOpenEvent>
+#include <QJsonDocument>
+#include <QKeyEvent>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMessageBox>
+#include <QStandardPaths>
 #include <QVariant>
+#include <QtConcurrent/QtConcurrentRun>
 
 namespace cutenes::app {
 
 namespace {
 
-// 3x the NES picture at 8:7 pixel aspect (data-model "Settings": scale 3).
-constexpr int kDefaultWidth = 256 * 3 * 8 / 7;
-constexpr int kDefaultHeight = 240 * 3;
+// The default window scale (data-model "Settings": scale 3).
+constexpr int kDefaultScale = 3;
 
 // The menu inventory of contracts/menus-and-commands.md. Every action
 // carries its gui.* command and arguments (research R11), and GuiHost wires
@@ -64,6 +76,28 @@ private:
     QMenu* m_menu;
 };
 
+// The console's frame rates (nesdev wiki "Cycle reference chart").
+constexpr double kNtscFps = 60.0988;
+constexpr double kPalFps = 50.0070;
+
+// The actions G1 implements, and those of them that need a game (contract
+// "Game" column).
+const QStringList kImplemented = {
+    QStringLiteral("gui.open_rom"), QStringLiteral("gui.close_game"),
+    QStringLiteral("gui.toggle_pause"), QStringLiteral("gui.reset"),
+    QStringLiteral("gui.power_cycle"), QStringLiteral("gui.exit"),
+    QStringLiteral("gui.show_about"),
+};
+const QStringList kNeedGame = {
+    QStringLiteral("gui.close_game"), QStringLiteral("gui.toggle_pause"),
+    QStringLiteral("gui.reset"), QStringLiteral("gui.power_cycle"),
+};
+
+api::Json toJson(const QVariantMap& map)
+{
+    return api::Json::parse(QJsonDocument::fromVariant(map).toJson(QJsonDocument::Compact).toStdString());
+}
+
 QKeySequence none(const QVariant&)
 {
     return {};
@@ -94,13 +128,73 @@ auto functionKey(Qt::KeyboardModifiers modifiers)
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 {
     setWindowTitle(QStringLiteral("cuteNES"));
-    resize(kDefaultWidth, kDefaultHeight);
 
-    auto* placeholder = new QLabel(tr("Open a ROM to start playing."), this);
-    placeholder->setAlignment(Qt::AlignCenter);
-    setCentralWidget(placeholder);
+    m_view = new qt::EmulationView(this);
+    setCentralWidget(m_view);
+    m_audio = std::make_unique<qt::AudioOutput>();
+    m_audio->open(); // silent if no device (spec US7-5)
 
+    // Hooks run on the emulation thread; widget work is posted (R11).
+    GuiHost::Hooks hooks;
+    hooks.showOpenRomDialog = [this] {
+        QMetaObject::invokeMethod(this, &MainWindow::showOpenRomDialog, Qt::QueuedConnection);
+    };
+    hooks.gameLoaded = [this](const std::string& path) {
+        m_clock->setRate(m_session->machine().region() == Region::Pal ? kPalFps : kNtscFps);
+        const QString name = QFileInfo(QString::fromStdString(path)).fileName();
+        QMetaObject::invokeMethod(this, [this, name] {
+            m_romName = name;
+            setWindowTitle(tr("%1 — cuteNES").arg(name));
+        }, Qt::QueuedConnection);
+    };
+    hooks.gameClosed = [this] {
+        m_view->clearFrame();
+        QMetaObject::invokeMethod(this, [this] {
+            m_romName.clear();
+            setWindowTitle(QStringLiteral("cuteNES"));
+        }, Qt::QueuedConnection);
+    };
+    hooks.exit = [this] { QMetaObject::invokeMethod(this, &QWidget::close, Qt::QueuedConnection); };
+    hooks.showAbout = [this] {
+        QMetaObject::invokeMethod(this, &MainWindow::showAbout, Qt::QueuedConnection);
+    };
+    hooks.event = [this](const api::Event& event) { onSessionEvent(event); };
+    m_host = std::make_unique<GuiHost>(std::move(hooks));
+
+    api::SessionConfig config;
+    config.host = m_host.get();
+    config.debugDir = QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
+                          .filePath(QStringLiteral("debug"))
+                          .toStdString();
+    m_session = std::make_unique<api::Session>(config);
+    m_session->setMediaSinks(m_view, m_audio.get());
+    m_session->setRealtime(true);
+
+    // Timer pacing at the console's rate (R4); frames requested while
+    // nothing runs are dropped by the session.
+    m_clock = std::make_unique<qt::FrameClock>(
+        [session = m_session.get()](std::uint32_t frames) { session->requestFrames(frames); });
+    m_clock->start(kNtscFps);
+
+    m_commands.setMaxThreadCount(2);
     createMenus();
+    wireActions();
+    setRunState(QStringLiteral("NeedsRom"));
+
+    // Rounded up, so the picture fits at exactly that scale.
+    const QSizeF picture = qt::scaledSize(kDefaultScale, m_view->displayOptions());
+    const int menuHeight = menuBar()->isNativeMenuBar() ? 0 : menuBar()->sizeHint().height();
+    resize(qCeil(picture.width()), qCeil(picture.height()) + menuHeight);
+    qApp->installEventFilter(this);
+}
+
+MainWindow::~MainWindow()
+{
+    qApp->removeEventFilter(this);
+    m_clock->stop();
+    m_session->setMediaSinks(nullptr, nullptr);
+    m_session->shutdown(); // queued and later calls fail with ShuttingDown
+    m_commands.waitForDone();
 }
 
 QMenu* MainWindow::menu(const QString& objectName) const
@@ -156,9 +250,6 @@ void MainWindow::createMenus()
     file.separator();
     QAction* exitAction = file.item(tr("E&xit"), "gui.exit", QKeySequence(Qt::CTRL | Qt::Key_Q));
     exitAction->setMenuRole(QAction::QuitRole); // the application menu on macOS
-    exitAction->setEnabled(true);
-    exitAction->setToolTip({});
-    connect(exitAction, &QAction::triggered, this, &QWidget::close);
 
     MenuBuilder emulation(menu(QStringLiteral("menuEmulation")));
     QAction* pause = emulation.item(tr("&Pause"), "gui.toggle_pause", QKeySequence(Qt::Key_P));
@@ -274,9 +365,136 @@ void MainWindow::createMenus()
     help.separator();
     QAction* about = help.item(tr("&About cuteNES"), "gui.show_about");
     about->setMenuRole(QAction::AboutRole); // the application menu on macOS
-    about->setEnabled(true);
-    about->setToolTip({});
-    connect(about, &QAction::triggered, this, &MainWindow::showAbout);
+}
+
+void MainWindow::wireActions()
+{
+    for (QAction* action : menuBar()->findChildren<QAction*>()) {
+        const QString command = action->property("command").toString();
+        if (!kImplemented.contains(command)) continue;
+        action->setToolTip({});
+        action->setEnabled(true);
+        connect(action, &QAction::triggered, this, [this, action, command] {
+            runCommand(command, action->property("commandArgs").toMap());
+        });
+    }
+}
+
+QFuture<api::Result> MainWindow::runCommand(const QString& name, const QVariantMap& args, bool quiet)
+{
+    QFuture<api::Result> future = QtConcurrent::run(&m_commands,
+        [session = m_session.get(), name = name.toStdString(), json = toJson(args)] {
+            return session->call(name, json);
+        });
+    if (!quiet) {
+        future.then(this, [this, name](const api::Result& result) {
+            if (result.isError()) showError(name, *result.error);
+        });
+    }
+    return future;
+}
+
+void MainWindow::showError(const QString& name, const api::Error& error)
+{
+    if (error.name == "ShuttingDown") return;
+    QString text = QString::fromStdString(error.message);
+    if (error.data.contains("detail") && error.data["detail"].is_string()) {
+        const auto detail = error.data["detail"].get<std::string>();
+        if (!detail.empty()) text += QStringLiteral("\n\n") + QString::fromStdString(detail);
+    }
+    if (error.data.contains("error") && error.data["error"].is_string()) {
+        text += QStringLiteral(" (%1)").arg(QString::fromStdString(error.data["error"].get<std::string>()));
+    }
+    auto* box = new QMessageBox(QMessageBox::Warning, QStringLiteral("cuteNES"), text, QMessageBox::Ok, this);
+    box->setObjectName(QStringLiteral("commandError"));
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->open(); // never blocks: automation keeps running
+    emit commandFailed(name, text);
+}
+
+void MainWindow::onSessionEvent(const api::Event& event)
+{
+    if (event.type != "run_state_changed") return;
+    const std::string runState = event.data.value("runState", "");
+    // Stale sound never plays after a pause or a closed game (R4).
+    if (runState != "Running") m_audio->clear();
+    QMetaObject::invokeMethod(this, [this, state = QString::fromStdString(runState)] {
+        setRunState(state);
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::setRunState(const QString& runState)
+{
+    const bool hasGame = runState != QLatin1String("NeedsRom");
+    for (QAction* action : menuBar()->findChildren<QAction*>()) {
+        if (kNeedGame.contains(action->property("command").toString())) action->setEnabled(hasGame);
+    }
+    if (hasGame) {
+        const QString title = runState == QLatin1String("Paused") ? tr("%1 (paused) — cuteNES")
+                                                                 : tr("%1 — cuteNES");
+        setWindowTitle(title.arg(m_romName.isEmpty() ? tr("Game") : m_romName));
+    }
+}
+
+void MainWindow::showOpenRomDialog()
+{
+    const QString path = QFileDialog::getOpenFileName(this, tr("Open ROM"), QString(),
+        tr("NES ROMs (*.nes)"));
+    if (!path.isEmpty()) openRom(path);
+}
+
+void MainWindow::openRom(const QString& path)
+{
+    runCommand(QStringLiteral("gui.open_rom"), {{QStringLiteral("path"), path}});
+}
+
+void MainWindow::pushInput()
+{
+    m_session->setLiveInput(Port::One, m_input.buttons(Port::One));
+    m_session->setLiveInput(Port::Two, m_input.buttons(Port::Two));
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    switch (event->type()) {
+    case QEvent::FileOpen: // macOS "Open With" and drops on the Dock icon
+        if (watched == qApp) {
+            openRom(static_cast<QFileOpenEvent*>(event)->file());
+            return true;
+        }
+        break;
+    case QEvent::KeyPress:
+    case QEvent::KeyRelease: {
+        // Game keys while this window is active and no menu or dialog has
+        // the keyboard. Auto-repeats change nothing.
+        auto* key = static_cast<QKeyEvent*>(event);
+        if (QApplication::activeWindow() != this || QApplication::activePopupWidget()
+            || QApplication::activeModalWidget()) {
+            break;
+        }
+        if (key->isAutoRepeat()) {
+            return m_input.isBound(key->key());
+        }
+        if (m_input.handleKey(key->key(), event->type() == QEvent::KeyPress)) {
+            pushInput();
+            return true;
+        }
+        break;
+    }
+    default:
+        break;
+    }
+    return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::changeEvent(QEvent* event)
+{
+    // Keys held while the window loses focus would stay down (G015).
+    if (event->type() == QEvent::ActivationChange && !isActiveWindow()) {
+        m_input.clear();
+        pushInput();
+    }
+    QMainWindow::changeEvent(event);
 }
 
 void MainWindow::showAbout()

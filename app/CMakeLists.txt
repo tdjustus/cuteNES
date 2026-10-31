@@ -5,9 +5,11 @@ include(FetchContent)
 
 add_library(cutenes-app-lib STATIC
     mainwindow.cpp
-    about_dialog.cpp)
+    about_dialog.cpp
+    cli.cpp
+    host/gui_host.cpp)
 target_include_directories(cutenes-app-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(cutenes-app-lib PUBLIC cutenes-qt Qt6::Widgets)
+target_link_libraries(cutenes-app-lib PUBLIC cutenes-qt Qt6::Widgets Qt6::Concurrent)
 target_compile_definitions(cutenes-app-lib PUBLIC
     CUTENES_APP_VERSION="${PROJECT_VERSION}")
 set_target_properties(cutenes-app-lib PROPERTIES AUTOMOC ON)

@@ -17,7 +17,8 @@ add_executable(cutenes-api-tests
     test_jsonrpc.cpp
     test_http.cpp
     test_security.cpp
-    test_latency.cpp)
+    test_latency.cpp
+    test_realtime.cpp)
 
 target_link_libraries(cutenes-api-tests PRIVATE
     cutenes-api cutenes-server-lib cutenes-httplib gtest_main)

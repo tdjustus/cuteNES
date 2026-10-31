@@ -3,6 +3,8 @@
 
 add_executable(cutenes-gui-tests
     gui_main.cpp
+    test_play.cpp
+    test_qt_parts.cpp
     test_skeleton.cpp)
 target_link_libraries(cutenes-gui-tests PRIVATE cutenes-app-lib gtest)
 target_compile_definitions(cutenes-gui-tests PRIVATE

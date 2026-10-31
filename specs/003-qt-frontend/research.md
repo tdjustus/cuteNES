@@ -62,46 +62,49 @@ Each entry gives the decision, why it was chosen, and what was rejected.
 
 ## R3. Real-time mode in `cutenes-api`
 
-**Decision.** The session gets a real-time mode, off by default, so headless
-behavior does not change:
+**Decision** (as built in G1). The session gets a real-time mode, off by
+default, so headless behavior does not change:
 
 ```cpp
-struct IFrameClock {                      // supplied by the host (cutenes-qt)
-    virtual ~IFrameClock() = default;
-    // Blocks until the next frame is due, or until `wake` is signalled
-    // (a command arrived). Returns true when a frame is due.
-    virtual bool waitForFrame(std::atomic<bool>& wake) = 0;
-};
-void Session::setRealtime(IFrameClock* clock);       // null turns it off
-void Session::setLiveInput(Port port, ButtonSet b);  // any thread, lock-free
+void Session::setRealtime(bool on);
+void Session::requestFrames(std::uint32_t frames = 1);   // any thread
+void Session::setLiveInput(Port port, ButtonSet buttons); // any thread, lock-free
+void Session::setMediaSinks(IVideoSink*, IAudioSink*);    // host's sinks
 ```
 
-The emulation thread loop becomes:
-1. Run every queued command.
-2. If real-time is on and the machine is `Running`, wait on the clock. When a
-   frame is due:
-   - apply input (below);
-   - run one frame;
-   - feed the sinks;
-   - publish the `frame` event.
-
-**Input.** At each frame start, the port's input is the bitwise OR of the
-live human input and the last `core.set_controller` value. While a
-`core.run_frames` script runs, the script replaces the automation part. Both
-surfaces can therefore press buttons, and neither silently erases the other.
-
-**Pause.**
-- The session's `pause`/`resume` set the run state, so the GUI and
-  automation see the same state.
-- `pausedByAutomation` keeps its 002 meaning: the status bar shows when
-  automation paused the game (FR-073).
+- **The clock stays in the host.** The host's clock (a timer, or the
+  display's vsync) calls `requestFrames`.
+- **The emulation thread loop.** Queued commands run first. Then, while
+  real-time is on and the machine is `Running`, one frame runs per pending
+  request, and the `frame` event is published.
+- **Pending frames.**
+  - Requests made while the machine is not `Running` are dropped.
+  - At most twice the latest request stays pending, so a stall never turns
+    into a burst.
+- **Input.**
+  - At each real-time frame start, a port's input is the bitwise OR of the
+    live human input and the last `core.set_controller` value. Both
+    surfaces can press buttons, and neither silently erases the other.
+  - A scripted `core.run_frames` is exact. The script alone decides its
+    frames (002 FR-019).
+- **Media.** The host's sinks receive every frame and audio chunk after the
+  session's own capture, so `core.screen` and `core.audio` keep working.
+- **Pause.**
+  - The session's `pause` and `resume` set the run state, so the GUI and
+    automation see the same state.
+  - `pausedByAutomation` keeps its 002 meaning: the status bar shows when
+    automation paused the game (FR-073).
 
 **Why.**
 - It keeps one queue and one thread (002 R5, FR-075).
 - Commands run between frames, never mid-frame, so neither side sees a torn
   state (SC-008).
+- A host-driven clock lets G1 use a timer and G5 add vsync without
+  changing the API.
 
 **Rejected.**
+- An `IFrameClock` that the session waits on: it puts the clock policy in
+  the API and makes waking for queued commands awkward.
 - The GUI owning its own `Machine`: it would bypass the session queue.
 - Driving frames from the GUI thread through `core.run_frames`: a round trip
   per frame adds latency and jitter.
@@ -114,7 +117,8 @@ surfaces can therefore press buttons, and neither silently erases the other.
 - **Dynamic rate control.** Every frame, the queued amount is compared with
   the target latency (default 64 ms, adjustable from 32 to 200). The stream's
   frequency ratio is nudged by at most ±0.5% (`SDL_SetAudioStreamFrequencyRatio`).
-- **Pacing.** `FrameClock` chooses between two modes:
+- **Pacing.** G1 ships the timer mode. The display-synced mode arrives with
+  the video settings in G5. `FrameClock` chooses between two modes:
   - **Sync to display** (the default when the display's refresh rate is
     within 1% of the console rate, or of an integer multiple of it): a frame
     is due on each vsync, or on every Nth at 120/144 Hz. Dynamic rate control

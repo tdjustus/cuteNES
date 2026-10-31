@@ -69,42 +69,42 @@ met.
 ## Phase G1: Play a game (branch `feature/gui-play`)
 
 Real-time mode in `cutenes-api` (R3), test-first:
-- [ ] G010 [US1] Tests in `tests/api/test_realtime.cpp`:
-  - with a fake `IFrameClock`, a running session runs exactly one frame per
-    tick;
+- [x] G010 [US1] Tests in `tests/api/test_realtime.cpp`:
+  - a running session runs exactly one frame per requested frame (R3 as
+    built: the host requests frames; there is no `IFrameClock`);
   - queued commands run between frames;
-  - pause stops the ticks;
+  - nothing runs while paused, and frames requested meanwhile are dropped;
   - live input reaches `core.get_controller` at the next frame start;
   - human and automation input are combined with OR;
   - a `core.run_frames` script replaces the automation part;
   - headless behavior is unchanged with no clock.
-- [ ] G011 [US1] Implement `IFrameClock`, `Session::setRealtime` and
-  `Session::setLiveInput` (api/), and document them in 002's
-  `contracts/transports.md` ("GUI" mode). The surface version is unchanged:
-  no command changes.
+- [x] G011 [US1] Implement `Session::setRealtime`, `requestFrames`,
+  `setLiveInput` and `setMediaSinks` (api/), per R3 as built, and document
+  them in 002's `contracts/transports.md` ("GUI" mode). The surface version
+  is unchanged: no command changes.
 
 `cutenes-qt`:
-- [ ] G012 [P] [US1] Tests:
+- [x] G012 [P] [US1] Tests:
   - viewport math (scale, 8:7, 4:3, overscan, integer scaling) against
     hand-computed rectangles;
   - `InputMapper` defaults per the menus contract.
-- [ ] G013 [US1] `EmulationView`: a `QRhiWidget` with a texture upload of
+- [x] G013 [US1] `EmulationView`: a `QRhiWidget` with a texture upload of
   the newest frame (a triple buffer fed by the video sink), a nearest
   sampler, and the raster fallback when QRhi fails.
-- [ ] G014 [US1] `AudioOutput` (an SDL3 audio stream, with dynamic rate
-  control per R4) and `FrameClock` (display-synced or timer modes), with
-  tests on a simulated clock: no underrun, and the frequency ratio stays
-  within ±0.5%.
-- [ ] G015 [US1] Keyboard input to `setLiveInput`, with keys cleared on focus
+- [x] G014 [US1] `AudioOutput` (an SDL3 audio stream, with dynamic rate
+  control per R4) and `FrameClock` (timer mode at the console rate), with
+  tests: the frequency ratio stays within ±0.5%, and the clock ticks at its
+  rate. The display-synced mode moves to G051.
+- [x] G015 [US1] Keyboard input to `setLiveInput`, with keys cleared on focus
   loss.
 
 `cutenes` app:
-- [ ] G016 [US1] `GuiHost` (`app/host/`): registers `gui.*` commands, with
+- [x] G016 [US1] `GuiHost` (`app/host/`): registers `gui.*` commands, with
   emulation-to-GUI-thread marshalling per R11. Every `QAction` carries its
   `command` property and triggers that command.
-- [ ] G017 [US1] Command line per `contracts/cli.md`: the ROM argument,
+- [x] G017 [US1] Command line per `contracts/cli.md`: the ROM argument,
   `--help`, `--version` and `--fullscreen`.
-- [ ] G018 [US1] `gui.open_rom`, `gui.close_game`, `gui.toggle_pause`,
+- [x] G018 [US1] `gui.open_rom`, `gui.close_game`, `gui.toggle_pause`,
   `gui.reset`, `gui.power_cycle` and `gui.exit`, with menu items and default
   shortcuts. An unsupported ROM shows the core's reason and keeps the
   running game. Tests A1 (partial) and A7.
@@ -190,8 +190,8 @@ Real-time mode in `cutenes-api` (R3), test-first:
   - fullscreen state;
   - settings that persist across restarts;
   - WAV header and length (A-series).
-- [ ] G051 [US7] Video settings: scale, fullscreen with the menu reachable
-  through Alt or the top edge, integer scaling, aspect, overscan, the smooth
+- [ ] G051 [US7] Video settings: display-synced pacing (R4, moved from G1),
+  scale, fullscreen with the menu reachable through Alt or the top edge, integer scaling, aspect, overscan, the smooth
   and scanline shaders, high DPI and Always on Top.
 - [ ] G052 [US7] Audio settings: the device list, volume, mute, latency and
   device-change handling. Record Audio (WAV).

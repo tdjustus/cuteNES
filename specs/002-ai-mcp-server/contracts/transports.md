@@ -58,6 +58,13 @@ cutenes-server [--library DIR] [--debug-dir DIR]
 ### GUI: the Qt application (feature 003)
 
 - Host: the application's `IHost` registers `gui.*` commands (FR-023).
+- **Real-time play** (003 research R3). The GUI turns on the session's
+  real-time mode (`Session::setRealtime`). Its clock calls `requestFrames`,
+  and the emulation thread runs one frame per request while the machine is
+  `Running`, between queued commands. Human input goes through
+  `setLiveInput`, and at each frame start it is combined (OR) with the last
+  `core.set_controller` value. A scripted `core.run_frames` uses its script
+  alone. Headless sessions never enable this mode.
 - The API and MCP HTTP listeners follow the two settings toggles. Both are
   off by default, and MCP requires the API (FR-009, FR-020). Ports are
   settings.
