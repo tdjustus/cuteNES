@@ -13,7 +13,9 @@ connect to and drive the emulator.
   default, or Streamable HTTP), and a local JSON-RPC API for scripts
   ([`specs/002-ai-mcp-server`](specs/002-ai-mcp-server)). See "Using the
   server".
-- **Frontend** (planned, not started): a Qt 6 desktop app.
+- **Frontend** (`cutenes`, in progress): a Qt 6 desktop app
+  ([`specs/003-qt-frontend`](specs/003-qt-frontend)). So far it is a window
+  with its menus; play arrives in the next phase.
 - **Normative hardware reference**: the
   [NESdev NES Reference Guide](https://www.nesdev.org/wiki/NES_reference_guide).
 
@@ -47,7 +49,18 @@ ctest --test-dir build -j8 -LE known-failing
 ```
 
 Requires CMake >= 3.21 and a C++20 compiler (MSVC 2022+, AppleClang 15+, or
-GCC 12+). Clone with `--recurse-submodules` to get the test-ROM archive
+GCC 12+).
+
+The GUI (`cutenes`) also needs **Qt 6.8 or later** with the Shader Tools
+module. Install it with Homebrew (`brew install qt`), your Linux
+distribution, or the Qt online installer. SDL3 is fetched automatically.
+When CMake can't find Qt, it builds everything except the GUI. Point it at
+a Qt installation with `-DCMAKE_PREFIX_PATH=<Qt dir>`, or pass
+`-DCUTENES_BUILD_GUI=ON` to make a missing Qt an error. The GUI is at
+`build/app/cutenes` (`build/app/cutenes.app` on macOS). On Linux, install
+the ALSA, PulseAudio and udev development headers first
+(`libasound2-dev libpulse-dev libudev-dev` on Debian and Ubuntu), so SDL3
+builds with real audio and gamepad support. Clone with `--recurse-submodules` to get the test-ROM archive
 (`tests/roms`); GoogleTest is fetched at configure time.
 
 ## Using the core
@@ -174,6 +187,7 @@ Tests are labelled in CTest. Counts are from the current tree.
 | `playtest`, `corpus` | 113 | Scripted ROM runs with on-screen text or pinned, hand-viewed frame hashes | every PR, except entries needing `roms-local/` |
 | `api` | 85 | The `cutenes-api` command layer and HTTP API (feature 002): every `core.*`/`session.*` command against the contracts, a test ROM's own verdict through the commands, save-slot branching, structured errors that change no state, call ordering across threads and clients, JSON-RPC 2.0 framing, the token, Host and Origin checks, the frozen catalog, and a GUI host's `gui.*` commands reaching both catalogs and MCP clients' list-changed notifications | every PR |
 | `mcp` | 33 | The MCP adapter (feature 002) against MCP's own pinned `schema.json` for both revisions it serves (2026-07-28 and 2025-11-25): discovery over stdio with the real executable, a test ROM's verdict and a PNG image block through tool calls, `tools/list` equal to `api.catalog`, Streamable HTTP's header and status rules, progress and subscription streams, cancellation when a client goes away, and the `--attach` bridge relaying a stdio client to a running instance (exit 4 when there is none) | every PR |
+| `gui` | 6 | The Qt frontend (feature 003), offscreen and with SDL's dummy audio: the window and its seven menus in the spec's order, the menu actions' `gui.*` commands, shortcuts and platform roles, About's versions and license texts (Qt's LGPL included), SDL starting audio and gamepads, and SIGTERM still ending the process | every PR (not the sanitizer job) |
 | `known-failing` | 1 | A documented hardware discrepancy (#42) | never (run with `ctest -L known-failing`) |
 
 What the numbers do not say: a golden hash records what this emulator draws,

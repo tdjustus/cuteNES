@@ -83,6 +83,33 @@ constitution's licensing rules (research.md D11).
 - **Used by**: the `mcp` tests only (the release gate "MCP schema
   validates"). Nothing ships with it
 
+## Qt 6 (The Qt Company and contributors): linked dynamically
+
+- **Origin**: https://www.qt.io/ and https://download.qt.io/. It is installed
+  separately: by CI through `jurplel/install-qt-action` (Qt 6.8.3), and on
+  development machines from a package manager or the Qt installer. Nothing
+  from Qt is vendored
+- **License**: LGPL-3.0. The application links Qt dynamically, so users can
+  replace it (constitution "Licensing"). `third_party/qt/LGPL-3.0.txt` and
+  `GPL-3.0.txt` hold the texts from https://www.gnu.org/licenses/; About shows
+  them, and release packages ship them. The `qsb` shader compiler (GPL-3.0)
+  runs only at build time, and its output is not covered (feature 003
+  research R1)
+- **Used by**: `cutenes-qt` and the `cutenes` application (feature 003). It
+  is not used by the core, the API, MCP or `cutenes-server`
+
+## SDL 3.4.18 (Sam Lantinga and contributors): fetched at configure time
+
+- **Origin**: https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz
+  (release 2026-10-02), SHA-256
+  `9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3`,
+  pinned in `qt/CMakeLists.txt`
+- **License**: zlib. `third_party/sdl3/LICENSE.txt` is copied from the
+  release, and About shows it
+- **Used by**: `cutenes-qt`, for audio output and gamepads, statically
+  linked with its video, render and GPU subsystems off (feature 003
+  research R4, R5)
+
 ## No other third-party code is redistributed in this repository.
 
 GoogleTest (BSD-3-Clause) is fetched at configure time for standalone test
