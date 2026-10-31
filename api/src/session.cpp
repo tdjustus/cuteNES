@@ -369,6 +369,18 @@ void Session::shutdown()
 
 Machine& Session::machine() { return m_impl->machine; }
 
+void Session::setLibraryRoot(const std::string& root)
+{
+    if (onEmulationThread()) {
+        m_impl->config.libraryRoot = root;
+        return;
+    }
+    m_impl->post([impl = m_impl.get(), root] {
+        impl->config.libraryRoot = root;
+        return Result::ok();
+    }).wait();
+}
+
 bool Session::onEmulationThread() const
 {
     return std::this_thread::get_id() == m_impl->threadId;

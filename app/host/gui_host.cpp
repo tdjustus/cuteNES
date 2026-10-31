@@ -1,12 +1,15 @@
 #include "host/gui_host.hpp"
 
+#include "settings/app_settings.hpp"
+
 #include <cutenes/api/schema.hpp>
 #include <cutenes/api/session.hpp>
 
 #include <QByteArray>
+#include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QString>
 
 namespace cutenes::app {
 
@@ -20,15 +23,21 @@ namespace {
 // The largest blob_chunk (002 command catalog).
 constexpr qsizetype kChunk = 65536;
 
+const std::vector<std::string> kSettingsPages = {
+    "video", "audio", "input", "hotkeys", "emulation", "library", "servers"};
+// The settings groups and keys implemented so far (data-model "Settings
+// keys"); later phases add theirs.
+const std::vector<std::string> kSettingKeys = {"library.root"};
+
 void add(api::Registry& registry, const char* name, std::string description, Json input,
-    Json output, bool needsRom, std::function<Result(CallContext&, const Json&)> handler)
+    Json output, bool mutating, bool needsRom, std::function<Result(CallContext&, const Json&)> handler)
 {
     api::Command c;
     c.name = name;
     c.description = std::move(description);
     c.inputSchema = std::move(input);
     c.outputSchema = std::move(output);
-    c.mutating = true;
+    c.mutating = mutating;
     c.needsRom = needsRom;
     c.handler = std::move(handler);
     registry.add(std::move(c));
@@ -57,6 +66,11 @@ Result plain(const Result& r)
     return r.isError() ? r : Result::ok();
 }
 
+Result invalid(const std::string& path, const std::string& message)
+{
+    return Result::fail("InvalidArgument", message, {{"path", path}});
+}
+
 bool isRunning(CallContext& ctx)
 {
     const Result r = call(ctx, "core.run_state");
@@ -79,33 +93,119 @@ Result upload(CallContext& ctx, const QByteArray& bytes, std::string& blobId)
     return call(ctx, "session.blob_commit", {{"blobId", blobId}});
 }
 
-Result openRom(CallContext& ctx, const std::string& path)
+std::string str(const QString& s)
 {
-    QFile file(QString::fromStdString(path));
-    if (!file.open(QIODevice::ReadOnly)) {
-        return Result::fail("InvalidArgument", "cannot read " + path + ": "
-            + file.errorString().toStdString(), {{"path", "/path"}});
-    }
-    std::string blobId;
-    Result r = upload(ctx, file.readAll(), blobId);
-    if (r.isError()) return r;
-    // core.load_rom checks the ROM before ejecting anything, so a rejected
-    // file leaves the running game alone (spec US1-4).
-    Result loaded = call(ctx, "core.load_rom", {{"blobId", blobId}});
-    call(ctx, "session.blob_delete", {{"blobId", blobId}});
-    if (loaded.isError()) return loaded;
-    Result resumed = call(ctx, "core.resume");
-    if (resumed.isError()) return resumed;
-    return Result::ok({{"cartridge", loaded.value["cartridge"]}, {"runState", "Running"}});
+    return s.toStdString();
+}
+
+Json entryJson(const LibraryEntry& e)
+{
+    return {{"path", str(e.path)}, {"relativePath", str(e.relativePath)}, {"identity", str(e.identity)},
+        {"name", str(e.name)}, {"mapper", e.mapper}, {"submapper", e.submapper}, {"region", str(e.region)},
+        {"battery", e.battery}, {"supported", e.supported}, {"reason", str(e.reason)},
+        {"lastPlayed", e.lastPlayed.isValid() ? str(e.lastPlayed.toUTC().toString(Qt::ISODate)) : ""},
+        {"hasSave", e.hasSave}, {"stateCount", e.stateCount}, {"recent", e.recent}};
+}
+
+Json entrySchema()
+{
+    return s::object({{"path", s::string("absolute")}, {"relativePath", s::string("under roms/, or empty")},
+        {"identity", s::string("SHA-1 of the ROM after its header")}, {"name", s::string()},
+        {"mapper", s::integer(-1, 4095)}, {"submapper", s::integer(0, 15)},
+        {"region", s::string()}, {"battery", s::boolean()}, {"supported", s::boolean()},
+        {"reason", s::string("why the core rejects it")}, {"lastPlayed", s::string("ISO 8601, or empty")},
+        {"hasSave", s::boolean()}, {"stateCount", s::integer(0, 10)}, {"recent", s::boolean()}});
 }
 
 } // namespace
 
-GuiHost::GuiHost(Hooks hooks) : m_hooks(std::move(hooks)) {}
+GuiHost::GuiHost(Window& window, AppSettings& settings, BatterySaver& battery)
+    : m_window(window), m_settings(settings), m_battery(battery)
+{
+}
 
 void GuiHost::onSessionEvent(const api::Event& event)
 {
-    if (m_hooks.event) m_hooks.event(event);
+    // Battery RAM is checked as frames run (frame events come at most 10
+    // times a second, on the emulation thread, which owns the machine).
+    if (api::Session* session = m_session.load(); event.type == "frame" && session) {
+        m_battery.poll(session->machine());
+    }
+    m_window.sessionEvent(event);
+}
+
+Result GuiHost::openRom(CallContext& ctx, const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return invalid("/path", "cannot read " + str(path) + ": " + str(file.errorString()));
+    }
+    const QByteArray bytes = file.readAll();
+
+    // Check the ROM before touching the running game, so a rejected file
+    // leaves it, and its battery save, alone (spec US1-4).
+    {
+        Machine scratch;
+        const LoadResult check = scratch.loadCartridge(
+            reinterpret_cast<const std::uint8_t*>(bytes.constData()), static_cast<std::size_t>(bytes.size()));
+        if (check.error != LoadError::Ok) {
+            std::string blobId;
+            Result r = upload(ctx, bytes, blobId);
+            if (r.isError()) return r;
+            Result rejected = call(ctx, "core.load_rom", {{"blobId", blobId}}); // the core's own error
+            call(ctx, "session.blob_delete", {{"blobId", blobId}});
+            return rejected;
+        }
+    }
+    if (m_gameOpen) closeGame(ctx);
+
+    std::string blobId;
+    Result r = upload(ctx, bytes, blobId);
+    if (r.isError()) return r;
+    Result loaded = call(ctx, "core.load_rom", {{"blobId", blobId}});
+    call(ctx, "session.blob_delete", {{"blobId", blobId}});
+    if (loaded.isError()) return loaded;
+
+    // The battery save goes in before the first frame runs.
+    const GameIdentity id = identifyRom(bytes).value_or(GameIdentity{});
+    BatterySaver::Opened battery;
+    const Library library = m_window.library();
+    if (!id.sha1.isEmpty() && library.isUsable()) {
+        battery = m_battery.open(library, id, QFileInfo(path).completeBaseName(), ctx.session.machine());
+    }
+    m_gameOpen = true;
+    m_settings.addRecent(path);
+    if (!id.sha1.isEmpty()) m_settings.setLastPlayed(id.sha1, QDateTime::currentDateTimeUtc());
+    m_window.gameOpened(QFileInfo(path).absoluteFilePath(), id, battery);
+
+    Result resumed = call(ctx, "core.resume");
+    if (resumed.isError()) return resumed;
+    Json v = {{"cartridge", loaded.value["cartridge"]}, {"runState", "Running"},
+        {"identity", str(id.sha1)}, {"batterySave", str(battery.path)}};
+    if (!battery.warning.isEmpty()) v["warning"] = str(battery.warning);
+    return Result::ok(v);
+}
+
+Result GuiHost::closeGame(CallContext& ctx)
+{
+    // FR-012: the battery save is written before the cartridge goes.
+    m_battery.close(ctx.session.machine());
+    m_gameOpen = false;
+    Result r = plain(call(ctx, "core.eject"));
+    if (!r.isError()) m_window.gameClosed();
+    return r;
+}
+
+Result GuiHost::setLibraryRoot(CallContext& ctx, const QString& root)
+{
+    if (root.isEmpty() || QDir::isRelativePath(root)) return invalid("/value", "the library location must be an absolute path");
+    const Library library(root);
+    QString error;
+    if (!library.ensureLayout(&error)) return invalid("/value", str(error));
+    m_settings.setLibraryRoot(library.root());
+    ctx.session.setLibraryRoot(str(library.folder(Library::Folder::Roms)));
+    m_window.libraryChanged(library);
+    return Result::ok({{"key", "library.root"}, {"value", str(library.root())}});
 }
 
 void GuiHost::registerCommands(api::Registry& registry)
@@ -115,37 +215,30 @@ void GuiHost::registerCommands(api::Registry& registry)
         s::object({{"path", s::string("a file path (not limited to the library)")}}),
         s::object({{"dialog", s::boolean("the file dialog was shown instead")},
             {"cartridge", Json{{"type", "object"}, {"description", "as core.load_rom"}}},
-            {"runState", s::stringEnum({"Running"})}}),
-        false,
-        [this](CallContext& ctx, const Json& args) {
+            {"runState", s::stringEnum({"Running"})}, {"identity", s::string()},
+            {"batterySave", s::string("the battery save file, or empty")},
+            {"warning", s::string("a battery save set aside, or another instance holds the game")}}),
+        true, false, [this](CallContext& ctx, const Json& args) {
             if (!args.contains("path")) {
-                if (m_hooks.showOpenRomDialog) m_hooks.showOpenRomDialog();
+                m_window.showOpenRomDialog();
                 return Result::ok({{"dialog", true}});
             }
-            const std::string path = args["path"].get<std::string>();
-            Result r = openRom(ctx, path);
-            if (!r.isError() && m_hooks.gameLoaded) m_hooks.gameLoaded(path);
-            return r;
+            return openRom(ctx, QString::fromStdString(args["path"].get<std::string>()));
         });
 
-    add(registry, "gui.close_game", "Close the game", s::object({}), s::object({}), true,
-        [this](CallContext& ctx, const Json&) {
-            Result r = plain(call(ctx, "core.eject"));
-            if (!r.isError() && m_hooks.gameClosed) m_hooks.gameClosed();
-            return r;
-        });
+    add(registry, "gui.close_game", "Close the game, writing its battery save", s::object({}),
+        s::object({}), true, true, [this](CallContext& ctx, const Json&) { return closeGame(ctx); });
 
     add(registry, "gui.toggle_pause", "Pause or resume the game", s::object({}), runStateOutput(),
-        true, [](CallContext& ctx, const Json&) {
+        true, true, [](CallContext& ctx, const Json&) {
             return runStateResult(call(ctx, isRunning(ctx) ? "core.pause" : "core.resume"));
         });
 
     add(registry, "gui.reset", "Press the console's reset button", s::object({}), s::object({}),
-        true, [](CallContext& ctx, const Json&) { return plain(call(ctx, "core.reset")); });
+        true, true, [](CallContext& ctx, const Json&) { return plain(call(ctx, "core.reset")); });
 
     add(registry, "gui.power_cycle", "Turn the console off and on again", s::object({}),
-        s::object({}), true,
-        [](CallContext& ctx, const Json&) {
+        s::object({}), true, true, [](CallContext& ctx, const Json&) {
             const bool running = isRunning(ctx);
             Result r = call(ctx, "core.power_on");
             // Power-on pauses the machine; a game being played keeps playing.
@@ -153,16 +246,127 @@ void GuiHost::registerCommands(api::Registry& registry)
             return plain(r);
         });
 
-    add(registry, "gui.exit", "Quit cuteNES", s::object({}), s::object({}), false,
-        [this](CallContext&, const Json&) {
-            if (m_hooks.exit) m_hooks.exit();
+    add(registry, "gui.exit", "Quit cuteNES (the battery save is written first)", s::object({}),
+        s::object({}), true, false, [this](CallContext&, const Json&) {
+            m_window.exit();
             return Result::ok();
         });
 
     add(registry, "gui.show_about", "Show the About window", s::object({}), s::object({}), false,
-        [this](CallContext&, const Json&) {
-            if (m_hooks.showAbout) m_hooks.showAbout();
+        false, [this](CallContext&, const Json&) {
+            m_window.showAbout();
             return Result::ok();
+        });
+
+    // --- Library (G2) -----------------------------------------------------------
+
+    add(registry, "gui.show_library", "Show the library browser (pauses a running game)",
+        s::object({}), s::object({}), false, false, [this](CallContext& ctx, const Json&) {
+            const bool paused = isRunning(ctx) && !call(ctx, "core.pause").isError();
+            m_window.showLibrary({}, paused);
+            return Result::ok();
+        });
+
+    add(registry, "gui.library_list", "The library browser's games (data-model LibraryEntry)",
+        s::object({}), s::object({{"root", s::string()}, {"entries", s::array(entrySchema(), 100000)}},
+            {"root", "entries"}),
+        false, false, [this](CallContext&, const Json&) {
+            Json entries = Json::array();
+            for (const auto& e : m_window.libraryEntries()) entries.push_back(entryJson(e));
+            return Result::ok({{"root", str(m_window.library().root())}, {"entries", entries}});
+        });
+
+    add(registry, "gui.library_select", "Select a game in the library browser by path or identity",
+        s::object({{"path", s::string()}, {"identity", s::string()}}), s::object({{"path", s::string()}}, {"path"}),
+        false, false, [this](CallContext& ctx, const Json& args) {
+            if (args.contains("path") == args.contains("identity")) {
+                return invalid("", "give exactly one of path and identity");
+            }
+            const QString wanted = QString::fromStdString(
+                args.contains("path") ? args["path"].get<std::string>() : args["identity"].get<std::string>());
+            const QString absolute = args.contains("path") ? QFileInfo(wanted).absoluteFilePath() : wanted;
+            for (const auto& e : m_window.libraryEntries()) {
+                if (e.path == absolute || e.identity == wanted) {
+                    const bool paused = isRunning(ctx) && !call(ctx, "core.pause").isError();
+                    m_window.showLibrary(e.path, paused);
+                    return Result::ok({{"path", str(e.path)}});
+                }
+            }
+            return invalid(args.contains("path") ? "/path" : "/identity", "no such game in the library");
+        });
+
+    add(registry, "gui.open_library_folder", "Show the library folder in the file manager",
+        s::object({}), s::object({}), false, false, [this](CallContext&, const Json&) {
+            m_window.openLibraryFolder();
+            return Result::ok();
+        });
+
+    add(registry, "gui.list_recent", "Recently opened games, newest first", s::object({}),
+        s::object({{"recent", s::array(s::object({{"path", s::string()}, {"identity", s::string()},
+                                                   {"exists", s::boolean()}}),
+                       AppSettings::kMaxRecent)}},
+            {"recent"}),
+        false, false, [this](CallContext&, const Json&) {
+            Json list = Json::array();
+            const auto entries = m_window.libraryEntries();
+            for (const QString& path : m_settings.recent()) {
+                QString identity;
+                for (const auto& e : entries) {
+                    if (e.path == path) identity = e.identity;
+                }
+                list.push_back({{"path", str(path)}, {"identity", str(identity)}, {"exists", QFileInfo::exists(path)}});
+            }
+            return Result::ok({{"recent", list}});
+        });
+
+    add(registry, "gui.open_recent", "Open a recent game by its place in File > Open Recent (0 = newest)",
+        s::object({{"index", s::integer(0, AppSettings::kMaxRecent - 1)}}, {"index"}),
+        s::object({{"cartridge", Json{{"type", "object"}}}, {"runState", s::stringEnum({"Running"})},
+            {"identity", s::string()}, {"batterySave", s::string()}, {"warning", s::string()}}),
+        true, false, [this](CallContext& ctx, const Json& args) {
+            const QStringList recent = m_settings.recent();
+            const int index = args["index"].get<int>();
+            if (index >= recent.size()) return invalid("/index", "there are only " + std::to_string(recent.size()) + " recent games");
+            return openRom(ctx, recent[index]);
+        });
+
+    add(registry, "gui.clear_recent", "Clear File > Open Recent", s::object({}), s::object({}), true,
+        false, [this](CallContext&, const Json&) {
+            m_settings.clearRecent();
+            m_window.recentChanged();
+            return Result::ok();
+        });
+
+    // --- Settings ---------------------------------------------------------------
+
+    add(registry, "gui.show_settings", "Show Settings, at a page or the last one shown",
+        s::object({{"page", s::stringEnum(kSettingsPages)}}), s::object({{"page", s::string()}}, {"page"}),
+        false, false, [this](CallContext&, const Json& args) {
+            const QString page = args.contains("page") ? QString::fromStdString(args["page"].get<std::string>())
+                                                       : m_settings.lastSettingsPage();
+            m_window.showSettings(page);
+            return Result::ok({{"page", str(page)}});
+        });
+
+    add(registry, "gui.get_settings", "Every setting's value and schema, or one group's",
+        s::object({{"group", s::stringEnum({"library"})}}),
+        s::object({{"values", Json{{"type", "object"}}}, {"schema", Json{{"type", "object"}}}}, {"values", "schema"}),
+        false, false, [this](CallContext&, const Json&) {
+            const Json values = {{"library", {{"root", str(m_window.library().root())}}}};
+            const Json schema = {{"library.root", s::string("absolute path of the library folder")}};
+            return Result::ok({{"values", values}, {"schema", schema}});
+        });
+
+    add(registry, "gui.set_setting", "Validate and apply a setting (gui.get_settings lists them)",
+        s::object({{"key", s::stringEnum(kSettingKeys)}, {"value", Json::object()}}, {"key", "value"}),
+        s::object({{"key", s::string()}, {"value", Json::object()}}, {"key", "value"}), true, false,
+        [this](CallContext& ctx, const Json& args) {
+            const std::string key = args["key"];
+            if (key == "library.root") {
+                if (!args["value"].is_string()) return invalid("/value", "must be a string");
+                return setLibraryRoot(ctx, QString::fromStdString(args["value"].get<std::string>()));
+            }
+            return invalid("/key", "unknown setting");
         });
 }
 

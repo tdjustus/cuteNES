@@ -31,12 +31,15 @@ int main(int argc, char* argv[])
 
     const cutenes::qt::MediaRuntime media;
 
-    cutenes::app::MainWindow window;
+    cutenes::app::MainWindow::Options options;
+    options.libraryRoot = cli.library;
+    cutenes::app::MainWindow window(options);
     if (cli.fullscreen) {
         window.showFullScreen();
     } else {
         window.show();
     }
+    window.checkLibrary();
     if (!cli.rom.isEmpty()) window.openRom(cli.rom);
     return QApplication::exec();
 }

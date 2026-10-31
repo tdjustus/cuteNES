@@ -112,31 +112,31 @@ Real-time mode in `cutenes-api` (R3), test-first:
 
 ## Phase G2: Library (branch `feature/gui-library`)
 
-- [ ] G020 [US2] Tests first:
+- [x] G020 [US2] Tests first:
   - `GameIdentity` against hand-built ROM images (headered, re-headered, with
     a trainer);
   - the file-name rules (sanitising, the `[id8]` lookup, a collision);
   - library layout creation (A2, A3).
-- [ ] G021 [US2] `app/library/`: `Library` (root, subfolders, README),
+- [x] G021 [US2] `app/library/`: `Library` (root, subfolders, README),
   `GameIdentity`, the index (JSON cache, `QtConcurrent` scan,
   `QFileSystemWatcher`) and scratch-load support status.
-- [ ] G022 [US1] Library browser: a model and view with name, mapper, region,
+- [x] G022 [US1] Library browser: a model and view with name, mapper, region,
   support, save and state flags and last played; type-to-filter, sort,
   Recent, keyboard navigation, and an empty-library hint (US2-1).
   `gui.show_library`, `gui.library_select`, `gui.library_list`, and
   `session.library_list` mapped to it (FR-074).
-- [ ] G023 [US2] Battery saves:
+- [x] G023 [US2] Battery saves:
   - tests (A4): the write within 10 s, atomic writes, and a corrupt save set
     aside;
   - implementation of the sram hash check, the writer thread, `QSaveFile`
     and the per-game `QLockFile`.
-- [ ] G024 [US2] Settings:
+- [x] G024 [US2] Settings:
   - `QSettings` (INI);
   - the Settings > Library page (location change offers to move the
     contents);
   - `gui.get_settings` / `gui.set_setting` for the `library` group;
   - `--library DIR`.
-- [ ] G025 [US1] Open Recent and drag-and-drop. The macOS `QFileOpenEvent`
+- [x] G025 [US1] Open Recent and drag-and-drop. The macOS `QFileOpenEvent`
   is handled.
 - [ ] G026 Manual checklist **M2**.
 
