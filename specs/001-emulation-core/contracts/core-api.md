@@ -204,7 +204,7 @@ LoadStateError Machine::loadState(const std::uint8_t* data, std::size_t size);
 // LoadStateError: Ok | BadMagic | IncompatibleFormat | IncompatibleCoreVersion
 //                | WrongCartridge | ChecksumMismatch
 
-SramRange Machine::sram() const;              // const view when battery
+SramRange Machine::sram() const;              // const view when battery; empty otherwise (#71)
 void      Machine::loadSram(const std::uint8_t* data, std::size_t size); // pad/trim per header
 ```
 

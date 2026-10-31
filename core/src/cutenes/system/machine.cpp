@@ -502,7 +502,7 @@ LoadStateError Machine::loadState(const std::uint8_t* data, std::size_t size)
 SramRange Machine::sram() const
 {
     const auto& ram = m_impl->cart.prgRam;
-    if (ram.empty()) {
+    if (ram.empty() || !m_impl->cart.info.battery) {
         return SramRange{};
     }
     return SramRange{ram.data(), ram.size()};
@@ -511,7 +511,7 @@ SramRange Machine::sram() const
 void Machine::loadSram(const std::uint8_t* data, std::size_t size)
 {
     auto& ram = m_impl->cart.prgRam;
-    if (ram.empty() || data == nullptr) {
+    if (ram.empty() || !m_impl->cart.info.battery || data == nullptr) {
         return;
     }
     const std::size_t n = size < ram.size() ? size : ram.size();

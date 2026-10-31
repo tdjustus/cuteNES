@@ -503,3 +503,45 @@ TEST(InstructionTrace, SurvivesARegionRebuild)
     const auto dots = points[1].dot - points[0].dot;
     EXPECT_TRUE(dots == 6 || dots == 7) << dots;
 }
+
+// sram() and loadSram() cover battery-backed RAM only (core contract,
+// "Save states and SRAM"; #71). iNES flags 6 bit 1 is the battery bit. An
+// NROM image without it still has work RAM at $6000 (research.md D10), and
+// that RAM is not a save.
+TEST(Sram, CartridgeWithoutBatteryHasNoSram)
+{
+    auto rom = makeEchoRom();
+    ASSERT_EQ(rom[6] & 0x02, 0);
+    cutenes::Machine machine;
+    ASSERT_EQ(machine.loadCartridge(rom.data(), rom.size()).error, cutenes::LoadError::Ok);
+    machine.powerOn();
+    ASSERT_FALSE(machine.cartridgeInfo().battery);
+
+    const cutenes::SramRange sram = machine.sram();
+    EXPECT_EQ(sram.size, 0u);
+    EXPECT_EQ(sram.data, nullptr);
+
+    // loadSram is ignored: the work RAM keeps what it had.
+    const std::uint8_t before = machine.peek(0x6000);
+    const std::vector<std::uint8_t> save(8192, static_cast<std::uint8_t>(before ^ 0xFF));
+    machine.loadSram(save.data(), save.size());
+    EXPECT_EQ(machine.peek(0x6000), before);
+}
+
+TEST(Sram, BatteryCartridgeExposesItsRam)
+{
+    auto rom = makeEchoRom();
+    rom[6] |= 0x02; // battery
+    cutenes::Machine machine;
+    ASSERT_EQ(machine.loadCartridge(rom.data(), rom.size()).error, cutenes::LoadError::Ok);
+    machine.powerOn();
+    ASSERT_TRUE(machine.cartridgeInfo().battery);
+
+    const std::vector<std::uint8_t> save{0x12, 0x34, 0x56}; // shorter: padded
+    machine.loadSram(save.data(), save.size());
+    const cutenes::SramRange sram = machine.sram();
+    ASSERT_EQ(sram.size, 8192u); // flags 8 = 0: the 8 KiB default
+    EXPECT_EQ(sram.data[0], 0x12);
+    EXPECT_EQ(sram.data[2], 0x56);
+    EXPECT_EQ(machine.peek(0x6001), 0x34); // the CPU sees the loaded save
+}

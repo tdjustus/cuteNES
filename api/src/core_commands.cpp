@@ -642,10 +642,8 @@ void registerStates(Registry& r)
             {"offset", "length"}),
         resultSchema({{"bytes", s::bytes()}, {"size", s::u64()}}, {"bytes", "size"}), false, true,
         [](CallContext& ctx, const Json& args) {
-            const SramRange sram = state(ctx).machine.sram();
-            // The battery flag, not the RAM's presence: sram() also returns
-            // plain work RAM (#71).
-            if (!state(ctx).machine.cartridgeInfo().battery || sram.size == 0) {
+            const SramRange sram = state(ctx).machine.sram(); // empty without a battery
+            if (sram.size == 0) {
                 return Result::fail("NoBattery", "the cartridge has no battery-backed RAM");
             }
             const std::size_t offset = args["offset"];
@@ -664,7 +662,7 @@ void registerStates(Registry& r)
         s::object({{"bytes", s::bytes()}}, {"bytes"}), resultSchema(), true, true,
         [](CallContext& ctx, const Json& args) {
             auto& m = state(ctx).machine;
-            if (!m.cartridgeInfo().battery || m.sram().size == 0) {
+            if (m.sram().size == 0) {
                 return Result::fail("NoBattery", "the cartridge has no battery-backed RAM");
             }
             const auto data = decodeBytes(args["bytes"]);
