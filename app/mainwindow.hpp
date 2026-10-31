@@ -150,6 +150,7 @@ private:
     qt::EmulationView* m_view = nullptr;
     LibraryIndex* m_index = nullptr;
     QMenu* m_recentMenu = nullptr;
+    QAction* m_pauseAction = nullptr;
     QPointer<SettingsDialog> m_settingsDialog;
     std::unique_ptr<api::Session> m_session;
     std::unique_ptr<qt::FrameClock> m_clock;
