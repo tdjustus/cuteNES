@@ -20,6 +20,18 @@ Register the command in any MCP client's standard server config:
     "args": ["--library", "/path/to/roms"] } } }
 ```
 
+In Claude Code: `claude mcp add cutenes -- /path/to/cutenes-server --library /path/to/roms`.
+
+### Client verification (A061, SC-001)
+
+| Client | Version | Date | Transport | Result |
+|---|---|---|---|---|
+| Claude Code | 2.1.308 | 2026-10-30 | stdio | Pass. Listed all 54 headless tools (2 `api.*`, 40 `core.*`, 12 `session.*`, no `gui.*`). Loaded `instr_test-v5/rom_singles/01-basics.nes` (mapper 0), ran 600 frames, and read `$6000` = `$00` with the `DE B0 61` signature and the text "01-basics … Passed" through `core.peek`. Received a 256x240 PNG image block from `core.screen` |
+| Second client | | | | Open: #79 |
+
+Run with a temporary config, so the user's own config was not changed:
+`claude -p --strict-mcp-config --mcp-config mcp.json --allowedTools mcp__cutenes "<the steps above>"`.
+
 ## Headless API for scripts
 
 ```bash
@@ -32,6 +44,8 @@ curl -s -H "Authorization: Bearer $TOKEN" localhost:8765/api/v1/rpc \
 ```
 
 ## Validation scenarios (each is an automated test)
+
+All twelve scenarios pass: `ctest -L "api|mcp"` on every CI platform (A062).
 
 | # | Scenario | Spec | Test |
 |---|---|---|---|
