@@ -174,7 +174,9 @@ TEST(GuiFrameClock, TicksAtItsRate)
     ASSERT_GE(times.size(), 10u);
     const double seconds = std::chrono::duration<double>(times.back() - times.front()).count();
     const double hz = static_cast<double>(times.size() - 1) / seconds;
-    EXPECT_GT(hz, 70.0); // stalls only ever slow it down
+    // Stalls only ever slow it down (CI's loaded macOS VM measured 65 Hz);
+    // a wrong period, such as half the rate, still fails.
+    EXPECT_GT(hz, 55.0);
     EXPECT_LT(hz, 105.0);
     for (std::size_t i = 8; i < times.size(); ++i) {
         EXPECT_GE(times[i] - times[i - 8], std::chrono::milliseconds(10)) << "a burst at tick " << i;
