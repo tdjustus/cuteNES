@@ -151,7 +151,9 @@ TEST(GuiMailbox, HandsOverTheNewestFrameOnce)
 
 // The timer runs at its rate: a 100 Hz clock's ticks are 10 ms apart. The
 // median interval ignores the odd stall of a loaded CI machine (after
-// which the clock deliberately skips instead of bursting).
+// which the clock deliberately skips instead of bursting); the upper bound
+// allows for a virtual machine's timer slack (13 ms seen on CI's macOS).
+// Pacing under load is soak-tested with a simulated clock in G9 (A15).
 TEST(GuiFrameClock, TicksAtItsRate)
 {
     using clock = std::chrono::steady_clock;
@@ -176,7 +178,7 @@ TEST(GuiFrameClock, TicksAtItsRate)
         intervals.end());
     const double median = intervals[intervals.size() / 2];
     EXPECT_GT(median, 8.0);
-    EXPECT_LT(median, 12.5);
+    EXPECT_LT(median, 20.0);
 
     const std::size_t after = times.size();
     mutex.unlock();

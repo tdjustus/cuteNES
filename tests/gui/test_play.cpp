@@ -56,6 +56,8 @@ void openGame(MainWindow& w)
     const Json r = call(w, "gui.open_rom", {{"path", kRom.toStdString()}});
     ASSERT_TRUE(r.contains("cartridge"));
     EXPECT_EQ(r["runState"], "Running");
+    // The window hears of it through queued events; let them arrive.
+    ASSERT_TRUE(waitUntil([&] { return w.windowTitle().contains(QStringLiteral("01-basics.nes")); }));
 }
 
 int statusByte(MainWindow& w, int addr)
@@ -158,7 +160,7 @@ TEST(GuiPlay, AnInvalidRomShowsWhyAndKeepsTheRunningGame)
     EXPECT_EQ(failed, QStringLiteral("gui.open_rom"));
     EXPECT_NE(w.findChild<QMessageBox*>(QStringLiteral("commandError")), nullptr);
     EXPECT_EQ(runState(w), "Running");
-    EXPECT_TRUE(w.windowTitle().contains(QStringLiteral("01-basics.nes")));
+    EXPECT_TRUE(w.windowTitle().contains(QStringLiteral("01-basics.nes"))) << w.windowTitle().toStdString();
 
     const Result missing = w.session().call("gui.open_rom", {{"path", dir.filePath(QStringLiteral("none.nes")).toStdString()}});
     ASSERT_TRUE(missing.isError());
