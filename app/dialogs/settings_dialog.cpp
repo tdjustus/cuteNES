@@ -69,8 +69,8 @@ SettingsDialog::SettingsDialog(QWidget* parent)
             m_removeFolder->setEnabled(false);
             connect(addFolder, &QPushButton::clicked, this, &SettingsDialog::addRomFolderRequested);
             connect(m_removeFolder, &QPushButton::clicked, this, [this] {
-                if (const QListWidgetItem* item = m_romFolders->currentItem()) {
-                    emit removeRomFolderRequested(item->data(Qt::UserRole).toString());
+                if (const QListWidgetItem* current = m_romFolders->currentItem()) {
+                    emit removeRomFolderRequested(current->data(Qt::UserRole).toString());
                 }
             });
             // The library's own roms folder (row 0) cannot be removed.

@@ -475,8 +475,8 @@ void MainWindow::rebuildRecentMenu()
 QFuture<api::Result> MainWindow::runCommand(const QString& name, const QVariantMap& args, bool quiet)
 {
     QFuture<api::Result> future = QtConcurrent::run(&m_commands,
-        [session = m_session.get(), name = name.toStdString(), json = toJson(args)] {
-            return session->call(name, json);
+        [session = m_session.get(), command = name.toStdString(), json = toJson(args)] {
+            return session->call(command, json);
         });
     if (!quiet) {
         future.then(this, [this, name](const api::Result& result) {
