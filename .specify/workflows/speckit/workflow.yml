@@ -24,7 +24,6 @@ requires:
       - "claude"
       - "copilot"
       - "gemini"
-      - "opencode"
 
 inputs:
   spec:
