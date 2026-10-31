@@ -59,7 +59,9 @@ std::string contents(const std::string& url, const std::string& token)
 
 #if defined(_WIN32)
 
-// The current user's SID, owned by the returned buffer.
+// The current user's SID, copied into its own buffer. (TOKEN_USER points
+// into the buffer GetTokenInformation filled, so that buffer must not be
+// copied or freed while the pointer is used.)
 std::vector<std::uint8_t> currentUser()
 {
     HANDLE process = nullptr;
@@ -68,15 +70,22 @@ std::vector<std::uint8_t> currentUser()
     }
     DWORD size = 0;
     GetTokenInformation(process, TokenUser, nullptr, 0, &size);
-    std::vector<std::uint8_t> buffer(size);
-    const BOOL ok = GetTokenInformation(process, TokenUser, buffer.data(), size, &size);
+    std::vector<std::uint8_t> info(size);
+    std::vector<std::uint8_t> sid;
+    if (GetTokenInformation(process, TokenUser, info.data(), size, &size)) {
+        const PSID source = reinterpret_cast<TOKEN_USER*>(info.data())->User.Sid;
+        sid.resize(GetLengthSid(source));
+        if (!CopySid(static_cast<DWORD>(sid.size()), sid.data(), source)) {
+            sid.clear();
+        }
+    }
     CloseHandle(process);
-    return ok ? buffer : std::vector<std::uint8_t>{};
+    return sid;
 }
 
-PSID sidOf(std::vector<std::uint8_t>& user)
+PSID sidOf(std::vector<std::uint8_t>& sid)
 {
-    return reinterpret_cast<TOKEN_USER*>(user.data())->User.Sid;
+    return reinterpret_cast<PSID>(sid.data());
 }
 
 #endif

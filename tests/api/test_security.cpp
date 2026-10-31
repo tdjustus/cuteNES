@@ -116,8 +116,11 @@ TEST(ApiSecurity, TokenFileIsOwnerOnly)
     ASSERT_TRUE(token::writeFile(path, "http://127.0.0.1:1/api/v1", "abc", error)) << error;
     std::string why;
     EXPECT_TRUE(token::isOwnerOnly(path, &why)) << why;
-    std::ifstream in(path);
-    const Json j = Json::parse(in);
+    Json j;
+    {
+        std::ifstream in(path); // closed before the rewrite: Windows cannot
+        j = Json::parse(in);    // replace a file that is open
+    }
     EXPECT_EQ(j["token"], "abc");
     EXPECT_EQ(j["url"], "http://127.0.0.1:1/api/v1");
     // Rewriting replaces the file and keeps it owner-only.
@@ -172,8 +175,10 @@ TEST(ApiSecurity, ServerWritesTheTokenFileAndNeverPrintsTheToken)
     EXPECT_TRUE(token::isOwnerOnly(path, &why)) << why;
     Json file;
     for (int i = 0; i < 40 && file.is_null(); ++i) { // the writer may still be mid-write
-        std::ifstream in(path);
-        file = Json::parse(in, nullptr, false);
+        {
+            std::ifstream in(path);
+            file = Json::parse(in, nullptr, false);
+        }
         if (file.is_discarded()) file = Json();
         std::this_thread::sleep_for(std::chrono::milliseconds(25));
     }
