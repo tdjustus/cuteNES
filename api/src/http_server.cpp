@@ -65,6 +65,23 @@ bool isLoopbackHost(const std::string& host)
     return host == "localhost" || host == "::1" || host.rfind("127.", 0) == 0;
 }
 
+AccessDecision checkAccess(const std::string& bindAddress, const std::string& hostHeader,
+    const std::optional<std::string>& origin, const std::string& authorization,
+    const std::string& token)
+{
+    // DNS rebinding: a loopback listener answers only loopback names.
+    if (isLoopbackHost(bindAddress) && !isLoopbackHost(hostPart(hostHeader))) {
+        return {403, "forbidden host\n"};
+    }
+    if (origin && !loopbackOrigin(*origin)) {
+        return {403, "forbidden origin\n"};
+    }
+    if (token.empty() || !token::constantTimeEquals(authorization, "Bearer " + token)) {
+        return {401, "missing or wrong token\n"};
+    }
+    return {};
+}
+
 struct HttpServer::Impl {
     Impl(Session& s, HttpServerConfig c) : session(s), config(std::move(c)) {}
 
@@ -81,31 +98,21 @@ struct HttpServer::Impl {
     std::mutex subscriberMutex;
     std::set<std::shared_ptr<Subscriber>> subscribers;
 
-    bool loopbackBind() const { return isLoopbackHost(config.bindAddress); }
-
     // 403 for a foreign Host or Origin, 401 for a missing or wrong token.
     httplib::Server::HandlerResponse guard(const httplib::Request& req, httplib::Response& res)
     {
-        const auto reject = [&](int status, const char* message) {
-            res.status = status;
-            if (status == 401) {
-                res.set_header("WWW-Authenticate", "Bearer");
-            }
-            res.set_content(message, "text/plain");
-            return httplib::Server::HandlerResponse::Handled;
-        };
-        // DNS rebinding: a loopback listener answers only loopback names.
-        if (loopbackBind() && !isLoopbackHost(hostPart(req.get_header_value("Host")))) {
-            return reject(403, "forbidden host\n");
+        const AccessDecision d = checkAccess(config.bindAddress, req.get_header_value("Host"),
+            req.has_header("Origin") ? std::optional(req.get_header_value("Origin")) : std::nullopt,
+            req.get_header_value("Authorization"), config.token);
+        if (d.status == 0) {
+            return httplib::Server::HandlerResponse::Unhandled;
         }
-        if (req.has_header("Origin") && !loopbackOrigin(req.get_header_value("Origin"))) {
-            return reject(403, "forbidden origin\n");
+        res.status = d.status;
+        if (d.status == 401) {
+            res.set_header("WWW-Authenticate", "Bearer");
         }
-        const std::string expected = "Bearer " + config.token;
-        if (!token::constantTimeEquals(req.get_header_value("Authorization"), expected)) {
-            return reject(401, "missing or wrong token\n");
-        }
-        return httplib::Server::HandlerResponse::Unhandled;
+        res.set_content(d.message, "text/plain");
+        return httplib::Server::HandlerResponse::Handled;
     }
 
     Result execute(const httplib::Request& req, const std::string& method, const Json& params)

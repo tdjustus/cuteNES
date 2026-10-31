@@ -17,8 +17,10 @@ inline constexpr int kExitUsage = 2;
 inline constexpr int kExitBind = 3;
 inline constexpr int kExitNoEndpoint = 4;
 
-// Runs until `stop` becomes true. Diagnostics go to `err`; the token never
-// does. Returns the process exit code.
-int run(const std::vector<std::string>& args, std::ostream& err, const std::atomic<bool>& stop);
+// Runs until `stop` becomes true or, when MCP is served on stdio, `in`
+// ends. `in` and `out` carry MCP stdio and nothing else; diagnostics go to
+// `err`, and the token never does. Returns the process exit code.
+int run(const std::vector<std::string>& args, std::istream& in, std::ostream& out,
+    std::ostream& err, const std::atomic<bool>& stop);
 
 } // namespace cutenes::server

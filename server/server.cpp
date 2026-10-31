@@ -3,10 +3,14 @@
 #include <cutenes/api/http_server.hpp>
 #include <cutenes/api/session.hpp>
 #include <cutenes/api/token.hpp>
+#include <cutenes/mcp/http.hpp>
+#include <cutenes/mcp/server.hpp>
+#include <cutenes/mcp/stdio.hpp>
 #include <cutenes/version.hpp>
 
 #include <chrono>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <thread>
@@ -17,24 +21,34 @@ namespace {
 
 const char* const kUsage =
     "usage: cutenes-server [--library DIR] [--debug-dir DIR]\n"
-    "                      [--api-port N] [--bind ADDR] [--token-file PATH]\n"
-    "                      [--mcp-stdio] [--mcp-port N] [--attach [URL]]\n"
+    "                      [--mcp-stdio] [--mcp-port N] [--mcp-token-file PATH]\n"
+    "                      [--api-port N] [--token-file PATH] [--bind ADDR]\n"
+    "                      [--attach [URL]]\n"
     "\n"
-    "  --library DIR      ROM library root for core.load_rom paths\n"
-    "  --debug-dir DIR    where session.write_dump writes (default debug)\n"
-    "  --api-port N       serve the API at http://127.0.0.1:N/api/v1 (0 = any port)\n"
-    "  --bind ADDR        listen on ADDR instead of loopback (network exposure)\n"
-    "  --token-file PATH  where to write the API token file\n"
-    "                     (default <user state dir>/cutenes/api.token)\n";
+    "With no listener flag it serves MCP on stdin/stdout and opens no socket.\n"
+    "\n"
+    "  --library DIR          ROM library root for core.load_rom paths\n"
+    "  --debug-dir DIR        where session.write_dump writes (default debug)\n"
+    "  --mcp-stdio            serve MCP on stdio as well as the listeners\n"
+    "  --mcp-port N           serve MCP at http://127.0.0.1:N/mcp (0 = any port)\n"
+    "  --mcp-token-file PATH  where to write the MCP token file\n"
+    "                         (default <user state dir>/cutenes/mcp.token)\n"
+    "  --api-port N           serve the API at http://127.0.0.1:N/api/v1 (0 = any port)\n"
+    "  --token-file PATH      where to write the API token file\n"
+    "                         (default <user state dir>/cutenes/api.token)\n"
+    "  --bind ADDR            listen on ADDR instead of loopback (network exposure)\n";
 
 struct Options {
     std::string library;
     std::string debugDir = "debug";
     std::optional<int> apiPort;
+    std::optional<int> mcpPort;
+    bool mcpStdio = false;
     std::string bind = "127.0.0.1";
     std::string tokenFile;
+    std::string mcpTokenFile;
     bool help = false;
-    std::string pending; // a mode that a later phase of feature 002 adds
+    bool attach = false; // the bridge arrives in feature 002 P4
 };
 
 bool parsePort(const std::string& text, int& port)
@@ -66,23 +80,25 @@ std::optional<Options> parse(const std::vector<std::string>& args, std::ostream&
         };
         if (a == "--help" || a == "-h") {
             o.help = true;
-        } else if (a == "--library" || a == "--debug-dir" || a == "--bind" || a == "--token-file") {
+        } else if (a == "--library" || a == "--debug-dir" || a == "--bind" || a == "--token-file"
+            || a == "--mcp-token-file") {
             const auto v = value();
             if (!v) return std::nullopt;
             (a == "--library" ? o.library : a == "--debug-dir" ? o.debugDir
-                : a == "--bind" ? o.bind : o.tokenFile) = *v;
-        } else if (a == "--api-port") {
+                : a == "--bind" ? o.bind : a == "--token-file" ? o.tokenFile : o.mcpTokenFile) = *v;
+        } else if (a == "--api-port" || a == "--mcp-port") {
             const auto v = value();
             int port = 0;
             if (!v || !parsePort(*v, port)) {
-                err << "cutenes-server: --api-port needs a port number (0-65535)\n";
+                err << "cutenes-server: " << a << " needs a port number (0-65535)\n";
                 return std::nullopt;
             }
-            o.apiPort = port;
-        } else if (a == "--mcp-stdio" || a == "--mcp-port" || a == "--attach") {
-            o.pending = a;
-            if (a == "--mcp-port" && i + 1 < args.size()) ++i;
-            if (a == "--attach" && i + 1 < args.size() && args[i + 1].rfind("--", 0) != 0) ++i;
+            (a == "--api-port" ? o.apiPort : o.mcpPort) = port;
+        } else if (a == "--mcp-stdio") {
+            o.mcpStdio = true;
+        } else if (a == "--attach") {
+            o.attach = true;
+            if (i + 1 < args.size() && args[i + 1].rfind("--", 0) != 0) ++i;
         } else {
             err << "cutenes-server: unknown option " << a << "\n";
             return std::nullopt;
@@ -91,9 +107,39 @@ std::optional<Options> parse(const std::vector<std::string>& args, std::ostream&
     return o;
 }
 
+// One HTTP listener's token file: written once it listens, removed on a
+// clean exit (FR-024).
+class TokenFile {
+public:
+    bool write(const std::filesystem::path& path, const std::string& url, const std::string& token,
+        std::string& error)
+    {
+        if (!api::token::writeFile(path, url, token, error)) return false;
+        m_path = path;
+        return true;
+    }
+    ~TokenFile()
+    {
+        if (!m_path.empty()) {
+            std::error_code ec;
+            std::filesystem::remove(m_path, ec);
+        }
+    }
+    const std::filesystem::path& path() const { return m_path; }
+
+private:
+    std::filesystem::path m_path;
+};
+
+std::filesystem::path tokenPath(const std::string& flag, const char* defaultName)
+{
+    return flag.empty() ? api::token::defaultDirectory() / defaultName : std::filesystem::path(flag);
+}
+
 } // namespace
 
-int run(const std::vector<std::string>& args, std::ostream& err, const std::atomic<bool>& stop)
+int run(const std::vector<std::string>& args, std::istream& in, std::ostream& out,
+    std::ostream& err, const std::atomic<bool>& stop)
 {
     const auto parsed = parse(args, err);
     if (!parsed) {
@@ -105,56 +151,78 @@ int run(const std::vector<std::string>& args, std::ostream& err, const std::atom
         err << kUsage;
         return kExitOk;
     }
-    // MCP (stdio by default, --mcp-port, --attach) arrives in feature 002
-    // phases P3 and P4. Until then nothing is served without --api-port, so
-    // the default still opens no socket (FR-009).
-    if (!o.pending.empty() || !o.apiPort) {
-        err << "cutenes-server: "
-            << (o.pending.empty() ? std::string("MCP over stdio (the default mode)") : o.pending)
-            << " is not available yet; use --api-port N\n";
+    if (o.attach) {
+        err << "cutenes-server: --attach is not available yet (feature 002 P4)\n";
         return kExitUsage;
     }
+    // Launching is the opt-in (FR-009): stdio unless a listener was asked
+    // for, and then stdio only when asked too.
+    const bool stdio = o.mcpStdio || (!o.apiPort && !o.mcpPort);
 
     api::SessionConfig config;
     config.libraryRoot = o.library;
     config.debugDir = o.debugDir;
     api::Session session(config);
+    mcp::McpServer mcp(session);
 
-    api::HttpServerConfig http;
-    http.bindAddress = o.bind;
-    http.port = *o.apiPort;
-    http.token = api::token::generate();
-    if (http.token.empty()) {
-        err << "cutenes-server: the OS random source failed\n";
-        return kExitBind;
-    }
-    api::HttpServer server(session, http);
+    // Each listener gets its own token; the token files carry them, and the
+    // log carries only where the files are.
+    std::unique_ptr<api::HttpServer> apiServer;
+    std::unique_ptr<mcp::McpHttpServer> mcpServer;
+    TokenFile apiToken, mcpToken;
     std::string error;
-    if (!server.start(error)) {
-        err << "cutenes-server: " << error << "\n";
-        return kExitBind;
+    if (o.apiPort) {
+        api::HttpServerConfig http;
+        http.bindAddress = o.bind;
+        http.port = *o.apiPort;
+        http.token = api::token::generate();
+        if (http.token.empty()) {
+            err << "cutenes-server: the OS random source failed\n";
+            return kExitBind;
+        }
+        apiServer = std::make_unique<api::HttpServer>(session, http);
+        if (!apiServer->start(error)
+            || !apiToken.write(tokenPath(o.tokenFile, "api.token"), apiServer->url(), http.token, error)) {
+            err << "cutenes-server: " << error << "\n";
+            return kExitBind;
+        }
+        err << "cutenes-server " << coreVersionString() << ": API at " << apiServer->url()
+            << "; token file " << apiToken.path().string() << std::endl;
     }
-    const std::filesystem::path tokenFile = o.tokenFile.empty()
-        ? api::token::defaultDirectory() / "api.token"
-        : std::filesystem::path(o.tokenFile);
-    if (!api::token::writeFile(tokenFile, server.url(), http.token, error)) {
-        err << "cutenes-server: " << error << "\n";
-        return kExitBind;
+    if (o.mcpPort) {
+        mcp::McpHttpConfig http;
+        http.bindAddress = o.bind;
+        http.port = *o.mcpPort;
+        http.token = api::token::generate();
+        if (http.token.empty()) {
+            err << "cutenes-server: the OS random source failed\n";
+            return kExitBind;
+        }
+        mcpServer = std::make_unique<mcp::McpHttpServer>(mcp, http);
+        if (!mcpServer->start(error)
+            || !mcpToken.write(tokenPath(o.mcpTokenFile, "mcp.token"), mcpServer->url(), http.token, error)) {
+            err << "cutenes-server: " << error << "\n";
+            return kExitBind;
+        }
+        err << "cutenes-server " << coreVersionString() << ": MCP at " << mcpServer->url()
+            << "; token file " << mcpToken.path().string() << std::endl;
     }
-    if (!api::isLoopbackHost(o.bind)) {
+    if ((apiServer || mcpServer) && !api::isLoopbackHost(o.bind)) {
         err << "cutenes-server: warning: listening on " << o.bind
             << ", reachable from the network; the token is the only protection\n";
     }
-    // The token file's location, never the token (FR-024).
-    err << "cutenes-server " << coreVersionString() << ": API at " << server.url()
-        << "; token file " << tokenFile.string() << std::endl;
 
-    while (!stop.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    if (stdio) {
+        err << "cutenes-server " << coreVersionString() << ": MCP on stdio" << std::endl;
+        // Ends at end of input (the client's shutdown) or on a signal.
+        mcp::serveStdio(mcp, in, out, stop);
+    } else {
+        while (!stop.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
     }
-    server.stop();
-    std::error_code ec;
-    std::filesystem::remove(tokenFile, ec); // removed on clean exit
+    if (mcpServer) mcpServer->stop();
+    if (apiServer) apiServer->stop();
     return kExitOk;
 }
 

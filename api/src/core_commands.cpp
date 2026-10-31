@@ -346,6 +346,9 @@ void registerRunControl(Registry& r)
                     return Result::fail("Cancelled", "the run was cancelled at a frame boundary",
                         {{"framesRun", i}});
                 }
+                if (ctx.progress) {
+                    ctx.progress(i, frames);
+                }
                 if (script.empty()) {
                     st.machine.frameAdvance();
                 } else {

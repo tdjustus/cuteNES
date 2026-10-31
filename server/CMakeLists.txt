@@ -3,7 +3,7 @@
 
 add_library(cutenes-server-lib STATIC server.cpp)
 target_include_directories(cutenes-server-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(cutenes-server-lib PUBLIC cutenes-api)
+target_link_libraries(cutenes-server-lib PUBLIC cutenes-api cutenes-mcp)
 
 add_executable(cutenes-server main.cpp)
 target_link_libraries(cutenes-server PRIVATE cutenes-server-lib)

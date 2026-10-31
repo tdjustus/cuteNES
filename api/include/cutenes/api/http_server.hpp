@@ -8,6 +8,7 @@
 #include <cutenes/api/session.hpp>
 
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace cutenes::api {
@@ -45,5 +46,17 @@ private:
 
 // "127.0.0.1", "::1" and "localhost" (any 127.0.0.0/8 address too).
 bool isLoopbackHost(const std::string& host);
+
+// The checks every HTTP listener makes before routing (research R11, the
+// API and MCP alike): 403 for a non-loopback Host on a loopback listener
+// (DNS rebinding) or a foreign Origin, 401 for a missing or wrong bearer
+// token. Status 0 lets the request through.
+struct AccessDecision {
+    int status = 0;
+    std::string message;
+};
+AccessDecision checkAccess(const std::string& bindAddress, const std::string& hostHeader,
+    const std::optional<std::string>& origin, const std::string& authorization,
+    const std::string& token);
 
 } // namespace cutenes::api

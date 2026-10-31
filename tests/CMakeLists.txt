@@ -197,4 +197,5 @@ register_playtests(
 # cutenes-api tests (feature 002), label "api".
 if(CUTENES_BUILD_API)
     add_subdirectory(api)
+    add_subdirectory(mcp)
 endif()

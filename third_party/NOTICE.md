@@ -65,8 +65,23 @@ constitution's licensing rules (research.md D11).
   `f03bdb0bee4911d6db0335bc103f0f441ae70c527e993c1f4b3f177586b042d3`,
   pinned in `api/CMakeLists.txt`. Only the header is used (no OpenSSL)
 - **License**: MIT
-- **Used by**: the API HTTP listener, its tests, and later the MCP
-  Streamable HTTP listener and the `--attach` bridge
+- **Used by**: the API HTTP listener, the MCP Streamable HTTP listener,
+  their tests, and later the `--attach` bridge
+
+## third_party/mcp-schema — Model Context Protocol schema.json (two revisions)
+
+- **Origin**: https://github.com/modelcontextprotocol/modelcontextprotocol,
+  `schema/<rev>/schema.json` at the release tags `2025-11-25` and
+  `2026-07-28`
+- **Contents**: `2025-11-25/schema.json` (SHA-256
+  `1ffe4c5577974012f5fa02af14ea88df4b7146679df1abaaad497c8d9230ca8a`) and
+  `2026-07-28/schema.json` (SHA-256
+  `ef70b61f99b6d2e5e3b46863822eab08dff6a45bedc7a08914e0e5b133f40203`), and
+  the repository's `LICENSE` from the `2026-07-28` tag
+- **License**: Apache-2.0, or MIT for contributions not yet relicensed (the
+  project's licensing transition, stated in the vendored `LICENSE`)
+- **Used by**: the `mcp` tests only (the release gate "MCP schema
+  validates"). Nothing ships with it
 
 ## No other third-party code is redistributed in this repository.
 
