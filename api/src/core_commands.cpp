@@ -415,8 +415,11 @@ void registerInput(Registry& r)
     addCommand(r, "core.set_controller", "Replace the buttons held on a port",
         s::object({{"port", port}, {"buttons", s::buttons()}}, {"port", "buttons"}), resultSchema(),
         true, false, [](CallContext& ctx, const Json& args) {
-            state(ctx).machine.setController(args["port"] == 1 ? Port::One : Port::Two,
-                parseButtons(args["buttons"]));
+            auto& st = state(ctx);
+            const Port target = args["port"] == 1 ? Port::One : Port::Two;
+            // Combined with what a human holds in the GUI (research R3).
+            st.automationInput[target == Port::One ? 0 : 1] = parseButtons(args["buttons"]);
+            st.applyInput(target);
             return Result::ok();
         });
 

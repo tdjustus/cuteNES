@@ -27,14 +27,32 @@ set(SDL_UNIX_CONSOLE_BUILD ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(SDL3)
 
 add_library(cutenes-qt STATIC
-    src/media_runtime.cpp)
+    src/audio_output.cpp
+    src/emulation_view.cpp
+    src/frame_clock.cpp
+    src/frame_mailbox.cpp
+    src/input_mapper.cpp
+    src/media_runtime.cpp
+    src/viewport.cpp
+    # AUTOMOC only scans headers listed as sources.
+    include/cutenes/qt/emulation_view.hpp)
 add_library(cutenes-qt::cutenes-qt ALIAS cutenes-qt)
 target_include_directories(cutenes-qt PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 target_link_libraries(cutenes-qt
     PUBLIC cutenes-api Qt6::Widgets
-    PRIVATE SDL3::SDL3-static)
+    PRIVATE SDL3::SDL3-static Qt6::GuiPrivate)
 set_target_properties(cutenes-qt PROPERTIES AUTOMOC ON)
+if(WIN32)
+    target_link_libraries(cutenes-qt PRIVATE winmm) # timeBeginPeriod
+endif()
+
+# The view's shaders, compiled by qsb at build time to SPIR-V, GLSL, HLSL
+# and MSL (research R2). qsb is GPL-3.0; its output is not covered (R1).
+qt_add_shaders(cutenes-qt cutenes_qt_shaders
+    PREFIX /cutenes
+    FILES src/shaders/view.vert src/shaders/view.frag
+    BASE src)
 
 if(MSVC)
     target_compile_options(cutenes-qt PRIVATE /permissive- /W4 /WX)

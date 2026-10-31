@@ -58,6 +58,26 @@ public:
     Registry& registry();
     std::string mode() const;
 
+    // Real-time play, for the GUI (feature 003, research R3). Off by
+    // default, so a headless session never runs frames on its own.
+    //
+    // While it is on and the machine is Running, the emulation thread runs
+    // one frame per frame requested, between queued commands. The host
+    // requests frames from its clock (a display refresh or a timer). Frames
+    // requested while the machine is not Running are dropped, and at most
+    // twice the latest request is ever pending, so a stall never becomes a
+    // burst. All four calls are safe from any thread.
+    void setRealtime(bool on);
+    void requestFrames(std::uint32_t frames = 1);
+    // The buttons a human holds on `port`, applied at the start of each
+    // real-time frame, combined (OR) with the last core.set_controller
+    // value. A scripted core.run_frames ignores them (002 FR-019).
+    void setLiveInput(Port port, ButtonSet buttons);
+    // Extra sinks that receive every frame and every audio chunk the
+    // machine produces, after the session's own capture. They run on the
+    // emulation thread and must not block; null removes them.
+    void setMediaSinks(IVideoSink* video, IAudioSink* audio);
+
     // Event subscribers (API SSE, MCP list-changed, the host). Callbacks run
     // on the emulation thread and must not block.
     int subscribe(std::function<void(const Event&)> listener);

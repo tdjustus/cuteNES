@@ -4,6 +4,7 @@
 // gui.* command).
 
 #include "about_dialog.hpp"
+#include "gui_support.hpp"
 #include "mainwindow.hpp"
 
 #include <cutenes/api/registry.hpp>
@@ -72,9 +73,11 @@ TEST(GuiSkeleton, AboutShowsTheVersionsAndTheLicenses)
 {
     MainWindow w;
     actionFor(w.menu(QStringLiteral("menuHelp")), "gui.show_about")->trigger();
-    auto* dialog = w.findChild<AboutDialog*>(QStringLiteral("aboutDialog"));
-    ASSERT_NE(dialog, nullptr);
-    EXPECT_TRUE(dialog->isVisible()); // non-modal: trigger() returned while it is open
+    AboutDialog* dialog = nullptr;
+    ASSERT_TRUE(cutenes::test::waitUntil([&] {
+        return (dialog = w.findChild<AboutDialog*>(QStringLiteral("aboutDialog"))) != nullptr;
+    }));
+    EXPECT_TRUE(dialog->isVisible()); // non-modal: the command returned while it is open
 
     const QString versions = dialog->findChild<QLabel*>(QStringLiteral("versions"))->text();
     EXPECT_TRUE(versions.contains(QStringLiteral(CUTENES_APP_VERSION)));
@@ -225,19 +228,5 @@ TEST(GuiMenus, DefaultShortcutsFollowTheContract)
         const QAction* a = actionWith(w, c.command, c.arg, c.value);
         ASSERT_NE(a, nullptr) << c.command;
         EXPECT_EQ(a->shortcut(), c.key) << c.command << " " << a->text().toStdString();
-    }
-}
-
-// Until its phase lands, an item is present but disabled (contract
-// "Conventions"); G0 implements only Exit and About.
-TEST(GuiMenus, OnlyImplementedItemsAreEnabled)
-{
-    MainWindow w;
-    for (QAction* a : w.menuBar()->findChildren<QAction*>()) {
-        const QString command = a->property("command").toString();
-        if (command.isEmpty()) continue;
-        const bool implemented = command == QLatin1String("gui.exit")
-            || command == QLatin1String("gui.show_about");
-        EXPECT_EQ(a->isEnabled(), implemented) << command.toStdString();
     }
 }

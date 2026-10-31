@@ -8,6 +8,8 @@
 
 #include "media.hpp"
 
+#include <array>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -38,6 +40,25 @@ struct Slot {
     std::uint64_t masterCycle = 0;
 };
 
+// The machine's sinks: the session's own capture, then the host's sinks
+// when it has set them (Session::setMediaSinks).
+struct MediaTee final : IVideoSink, IAudioSink {
+    media::FrameCapture* capture = nullptr;
+    media::AudioRing* ring = nullptr;
+    IVideoSink* hostVideo = nullptr; // emulation thread only
+    IAudioSink* hostAudio = nullptr;
+    void onFrame(const VideoFrame& frame) override
+    {
+        capture->onFrame(frame);
+        if (hostVideo) hostVideo->onFrame(frame);
+    }
+    void onSamples(const std::int16_t* pcm, std::size_t count, std::uint64_t start) override
+    {
+        ring->onSamples(pcm, count, start);
+        if (hostAudio) hostAudio->onSamples(pcm, count, start);
+    }
+};
+
 struct Session::Impl {
     explicit Impl(SessionConfig c);
 
@@ -49,7 +70,17 @@ struct Session::Impl {
     Registry registry;
     media::FrameCapture frame;
     media::AudioRing audio;
+    MediaTee tee;
     bool pausedByAutomation = false;
+
+    // Real-time play (Session::setRealtime, research R3).
+    std::atomic<bool> realtime{false};
+    std::uint32_t pendingFrames = 0; // guarded by queueMutex
+    std::array<std::atomic<std::uint8_t>, 2> liveInput{};
+    std::array<ButtonSet, 2> automationInput{}; // the last core.set_controller
+    // Sets the port to automation's buttons combined with the live ones.
+    void applyInput(Port port);
+    void runRealtimeFrame();
 
     std::map<std::string, Blob> blobs;
     std::uint64_t nextBlob = 1;

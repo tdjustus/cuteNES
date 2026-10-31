@@ -2,6 +2,7 @@
 
 #include <cutenes/api/schema.hpp>
 
+#include <algorithm>
 #include <set>
 
 namespace cutenes::api {
@@ -98,15 +99,41 @@ void Session::Impl::loop()
         Job job;
         {
             std::unique_lock lock(queueMutex);
-            queueCv.wait(lock, [&] { return stopping || !queue.empty(); });
+            queueCv.wait(lock, [&] { return stopping || !queue.empty() || pendingFrames > 0; });
+            // Commands first, so play never starves them (FR-007).
             if (queue.empty()) {
-                return; // stopping, and every queued call has been failed
+                if (stopping) {
+                    return; // every queued call has been failed
+                }
+                --pendingFrames;
+                lock.unlock();
+                runRealtimeFrame();
+                continue;
             }
             job = std::move(queue.front());
             queue.pop_front();
         }
         job.done.set_value(job.run());
     }
+}
+
+void Session::Impl::applyInput(Port port)
+{
+    const std::size_t i = port == Port::One ? 0 : 1;
+    machine.setController(port, automationInput[i] | ButtonSet(liveInput[i].load()));
+}
+
+void Session::Impl::runRealtimeFrame()
+{
+    if (!realtime.load() || machine.runState() != RunState::Running) {
+        std::lock_guard lock(queueMutex);
+        pendingFrames = 0; // nothing plays while paused; don't save them up
+        return;
+    }
+    applyInput(Port::One);
+    applyInput(Port::Two);
+    machine.runFrames(1);
+    emitFrame();
 }
 
 std::future<Result> Session::Impl::post(std::function<Result()> run)
@@ -218,8 +245,10 @@ Session::Session(SessionConfig config)
     : m_impl(std::make_unique<Impl>(std::move(config)))
 {
     auto& impl = *m_impl;
-    impl.machine.setVideoSink(&impl.frame);
-    impl.machine.setAudioSink(&impl.audio);
+    impl.tee.capture = &impl.frame;
+    impl.tee.ring = &impl.audio;
+    impl.machine.setVideoSink(&impl.tee);
+    impl.machine.setAudioSink(&impl.tee);
     registerCoreCommands(impl.registry);
     registerSessionCommands(impl.registry);
     impl.thread = std::thread([this] {
@@ -248,6 +277,46 @@ std::future<Result> Session::submit(const std::string& name, const Json& args,
     return m_impl->post([this, name, args, cancel, progress] {
         return m_impl->dispatch(*this, name, args, cancel, progress);
     });
+}
+
+void Session::setRealtime(bool on)
+{
+    m_impl->realtime.store(on);
+    if (!on) {
+        std::lock_guard lock(m_impl->queueMutex);
+        m_impl->pendingFrames = 0;
+    }
+}
+
+void Session::requestFrames(std::uint32_t frames)
+{
+    auto& impl = *m_impl;
+    if (!impl.realtime.load() || frames == 0) {
+        return;
+    }
+    std::lock_guard lock(impl.queueMutex);
+    impl.pendingFrames = std::min(impl.pendingFrames + frames, 2 * frames);
+    impl.queueCv.notify_one();
+}
+
+void Session::setLiveInput(Port port, ButtonSet buttons)
+{
+    m_impl->liveInput[port == Port::One ? 0 : 1].store(
+        static_cast<std::uint8_t>(buttons.to_ulong()));
+}
+
+void Session::setMediaSinks(IVideoSink* video, IAudioSink* audio)
+{
+    auto set = [this, video, audio] {
+        m_impl->tee.hostVideo = video;
+        m_impl->tee.hostAudio = audio;
+        return Result::ok();
+    };
+    if (onEmulationThread()) {
+        set();
+    } else {
+        m_impl->post(set).wait();
+    }
 }
 
 Result Session::call(const std::string& name, const Json& args)
