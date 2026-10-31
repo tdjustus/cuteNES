@@ -48,7 +48,13 @@ Conventions:
 | Exit † | `gui.exit` | | Ctrl+Q | |
 
 `gui.list_slots` (no menu item; it backs the slot submenus' labels) returns
-each slot's time and thumbnail blob. It is listed under "Queries" below.
+each slot's time and thumbnail file. It is listed under "Queries" below.
+
+Loading a slot or a state file keeps the state it replaced, for one level of
+Undo Load State. A rejected state changes nothing, Undo included. An empty
+slot, or nothing to undo, fails with `NotFound`, which the GUI shows as a
+status message rather than a dialog. Saving and loading confirm with a
+status message.
 
 ## Emulation
 
@@ -163,7 +169,7 @@ Each group's keys are an enum in its schema (data-model.md "Settings").
 | Command | Returns |
 |---|---|
 | `gui.state` | Window state: library or game, fullscreen, scale, speed, fast-forward, rewind, movie status, selected slot, open windows |
-| `gui.list_slots` | For each slot 1-10: empty, or time, core version and thumbnail (PNG blob id) |
+| `gui.list_slots` | For each slot 1-10: `empty`, or `savedAt` (ISO 8601, UTC), `size`, and the `state` and `thumbnail` file paths; and the game's `selectedSlot` |
 | `gui.list_recent` | Recent games with path, identity and whether the file exists |
 | `gui.library_list` | The browser's entries (data-model "LibraryEntry"). In GUI mode `session.library_list` returns the same (FR-074) |
 

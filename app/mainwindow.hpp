@@ -99,6 +99,8 @@ public slots:
 signals:
     // A command the user started failed (after it was shown).
     void commandFailed(const QString& name, const QString& message);
+    // A short confirmation was shown ("State saved to slot 3").
+    void messageShown(const QString& text);
     // A warning was shown to the user (a battery save set aside, …).
     void warningShown(const QString& message);
     // Open Library Folder ran (whether or not the file manager was started).
@@ -113,6 +115,8 @@ protected:
 
 private:
     // GuiHost::Window, called on the emulation thread.
+    void showStateFileDialog(bool save) override;
+    void showMessage(const QString& text) override;
     void showLibrary(const QString& select, bool paused) override;
     void showSettings(const QString& page) override;
     void openLibraryFolder() override;
@@ -128,6 +132,7 @@ private:
     void createMenus();
     void wireActions();
     void rebuildRecentMenu();
+    void updateSlotMenus(); // GUI thread: each slot's time and thumbnail
     void setRunState(const QString& runState);    // GUI thread
     void showGame();
     void returnToGame();
@@ -151,6 +156,9 @@ private:
     LibraryIndex* m_index = nullptr;
     QMenu* m_recentMenu = nullptr;
     QAction* m_pauseAction = nullptr;
+    QMenu* m_saveStateMenu = nullptr;
+    QMenu* m_loadStateMenu = nullptr;
+    QMenu* m_selectSlotMenu = nullptr;
     QPointer<SettingsDialog> m_settingsDialog;
     std::unique_ptr<api::Session> m_session;
     std::unique_ptr<qt::FrameClock> m_clock;

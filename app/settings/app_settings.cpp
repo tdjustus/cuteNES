@@ -14,6 +14,7 @@ const QString kLibraryRoot = QStringLiteral("library/root");
 const QString kRecent = QStringLiteral("recent/paths");
 const QString kRomFolders = QStringLiteral("library/romFolders");
 const QString kPlayed = QStringLiteral("played/");
+const QString kSlot = QStringLiteral("slot/");
 const QString kSettingsPage = QStringLiteral("window/settingsPage");
 
 } // namespace
@@ -93,6 +94,19 @@ void AppSettings::setLastPlayed(const QString& sha1, const QDateTime& when)
 {
     std::lock_guard lock(m_mutex);
     m_settings.setValue(kPlayed + sha1, when.toUTC());
+}
+
+int AppSettings::selectedSlot(const QString& sha1) const
+{
+    std::lock_guard lock(m_mutex);
+    const int slot = m_settings.value(kSlot + sha1, 1).toInt();
+    return slot >= 1 && slot <= 10 ? slot : 1;
+}
+
+void AppSettings::setSelectedSlot(const QString& sha1, int slot)
+{
+    std::lock_guard lock(m_mutex);
+    m_settings.setValue(kSlot + sha1, slot);
 }
 
 QString AppSettings::lastSettingsPage() const

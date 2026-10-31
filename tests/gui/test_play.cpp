@@ -71,14 +71,14 @@ int statusByte(MainWindow& w, int addr)
 
 } // namespace
 
-// G1 and G2's commands that need no game; Settings shows only its Library
-// page so far, and Clear List needs a recent game.
+// The commands implemented so far that need no game; Settings shows only
+// its Library page so far, and Clear List needs a recent game.
 TEST(GuiPlay, WithoutAGameOnlyTheImplementedNonGameActionsAreEnabled)
 {
     MainWindow w(windowOptions());
     const QStringList noGame = {QStringLiteral("gui.open_rom"), QStringLiteral("gui.exit"),
         QStringLiteral("gui.show_about"), QStringLiteral("gui.show_library"),
-        QStringLiteral("gui.open_library_folder")};
+        QStringLiteral("gui.open_library_folder"), QStringLiteral("gui.select_slot")};
     for (QAction* a : w.menuBar()->findChildren<QAction*>()) {
         const QString command = a->property("command").toString();
         if (command.isEmpty()) continue;
@@ -126,12 +126,16 @@ TEST(GuiPlay, TheViewShowsTheCoresFrame)
     w.view()->takeFrame(); // drain to the last frame produced
 
     const Json screen = call(w, "core.screen", {{"format", "raw"}});
-    const Json blob = call(w, "session.blob_read", {{"blobId", screen["blobId"]}, {"offset", 0}, {"length", 61440}});
-    const QByteArray raw = QByteArray::fromBase64(QByteArray::fromStdString(blob["bytes"].get<std::string>()));
-    ASSERT_EQ(raw.size(), 61440);
+    QByteArray raw; // 256x240 XRGB8888: 245760 bytes, read in 64 KiB parts
+    for (bool eof = false; !eof;) {
+        const Json part = call(w, "session.blob_read", {{"blobId", screen["blobId"]}, {"offset", raw.size()}, {"length", 65536}});
+        raw += QByteArray::fromBase64(QByteArray::fromStdString(part["bytes"].get<std::string>()));
+        eof = part["eof"].get<bool>();
+    }
     const auto& shown = w.view()->shownPixels();
     ASSERT_EQ(shown.size(), 256u * 240u);
-    EXPECT_EQ(std::memcmp(shown.data(), raw.constData(), 61440), 0);
+    ASSERT_EQ(raw.size(), static_cast<qsizetype>(shown.size() * sizeof(std::uint32_t)));
+    EXPECT_EQ(std::memcmp(shown.data(), raw.constData(), static_cast<std::size_t>(raw.size())), 0);
 }
 
 TEST(GuiPlay, PauseResetAndPowerCycle)
@@ -179,7 +183,7 @@ TEST(GuiPlay, AnInvalidRomShowsWhyAndKeepsTheRunningGame)
 
     const Result missing = w.session().call("gui.open_rom", {{"path", dir.filePath(QStringLiteral("none.nes")).toStdString()}});
     ASSERT_TRUE(missing.isError());
-    EXPECT_EQ(missing.error->name, "InvalidArgument");
+    EXPECT_EQ(missing.error->name, "InvalidArguments");
 }
 
 TEST(GuiPlay, ClosingTheGameClearsTheViewAndDisablesGameActions)

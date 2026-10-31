@@ -10,6 +10,7 @@
 #include "library/library.hpp"
 #include "library/library_index.hpp"
 #include "persistence/battery_saver.hpp"
+#include "persistence/state_slots.hpp"
 
 #include <cutenes/api/host.hpp>
 #include <cutenes/api/registry.hpp>
@@ -19,6 +20,8 @@
 #include <QVector>
 
 #include <atomic>
+#include <mutex>
+#include <optional>
 #include <string>
 
 namespace cutenes::app {
@@ -34,6 +37,10 @@ public:
     public:
         virtual ~Window() = default;
         virtual void showOpenRomDialog() = 0;
+        // Save State to File… (save) or Load State from File… without a path.
+        virtual void showStateFileDialog(bool save) = 0;
+        // A short confirmation for the user ("State saved to slot 3").
+        virtual void showMessage(const QString& text) = 0;
         // select: a path or empty; paused: the command paused a running game.
         virtual void showLibrary(const QString& select, bool paused) = 0;
         virtual void showSettings(const QString& page) = 0;
@@ -55,6 +62,10 @@ public:
     // The session hosting these commands, once it exists.
     void attach(api::Session& session) { m_session = &session; }
 
+    // The open game's save-state slots (any thread; empty without a game).
+    StateSlots stateSlots() const;
+    int selectedSlot() const { return m_selectedSlot.load(); }
+
     std::string mode() const override { return "gui"; }
     void registerCommands(api::Registry& registry) override;
     void onSessionEvent(const api::Event& event) override;
@@ -65,12 +76,22 @@ private:
     api::Result setLibraryRoot(api::CallContext& ctx, const QString& root);
     api::Result addRomFolder(const QString& path);
     api::Result removeRomFolder(const QString& path);
+    api::Result saveState(api::CallContext& ctx, int slot);
+    api::Result loadState(api::CallContext& ctx, int slot);
+    // Loads `state`, keeping what it replaced for Undo Load State.
+    api::Result loadStateBytes(api::CallContext& ctx, const QByteArray& state, bool keepUndo = true);
+    api::Result selectSlot(int slot);
 
     Window& m_window;
     AppSettings& m_settings;
     BatterySaver& m_battery;
     std::atomic<api::Session*> m_session{nullptr}; // set on the GUI thread, read on the emulation thread
     bool m_gameOpen = false; // emulation thread
+    GameIdentity m_identity; // emulation thread
+    mutable std::mutex m_slotsMutex;
+    StateSlots m_slots; // under m_slotsMutex
+    std::atomic<int> m_selectedSlot{1};
+    std::optional<QByteArray> m_undoState; // emulation thread; one level (data-model "StateSlot")
 };
 
 } // namespace cutenes::app

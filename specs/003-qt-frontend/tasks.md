@@ -142,16 +142,15 @@ Real-time mode in `cutenes-api` (R3), test-first:
 
 ## Phase G3: Menus, states, servers (branch `feature/gui-menus`)
 
-- [ ] G030 [US4] Tests first (A5, A6):
-  - slot save and load give the identical hash;
-  - Undo Load works;
-  - rewind 120 frames lands on the matching hash;
-  - delta and RLE round trips.
-- [ ] G031 [US4] Slots with thumbnails, Select Slot, Quick Save and Load,
-  Undo Load State, and states to and from files. Measure state sizes and set
-  the rewind budget so the default holds at least 30 s.
-- [ ] G032 [US4] Rewind (hold), fast-forward (hold and toggle), speed, Frame
-  Advance, and the audio policy during fast-forward.
+- [x] G030 [US4] Tests first (A5): slot save and load give the identical
+  hash, and Undo Load works.
+- [x] G031 [US4] Slots with thumbnails, Select Slot, Quick Save and Load,
+  Undo Load State, and states to and from files.
+- [ ] G032 [US4] Tests first (A6): rewind 120 frames lands on the matching
+  hash, and delta and RLE round trips. Then rewind (hold), fast-forward
+  (hold and toggle), speed, Frame Advance, and the audio policy during
+  fast-forward. Measure state sizes and set the rewind budget so the default
+  holds at least 30 s.
 - [ ] G033 [P] [US3] Screenshot (F12), the OSD message layer, Show FPS, and
   Open Library Folder. Import and export battery saves.
 - [ ] G034 [US3] The complete menu bar per `contracts/menus-and-commands.md`,

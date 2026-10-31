@@ -31,6 +31,10 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QStandardPaths>
+#include <QStatusBar>
+#include <QLocale>
+#include <QIcon>
+#include <QPixmap>
 #include <QVariant>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -101,12 +105,20 @@ const QStringList kImplemented = {
     QStringLiteral("gui.power_cycle"), QStringLiteral("gui.exit"),
     QStringLiteral("gui.show_about"), QStringLiteral("gui.show_library"),
     QStringLiteral("gui.open_library_folder"), QStringLiteral("gui.clear_recent"),
-    QStringLiteral("gui.show_settings"),
+    QStringLiteral("gui.show_settings"), QStringLiteral("gui.save_state"),
+    QStringLiteral("gui.load_state"), QStringLiteral("gui.quick_save"),
+    QStringLiteral("gui.quick_load"), QStringLiteral("gui.select_slot"),
+    QStringLiteral("gui.undo_load_state"), QStringLiteral("gui.save_state_file"),
+    QStringLiteral("gui.load_state_file"),
 };
 const QStringList kSettingsPages = {QStringLiteral("library")};
 const QStringList kNeedGame = {
     QStringLiteral("gui.close_game"), QStringLiteral("gui.toggle_pause"),
     QStringLiteral("gui.reset"), QStringLiteral("gui.power_cycle"),
+    QStringLiteral("gui.save_state"), QStringLiteral("gui.load_state"),
+    QStringLiteral("gui.quick_save"), QStringLiteral("gui.quick_load"),
+    QStringLiteral("gui.undo_load_state"), QStringLiteral("gui.save_state_file"),
+    QStringLiteral("gui.load_state_file"),
 };
 
 api::Json toJson(const QVariantMap& map)
@@ -286,17 +298,24 @@ void MainWindow::createMenus()
     file.item(tr("Game &Library"), "gui.show_library", QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O));
     file.item(tr("&Close Game"), "gui.close_game", QKeySequence(Qt::CTRL | Qt::Key_W));
     file.separator();
-    file.submenu(tr("&Save State")).items(slotList, "gui.save_state", "slot", slotText,
-        functionKey(Qt::ShiftModifier));
-    file.submenu(tr("Load S&tate")).items(slotList, "gui.load_state", "slot", slotText,
-        functionKey(Qt::NoModifier));
+    MenuBuilder saveState = file.submenu(tr("&Save State"));
+    saveState.items(slotList, "gui.save_state", "slot", slotText, functionKey(Qt::ShiftModifier));
+    m_saveStateMenu = saveState.menu();
+    MenuBuilder loadState = file.submenu(tr("Load S&tate"));
+    loadState.items(slotList, "gui.load_state", "slot", slotText, functionKey(Qt::NoModifier));
+    m_loadStateMenu = loadState.menu();
     file.item(tr("&Quick Save"), "gui.quick_save", QKeySequence(Qt::CTRL | Qt::Key_S));
     file.item(tr("Quick &Load"), "gui.quick_load", QKeySequence(Qt::CTRL | Qt::Key_L));
-    file.submenu(tr("Select Slo&t")).items(slotList, "gui.select_slot", "slot", slotText,
-        [](const QVariant& slot) {
-            // Ctrl+1 … Ctrl+9, then Ctrl+0 for slot 10.
-            return QKeySequence(Qt::CTRL | static_cast<Qt::Key>(Qt::Key_0 + slot.toInt() % 10));
-        });
+    MenuBuilder selectSlot = file.submenu(tr("Select Slo&t"));
+    selectSlot.items(slotList, "gui.select_slot", "slot", slotText, [](const QVariant& slot) {
+        // Ctrl+1 … Ctrl+9, then Ctrl+0 for slot 10.
+        return QKeySequence(Qt::CTRL | static_cast<Qt::Key>(Qt::Key_0 + slot.toInt() % 10));
+    });
+    m_selectSlotMenu = selectSlot.menu();
+    for (QAction* action : m_selectSlotMenu->actions()) action->setCheckable(true);
+    for (QMenu* slotMenu : {m_saveStateMenu, m_loadStateMenu, m_selectSlotMenu}) {
+        connect(slotMenu, &QMenu::aboutToShow, this, &MainWindow::updateSlotMenus);
+    }
     file.item(tr("&Undo Load State"), "gui.undo_load_state", QKeySequence(Qt::CTRL | Qt::Key_Z));
     file.item(tr("Save State to File…"), "gui.save_state_file");
     file.item(tr("Load State from File…"), "gui.load_state_file");
@@ -500,6 +519,15 @@ void MainWindow::showError(const QString& name, const api::Error& error)
     }
     if (error.data.contains("error") && error.data["error"].is_string()) {
         text += QStringLiteral(" (%1)").arg(QString::fromStdString(error.data["error"].get<std::string>()));
+    }
+    // An empty slot, or nothing to undo, is worth a note, not a dialog
+    // in the middle of play.
+    if (error.name == "NotFound" && (name == QLatin1String("gui.load_state") || name == QLatin1String("gui.quick_load")
+            || name == QLatin1String("gui.undo_load_state"))) {
+        statusBar()->showMessage(text, 3000);
+        emit messageShown(text);
+        emit commandFailed(name, text);
+        return;
     }
     auto* box = new QMessageBox(QMessageBox::Warning, QStringLiteral("cuteNES"), text, QMessageBox::Ok, this);
     box->setObjectName(QStringLiteral("commandError"));
@@ -709,6 +737,49 @@ void MainWindow::showOpenRomDialog()
             library().folder(Library::Folder::Roms), tr("NES ROMs (*.nes)"));
         if (!path.isEmpty()) openRom(path);
     }, Qt::QueuedConnection);
+}
+
+void MainWindow::showStateFileDialog(bool save)
+{
+    // Callable from any thread, like showOpenRomDialog.
+    QMetaObject::invokeMethod(this, [this, save] {
+        const QString folder = library().folder(Library::Folder::States);
+        const QString filter = tr("cuteNES states (*.state)");
+        const QString path = save ? QFileDialog::getSaveFileName(this, tr("Save State to File"), folder, filter)
+                                  : QFileDialog::getOpenFileName(this, tr("Load State from File"), folder, filter);
+        if (path.isEmpty()) return;
+        runCommand(save ? QStringLiteral("gui.save_state_file") : QStringLiteral("gui.load_state_file"),
+            {{QStringLiteral("path"), path}});
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::showMessage(const QString& text)
+{
+    QMetaObject::invokeMethod(this, [this, text] {
+        statusBar()->showMessage(text, 3000);
+        emit messageShown(text);
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::updateSlotMenus()
+{
+    const StateSlots gameSlots = m_host->stateSlots();
+    const int selected = m_host->selectedSlot();
+    const QLocale locale;
+    for (QMenu* menu : {m_saveStateMenu, m_loadStateMenu, m_selectSlotMenu}) {
+        for (QAction* action : menu->actions()) {
+            const int slot = action->property("commandArgs").toMap().value(QStringLiteral("slot")).toInt();
+            const StateSlots::Info info = gameSlots.info(slot);
+            QString text = slotText(slot);
+            if (gameSlots.isOpen()) {
+                text = info.empty ? tr("Slot %1 — Empty").arg(slot)
+                                  : tr("Slot %1 — %2").arg(slot).arg(locale.toString(info.savedAt, QLocale::ShortFormat));
+            }
+            action->setText(text);
+            action->setIcon(info.empty ? QIcon() : QIcon(QPixmap(info.thumbnailPath)));
+            if (action->isCheckable()) action->setChecked(slot == selected);
+        }
+    }
 }
 
 void MainWindow::openRom(const QString& path)
