@@ -54,6 +54,8 @@ jobs:
           - {os: windows-latest, buildtype: Release}
           # MSVC Debug keeps checked iterators and assertions.
           - {os: windows-latest, buildtype: Debug}
+    # Both Windows jobs build with MSVC (cl.exe). Without the developer
+    # environment, Ninja would pick up the runner's MinGW g++ instead (#74).
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -69,11 +71,25 @@ jobs:
           key: ${{ matrix.os }}-${{ matrix.buildtype }}
           variant: ${{ matrix.os == 'windows-latest' && 'sccache' || 'ccache' }}
 
+      - name: MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # Embedded (/Z7) debug info: sccache cannot cache MSVC's /Zi PDB writes.
       - name: Configure
         run: >-
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=${{ matrix.buildtype }}
+          -DCMAKE_CXX_COMPILER=${{ runner.os == 'Windows' && 'cl' || 'c++' }}
           -DCMAKE_CXX_COMPILER_LAUNCHER=${{ matrix.os == 'windows-latest' && 'sccache' || 'ccache' }}
+          -DCMAKE_POLICY_DEFAULT_CMP0141=NEW
+          -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+
+      # Fail fast if the Windows job ever falls back to another compiler.
+      - name: Check the Windows compiler is MSVC
+        if: runner.os == 'Windows'
+        shell: bash
+        run: grep -iE '^CMAKE_CXX_COMPILER:[A-Z]+=.*cl(\.exe)?$' build/CMakeCache.txt
 
       - name: Build
         run: cmake --build build
@@ -106,6 +122,8 @@ jobs:
 
   # Address + undefined-behavior sanitizers with assertions on. -O1 keeps
   # the instrumented run to minutes instead of the ~45 min of an -O0 build.
+  # _GLIBCXX_ASSERTIONS adds libstdc++'s bounds and iterator checks, the GCC
+  # counterpart of MSVC's checked iterators in the Windows Debug job.
   sanitize:
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
@@ -128,7 +146,7 @@ jobs:
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          "-DCMAKE_CXX_FLAGS=-O1 -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
+          "-DCMAKE_CXX_FLAGS=-O1 -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -D_GLIBCXX_ASSERTIONS"
 
       - name: Build
         run: cmake --build build

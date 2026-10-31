@@ -87,9 +87,10 @@ skip otherwise. Open core issues are listed in the milestone. The corpus, how ea
 the pinned-hash procedure are in [`docs/test-corpus.md`](docs/test-corpus.md).
 
 CI (`.github/workflows/build.yml`) runs on pull requests, `core-v*` tags and
-weekly: Release on Linux, macOS and Windows, a Windows Debug build, and an
-ASan/UBSan build (the fast groups on pull requests, everything on tags and
-weekly), plus a speed gate on the Linux job. A development machine runs the
+weekly: Release on Linux (GCC), macOS (AppleClang) and Windows (MSVC), an
+MSVC Debug build with checked iterators, and an ASan/UBSan build with
+libstdc++ assertions (the fast groups on pull requests, everything on tags
+and weekly), plus a speed gate on the Linux job. A development machine runs the
 core at roughly 7x real time; CI fails below 1x. Docs-only changes skip the
 build.
 
