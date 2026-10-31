@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <system_error>
 
@@ -29,6 +30,31 @@ namespace cutenes::api::token {
 namespace {
 
 constexpr std::size_t kTokenBytes = 32;
+
+// An environment variable, or nullopt when unset or empty. (MSVC deprecates
+// getenv; _dupenv_s is its replacement.)
+std::optional<std::string> env(const char* name)
+{
+#if defined(_WIN32)
+    char* value = nullptr;
+    std::size_t size = 0;
+    if (_dupenv_s(&value, &size, name) != 0 || value == nullptr) {
+        return std::nullopt;
+    }
+    std::string out = value;
+    std::free(value);
+#else
+    const char* value = std::getenv(name);
+    if (value == nullptr) {
+        return std::nullopt;
+    }
+    std::string out = value;
+#endif
+    if (out.empty()) {
+        return std::nullopt;
+    }
+    return out;
+}
 
 bool randomBytes(std::uint8_t* out, std::size_t size)
 {
@@ -124,18 +150,18 @@ std::filesystem::path defaultDirectory()
 {
     namespace fs = std::filesystem;
 #if defined(_WIN32)
-    if (const char* local = std::getenv("LOCALAPPDATA")) {
-        return fs::path(local) / "cutenes";
+    if (const auto local = env("LOCALAPPDATA")) {
+        return fs::path(*local) / "cutenes";
     }
     return fs::temp_directory_path() / "cutenes";
 #else
-    const char* home = std::getenv("HOME");
-    const fs::path base = home != nullptr ? fs::path(home) : fs::temp_directory_path();
+    const auto home = env("HOME");
+    const fs::path base = home ? fs::path(*home) : fs::temp_directory_path();
 #if defined(__APPLE__)
     return base / "Library" / "Application Support" / "cutenes";
 #else
-    if (const char* state = std::getenv("XDG_STATE_HOME"); state != nullptr && *state != '\0') {
-        return fs::path(state) / "cutenes";
+    if (const auto state = env("XDG_STATE_HOME")) {
+        return fs::path(*state) / "cutenes";
     }
     return base / ".local" / "state" / "cutenes";
 #endif

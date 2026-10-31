@@ -91,8 +91,9 @@ jobs:
         shell: bash
         run: grep -iE '^CMAKE_CXX_COMPILER:[A-Z]+=.*cl(\.exe)?$' build/CMakeCache.txt
 
+      # -k 0: report every compile error in one run, not just the first.
       - name: Build
-        run: cmake --build build
+        run: cmake --build build -- -k 0
 
       # -j: playtest entries and test ROMs are independent processes.
       # Debug builds are slow, so on pull requests they run only the fast
@@ -148,8 +149,9 @@ jobs:
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           "-DCMAKE_CXX_FLAGS=-O1 -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -D_GLIBCXX_ASSERTIONS"
 
+      # -k 0: report every compile error in one run, not just the first.
       - name: Build
-        run: cmake --build build
+        run: cmake --build build -- -k 0
 
       # Instrumented runs are ~5x slower: pull requests run the fast groups
       # (unit, tier1 incl. goldens, behavior, api: the threaded session code
