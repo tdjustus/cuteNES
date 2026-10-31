@@ -198,4 +198,8 @@ register_playtests(
 if(CUTENES_BUILD_API)
     add_subdirectory(api)
     add_subdirectory(mcp)
+    # Qt frontend tests (feature 003), label "gui", when the GUI is built.
+    if(TARGET cutenes-app-lib)
+        add_subdirectory(gui)
+    endif()
 endif()

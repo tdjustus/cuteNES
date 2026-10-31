@@ -32,38 +32,38 @@ met.
 
 ## Phase G0: Build and CI (branch `feature/gui-skeleton`)
 
-- [ ] G001 Root `CMakeLists.txt`:
+- [x] G001 Root `CMakeLists.txt`:
   - option `CUTENES_BUILD_GUI` (default ON when Qt 6.8+ is found, OFF
     otherwise, with a status message); when on, `add_subdirectory(qt)` and
     `add_subdirectory(app)`;
   - the core, api, mcp and server targets build without Qt as before.
-- [ ] G002 SDL 3.4.18 through pinned FetchContent (tag `release-3.4.18`):
+- [x] G002 SDL 3.4.18 through pinned FetchContent (tag `release-3.4.18`):
   - a static build with only the audio, gamepad and joystick subsystems, and
     video, render and GPU off;
   - add NOTICE.md entries for SDL3 (zlib) and Qt (LGPL-3.0), and the license
     texts under `third_party/`.
-- [ ] G003 [P] `qt/CMakeLists.txt`: the `cutenes-qt` library (Qt6::Widgets,
+- [x] G003 [P] `qt/CMakeLists.txt`: the `cutenes-qt` library (Qt6::Widgets,
   Qt6::Gui, SDL3 static, `cutenes-api`), with an export header and
   `include/cutenes/qt/` per `ui-embeddable-design.md`.
-- [ ] G004 [P] `app/CMakeLists.txt`: the `cutenes` executable, a
+- [x] G004 [P] `app/CMakeLists.txt`: the `cutenes` executable, a
   `MACOSX_BUNDLE` with an Info.plist declaring the `.nes` document type, and
   `WIN32_EXECUTABLE`.
-- [ ] G005 [US3] Test first, `tests/gui/test_skeleton.cpp` (label `gui`):
+- [x] G005 [US3] Test first, `tests/gui/test_skeleton.cpp` (label `gui`):
   - the main window constructs offscreen;
   - its title is "cuteNES";
   - Help > About exists and shows the application, core and surface
     versions.
-- [ ] G006 [US3] `app/main.cpp` and `app/mainwindow.*`: an empty main window,
+- [x] G006 [US3] `app/main.cpp` and `app/mainwindow.*`: an empty main window,
   a menu bar with the seven menus (empty except Help > About and File >
   Exit), and the About dialog with the license texts.
-- [ ] G007 CI (`.github/workflows/build.yml`):
+- [x] G007 CI (`.github/workflows/build.yml`):
   - `jurplel/install-qt-action@v4.4.1` installs Qt 6.8 (modules:
     qtshadertools) on all three OSes;
   - the path filter gains `qt/**` and `app/**`;
   - the fast groups gain `gui`;
   - the sanitize job builds without the GUI (`CUTENES_BUILD_GUI=OFF`) unless
     Qt is available there.
-- [ ] G008 README: build prerequisites for the GUI and how to run `cutenes`.
+- [x] G008 README: build prerequisites for the GUI and how to run `cutenes`.
 - [ ] G009 Manual checklist **M0**.
 
 ## Phase G1: Play a game (branch `feature/gui-play`)

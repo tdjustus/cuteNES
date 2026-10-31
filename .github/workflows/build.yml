@@ -37,6 +37,8 @@ jobs:
               - 'api/**'
               - 'mcp/**'
               - 'server/**'
+              - 'qt/**'
+              - 'app/**'
               - 'tests/**'
               - 'third_party/**'
               - 'CMakeLists.txt'
@@ -65,13 +67,30 @@ jobs:
 
       # Ninja from the OS package manager. Windows uses the copy that ships
       # with Visual Studio, on PATH once the MSVC environment is loaded.
-      - name: Install Ninja (Linux)
+      # Ninja, plus the headers SDL3 needs for real audio and gamepad
+      # backends on Linux (ALSA, PulseAudio, udev); without them it builds
+      # only its dummy drivers.
+      - name: Install Ninja and SDL3 build dependencies (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update -q && sudo apt-get install -y -q ninja-build
+        run: >-
+          sudo apt-get update -q && sudo apt-get install -y -q ninja-build
+          libasound2-dev libpulse-dev libudev-dev
 
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
         run: brew install ninja
+
+      # Qt for the GUI (feature 003). 6.8.3 is the oldest release the GUI
+      # supports (research R1), so CI checks that floor; ShaderTools is for
+      # the view's shaders. The action also installs Qt's Linux runtime
+      # dependencies and puts Qt's bin directory on PATH.
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4.4.1
+        with:
+          version: '6.8.3'
+          arch: ${{ runner.os == 'Windows' && 'win64_msvc2022_64' || '' }}
+          modules: qtshadertools
+          cache: true
 
       - name: Compiler cache
         uses: hendrikmuhs/ccache-action@v1.2.24
@@ -106,6 +125,7 @@ jobs:
           -DCMAKE_CXX_COMPILER_LAUNCHER=${{ matrix.os == 'windows-latest' && 'sccache' || 'ccache' }}
           -DCMAKE_POLICY_DEFAULT_CMP0141=NEW
           -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+          -DCUTENES_BUILD_GUI=ON
 
       # Fail fast if the Windows job ever falls back to another compiler.
       - name: Check the Windows compiler is MSVC
@@ -127,7 +147,7 @@ jobs:
 
       - name: Test (fast groups, Debug on pull requests)
         if: matrix.buildtype == 'Debug' && github.event_name == 'pull_request'
-        run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior|api|mcp" -LE known-failing
+        run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior|api|mcp|gui" -LE known-failing
 
       # Performance gate (constitution: no regression of real-time speed).
       # Shared runners are noisy, so CI fails only below 1.0x real-time; the
@@ -170,11 +190,14 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           "-DCMAKE_CXX_FLAGS=-O1 -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -D_GLIBCXX_ASSERTIONS"
+          -DCUTENES_BUILD_GUI=OFF
 
       # -k 0: report every compile error in one run, not just the first.
       - name: Build
         run: cmake --build build -- -k 0
 
+      # The GUI is not built here (no Qt on this job); its code is covered
+      # by the three-OS jobs and the MSVC Debug job.
       # Instrumented runs are ~5x slower: pull requests run the fast groups
       # (unit, tier1 incl. goldens, behavior, api: the threaded session code
       # runs under ASan/UBSan); tags and the weekly run

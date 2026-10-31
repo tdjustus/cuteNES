@@ -1,0 +1,13 @@
+# Qt frontend tests (specs/003-qt-frontend, tasks.md), label "gui". They run
+# offscreen with SDL's dummy audio driver, so CI needs no display or sound.
+
+add_executable(cutenes-gui-tests
+    gui_main.cpp
+    test_skeleton.cpp)
+target_link_libraries(cutenes-gui-tests PRIVATE cutenes-app-lib gtest)
+target_compile_definitions(cutenes-gui-tests PRIVATE
+    CUTENES_TEST_ROMS="${PROJECT_SOURCE_DIR}/tests/roms")
+
+gtest_discover_tests(cutenes-gui-tests
+    DISCOVERY_MODE PRE_TEST
+    PROPERTIES LABELS "gui")
