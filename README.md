@@ -3,16 +3,16 @@
 [![build](https://github.com/tdjustus/cuteNES/actions/workflows/build.yml/badge.svg)](https://github.com/tdjustus/cuteNES/actions/workflows/build.yml)
 
 An open-source, cross-platform NES emulator built on a hardware-accurate,
-headless, deterministic emulation core, with a planned MCP server so AI agents
-can connect to and drive the emulator.
+headless, deterministic emulation core, with an MCP server so AI agents can
+connect to and drive the emulator.
 
 - **Core** (`core/`): native C++20, no runtime dependencies, deterministic
   (the same ROM and inputs give byte-identical video and audio on every
   platform), validated against community test-ROM suites.
-- **Server** (`cutenes-server`, in progress): the core behind MCP, for AI
-  agents (stdio by default, or Streamable HTTP), and a local JSON-RPC API
-  ([`specs/002-ai-mcp-server`](specs/002-ai-mcp-server)). Usage docs arrive
-  with the feature's last phase.
+- **Server** (`cutenes-server`): the core behind MCP, for AI agents (stdio by
+  default, or Streamable HTTP), and a local JSON-RPC API for scripts
+  ([`specs/002-ai-mcp-server`](specs/002-ai-mcp-server)). See "Using the
+  server".
 - **Frontend** (planned, not started): a Qt 6 desktop app.
 - **Normative hardware reference**: the
   [NESdev NES Reference Guide](https://www.nesdev.org/wiki/NES_reference_guide).
@@ -23,7 +23,8 @@ The emulation core ([spec 001](specs/001-emulation-core/spec.md)) is
 feature-complete for the mappers below and is hardened toward version 1.0.
 What is left is tracked in the GitHub
 [1.0 milestone](https://github.com/tdjustus/cuteNES/milestone/1): a small
-number of timing edge cases, the MCP server and the Qt frontend. See
+number of timing edge cases, the Qt frontend (including the MCP server in GUI
+mode) and a second MCP client check. See
 "Testing" for what has actually been verified.
 
 | | Supported |
@@ -67,6 +68,98 @@ the CPU bus, PPU registers, OAM, palette, PRG-RAM and the whole PPU bus
 (pattern tables, nametables, palette). `Machine::memoryDump()` returns the
 same bytes without touching the filesystem. The layout is in the core
 contract.
+
+## Using the server
+
+`cutenes-server` (built at `build/server/cutenes-server`) puts the core
+behind MCP and a JSON-RPC API. One process holds one emulator session, and
+every client shares it. The headless catalog has 54 commands: `core.*` (the
+whole core API), `session.*` (status, save slots, blobs, debug dumps) and
+`api.*` (version and catalog).
+
+### MCP for AI agents (stdio)
+
+With no flags the server speaks MCP on stdin/stdout and opens no socket.
+Register it as a stdio server. In Claude Code:
+
+```bash
+claude mcp add cutenes -- /path/to/cutenes-server --library /path/to/roms
+```
+
+Or in any client's standard config:
+
+```json
+{ "mcpServers": { "cutenes": {
+    "command": "/path/to/cutenes-server",
+    "args": ["--library", "/path/to/roms"] } } }
+```
+
+`core.load_rom` takes paths relative to `--library` and rejects paths that
+leave it. Without `--library`, ROMs can only be uploaded as blobs.
+`core.screen` returns a PNG image block. The server serves MCP revisions
+2026-07-28 (`server/discover`) and 2025-11-25 (`initialize`). It has been
+checked with Claude Code (see
+[`quickstart.md`](specs/002-ai-mcp-server/quickstart.md)). The server exits
+at the end of its input, and calls still running stop at a frame boundary.
+
+### API for scripts (HTTP)
+
+```bash
+cutenes-server --library ~/roms --api-port 8765 --token-file ./api.token &
+TOKEN=$(jq -r .token api.token)
+rpc() { curl -s -H "Authorization: Bearer $TOKEN" localhost:8765/api/v1/rpc -d "$1"; }
+rpc '{"jsonrpc":"2.0","id":1,"method":"core.load_rom","params":{"path":"game.nes"}}'
+rpc '{"jsonrpc":"2.0","id":2,"method":"core.run_frames","params":{"frames":120,"script":[["Start"]]}}'
+rpc '{"jsonrpc":"2.0","id":3,"method":"core.peek","params":{"addr":24576,"length":16}}'
+rpc '{"jsonrpc":"2.0","id":4,"method":"api.catalog"}'   # every command with its JSON Schemas
+```
+
+The endpoint is JSON-RPC 2.0 at `POST /api/v1/rpc`, with batches allowed.
+`GET /api/v1/events` is a Server-Sent Events stream of state, frame and
+catalog changes. `--mcp-port N` also serves MCP over Streamable HTTP at
+`/mcp`, with its own token file (`--mcp-token-file`). Flags, errors and
+events are in
+[`contracts/transports.md`](specs/002-ai-mcp-server/contracts/transports.md).
+Every command is in
+[`contracts/command-catalog.md`](specs/002-ai-mcp-server/contracts/command-catalog.md).
+
+### Versioning
+
+The command surface has a `MAJOR.MINOR` version, currently 0.1. `api.version`
+and MCP's `serverInfo.version` report it.
+
+- Adding a command or an optional field bumps MINOR.
+- Removing or renaming anything, or changing a field's type or meaning,
+  bumps MAJOR.
+- The committed catalog `tests/api/catalog.golden.json` fails the build when
+  a schema changes without a version bump.
+
+Before 1.0, a MAJOR of 0 means anything may still change.
+
+### Security defaults
+
+- **No network listener unless asked for.** With no flags, MCP runs over
+  stdio only.
+- **Loopback only.** HTTP listeners bind to `127.0.0.1` unless `--bind ADDR`
+  is given.
+- **Per-launch bearer tokens.** Each listener has its own token, which every
+  request must carry (otherwise HTTP 401). The token file is JSON
+  (`{"url", "token"}`), readable only by its owner, and is removed on a clean
+  exit.
+  - Default location: `~/Library/Application Support/cutenes/` on macOS,
+    `$XDG_STATE_HOME/cutenes/` (or `~/.local/state/cutenes/`) on Linux, and
+    `%LOCALAPPDATA%\cutenes\` on Windows.
+  - Tokens are never logged.
+- **Host and Origin checks.** A non-loopback `Host` or a foreign `Origin` is
+  rejected with 403, which blocks DNS rebinding.
+- **Bounded transfers.**
+  - Reads are capped at 64 KiB per call and paged with `offset`/`length`.
+  - Larger data moves through blob handles.
+  - ROM paths cannot leave the library.
+
+The Qt GUI (planned) will run the same API and MCP endpoints behind settings
+toggles, both off by default. `cutenes-server --attach` relays a stdio-only
+client to it.
 
 ## Testing
 
