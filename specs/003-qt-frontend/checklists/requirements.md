@@ -35,7 +35,6 @@
   because the constitution (Principles IV and V) and feature 002 fix them. They
   are constraints, not design choices made here.
 - The defaults below were confirmed in the 2026-10-30 clarification session:
-
   - the default library location;
   - `.nes` only, with no archives;
   - Game Genie, region override and palettes counted as in-scope core
