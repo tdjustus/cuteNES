@@ -15,6 +15,11 @@ Conventions:
 - Shortcuts are the defaults, and all of them can be rebound (FR-022).
 - `Ctrl` is `Cmd` on macOS (Qt's standard mapping). On macOS the items
   marked † move to the application menu.
+- Every top-level menu keeps at least one item of its own on every platform.
+  macOS hides an empty menu, so a menu whose only items move to the
+  application menu would vanish.
+- Until its phase lands, an item is present but disabled, with the tooltip
+  "Coming in a later update" (tasks G034).
 - A command that opens a window returns once the window is shown. It never
   waits for the window to close (R11).
 - `slot` is 1-10.
@@ -56,7 +61,8 @@ each slot's time and thumbnail blob. It is listed under "Queries" below.
 | Fast Forward (hold) | `gui.set_fast_forward` | `on` | Tab (held) | ✓ |
 | Fast Forward (toggle) | `gui.toggle_fast_forward` | | Shift+Tab | ✓ |
 | Rewind (hold) | `gui.set_rewind` | `on` | Backspace (held) | ✓ |
-| Speed ▸ 25 % … 400 %, Unlimited | `gui.set_speed` | `percent` (25, 50, 75, 100, 150, 200, 300, 400) or `unlimited` | − / = (slower/faster) | |
+| Speed ▸ 25 % … 400 %, Unlimited | `gui.set_speed` | `percent` (25, 50, 75, 100, 150, 200, 300, 400) or `unlimited` | | |
+| Speed ▸ Slower / Faster | `gui.set_speed` | `step`: `slower` or `faster` (the next listed speed) | − / = | |
 | Region ▸ Automatic / NTSC / PAL | `gui.set_region` | `region`: `auto`, `ntsc`, `pal` (G6) | | |
 
 ## View
@@ -116,13 +122,14 @@ Register and memory edits use the existing `core.set_cpu` and
 
 | Item | Command | Arguments | Shortcut | Game |
 |---|---|---|---|---|
+| Settings… † | `gui.show_settings` | none (the last page shown) | Ctrl+, | |
 | Video… | `gui.show_settings` | `page`: `video` | | |
 | Audio… | `gui.show_settings` | `page`: `audio` | | |
 | Input… | `gui.show_settings` | `page`: `input` | | |
 | Hotkeys… | `gui.show_settings` | `page`: `hotkeys` | | |
 | Emulation… | `gui.show_settings` | `page`: `emulation` | | |
 | Library… | `gui.show_settings` | `page`: `library` | | |
-| Servers… † | `gui.show_settings` | `page`: `servers` | Ctrl+, | |
+| Servers… | `gui.show_settings` | `page`: `servers` | | |
 
 Every setting can be read and changed without the dialog:
 - `gui.get_settings` (optional `group`) returns every value with its schema.

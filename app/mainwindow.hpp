@@ -1,8 +1,8 @@
 #pragma once
 
-// The main window (spec US3, contracts/menus-and-commands.md). G0 has the
-// seven menus with only File > Exit and Help > About filled in; each later
-// phase adds its items.
+// The main window (spec US3, contracts/menus-and-commands.md). Every menu
+// item of the contract is present from G0 on; an item stays disabled until
+// the phase that implements it (tasks G034).
 
 #include <QMainWindow>
 
