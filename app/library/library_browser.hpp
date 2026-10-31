@@ -87,7 +87,7 @@ public:
 
 signals:
     void openRequested(const QString& path);
-    void openFolderRequested();
+    void addFolderRequested();
     void openFileRequested();
     void changeLocationRequested();
     // Escape while a game is loaded.
@@ -115,6 +115,7 @@ private:
     QToolButton* m_gridButton = nullptr;
     QToolButton* m_listButton = nullptr;
     QToolButton* m_sort = nullptr;
+    QToolButton* m_addFolder = nullptr;
     QWidget* m_controls = nullptr;
     QLabel* m_emptyIcon = nullptr;
     Layout m_layout = Layout::Grid;

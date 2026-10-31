@@ -12,6 +12,7 @@ namespace {
 
 const QString kLibraryRoot = QStringLiteral("library/root");
 const QString kRecent = QStringLiteral("recent/paths");
+const QString kRomFolders = QStringLiteral("library/romFolders");
 const QString kPlayed = QStringLiteral("played/");
 const QString kSettingsPage = QStringLiteral("window/settingsPage");
 
@@ -41,6 +42,22 @@ void AppSettings::setLibraryRoot(const QString& root)
 {
     std::lock_guard lock(m_mutex);
     m_settings.setValue(kLibraryRoot, QDir::cleanPath(root));
+}
+
+QStringList AppSettings::romFolders() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_settings.value(kRomFolders).toStringList();
+}
+
+void AppSettings::setRomFolders(const QStringList& folders)
+{
+    std::lock_guard lock(m_mutex);
+    if (folders.isEmpty()) {
+        m_settings.remove(kRomFolders);
+    } else {
+        m_settings.setValue(kRomFolders, folders);
+    }
 }
 
 QStringList AppSettings::recent() const

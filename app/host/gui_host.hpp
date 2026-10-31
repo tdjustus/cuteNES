@@ -46,6 +46,7 @@ public:
         virtual void gameClosed() = 0;
         virtual void recentChanged() = 0;
         virtual void libraryChanged(const Library& library) = 0;
+        virtual void romFoldersChanged() = 0;
         virtual void sessionEvent(const api::Event& event) = 0;
     };
 
@@ -62,6 +63,8 @@ private:
     api::Result openRom(api::CallContext& ctx, const QString& path);
     api::Result closeGame(api::CallContext& ctx);
     api::Result setLibraryRoot(api::CallContext& ctx, const QString& root);
+    api::Result addRomFolder(const QString& path);
+    api::Result removeRomFolder(const QString& path);
 
     Window& m_window;
     AppSettings& m_settings;

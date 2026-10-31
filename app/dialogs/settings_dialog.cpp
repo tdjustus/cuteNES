@@ -2,7 +2,6 @@
 
 #include <QDialogButtonBox>
 #include <QDir>
-#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
@@ -39,6 +38,13 @@ SettingsDialog::SettingsDialog(QWidget* parent)
         QWidget* page = nullptr;
         if (QLatin1String(key) == QLatin1String("library")) {
             page = new QWidget(m_stack);
+            const auto heading = [page](const QString& text) {
+                auto* label = new QLabel(text, page);
+                QFont font = label->font();
+                font.setWeight(QFont::DemiBold);
+                label->setFont(font);
+                return label;
+            };
             m_libraryRoot->setObjectName(QStringLiteral("libraryRoot"));
             m_libraryRoot->setTextInteractionFlags(Qt::TextSelectableByMouse);
             m_libraryRoot->setWordWrap(true);
@@ -47,23 +53,59 @@ SettingsDialog::SettingsDialog(QWidget* parent)
             auto* open = new QPushButton(tr("Open Folder"), page);
             connect(change, &QPushButton::clicked, this, &SettingsDialog::changeLibraryRequested);
             connect(open, &QPushButton::clicked, this, &SettingsDialog::openLibraryFolderRequested);
-            auto* buttons = new QHBoxLayout;
-            buttons->addWidget(change);
-            buttons->addWidget(open);
-            buttons->addStretch();
-            auto* form = new QFormLayout;
-            form->addRow(tr("Location:"), m_libraryRoot);
-            form->addRow(QString(), buttons);
-            auto* note = new QLabel(tr("The library holds your ROMs, battery saves, save states, screenshots, "
-                                       "movies, recordings, cheats and debug output, in visible subfolders. "
-                                       "Settings are kept separately, so the library can be backed up or "
-                                       "synced on its own."),
+            auto* locationButtons = new QHBoxLayout;
+            locationButtons->addWidget(change);
+            locationButtons->addWidget(open);
+            locationButtons->addStretch();
+
+            m_romFolders = new QListWidget(page);
+            m_romFolders->setObjectName(QStringLiteral("romFolders"));
+            m_romFolders->setMinimumHeight(110);
+            m_romFolders->setTextElideMode(Qt::ElideMiddle);
+            auto* addFolder = new QPushButton(tr("Add Folder…"), page);
+            addFolder->setObjectName(QStringLiteral("addRomFolder"));
+            m_removeFolder = new QPushButton(tr("Remove"), page);
+            m_removeFolder->setObjectName(QStringLiteral("removeRomFolder"));
+            m_removeFolder->setEnabled(false);
+            connect(addFolder, &QPushButton::clicked, this, &SettingsDialog::addRomFolderRequested);
+            connect(m_removeFolder, &QPushButton::clicked, this, [this] {
+                if (const QListWidgetItem* item = m_romFolders->currentItem()) {
+                    emit removeRomFolderRequested(item->data(Qt::UserRole).toString());
+                }
+            });
+            // The library's own roms folder (row 0) cannot be removed.
+            connect(m_romFolders, &QListWidget::currentRowChanged, this,
+                [this](int row) { m_removeFolder->setEnabled(row > 0); });
+            auto* folderButtons = new QHBoxLayout;
+            folderButtons->addWidget(addFolder);
+            folderButtons->addWidget(m_removeFolder);
+            folderButtons->addStretch();
+
+            auto* locationNote = new QLabel(tr("Holds your battery saves, save states, screenshots, movies, "
+                                               "recordings, cheats and debug output, in visible subfolders. "
+                                               "Settings are kept separately, so the library can be backed up "
+                                               "or synced on its own."),
                 page);
-            note->setWordWrap(true);
+            auto* foldersNote = new QLabel(tr("The library lists the ROMs in these folders and their subfolders. "
+                                              "Added folders are only read: cuteNES never writes into them."),
+                page);
+            for (QLabel* note : {locationNote, foldersNote}) {
+                note->setWordWrap(true);
+                note->setForegroundRole(QPalette::PlaceholderText);
+            }
+
             auto* layout = new QVBoxLayout(page);
-            layout->addLayout(form);
-            layout->addWidget(note);
-            layout->addStretch();
+            layout->setContentsMargins(16, 4, 4, 4);
+            layout->setSpacing(6);
+            layout->addWidget(heading(tr("Library location")));
+            layout->addWidget(m_libraryRoot);
+            layout->addWidget(locationNote);
+            layout->addLayout(locationButtons);
+            layout->addSpacing(16);
+            layout->addWidget(heading(tr("ROM folders")));
+            layout->addWidget(foldersNote);
+            layout->addWidget(m_romFolders, 1);
+            layout->addLayout(folderButtons);
         } else {
             page = new QLabel(tr("Coming in a later update."), m_stack);
             static_cast<QLabel*>(page)->setAlignment(Qt::AlignCenter);
@@ -86,7 +128,7 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     auto* layout = new QVBoxLayout(this);
     layout->addLayout(body, 1);
     layout->addWidget(close);
-    resize(640, 360);
+    resize(720, 480);
     showPage(QStringLiteral("library"));
 }
 
@@ -104,6 +146,19 @@ QString SettingsDialog::currentPage() const
 {
     const QListWidgetItem* item = m_pages->currentItem();
     return item ? item->data(Qt::UserRole).toString() : QString();
+}
+
+void SettingsDialog::setRomFolders(const QString& roms, const QStringList& added)
+{
+    m_romFolders->clear();
+    auto* own = new QListWidgetItem(tr("%1 (library)").arg(QDir::toNativeSeparators(roms)), m_romFolders);
+    own->setData(Qt::UserRole, roms);
+    own->setToolTip(tr("The library's own roms folder is always scanned."));
+    for (const QString& folder : added) {
+        auto* item = new QListWidgetItem(QDir::toNativeSeparators(folder), m_romFolders);
+        item->setData(Qt::UserRole, folder);
+    }
+    m_removeFolder->setEnabled(false);
 }
 
 void SettingsDialog::setLibraryRoot(const QString& root)

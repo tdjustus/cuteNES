@@ -1,7 +1,8 @@
 #pragma once
 
 // The library index (research R8, contracts/library-layout.md "Index
-// cache"): every ROM under roms/ plus recently opened ones elsewhere, with
+// cache"): every ROM under roms/ and the user's added ROM folders, plus
+// recently opened ones elsewhere, with
 // header info and support status. It shows the cached list at once and
 // refreshes it in the background; a file watcher on roms/ triggers rescans
 // (FR-005).
@@ -49,10 +50,11 @@ struct LibraryEntry {
 // load. Thread-safe.
 LibraryEntry describeRom(const QString& path, const QString& romsDir = {});
 
-// Every .nes file under `romsDir` (recursively) and every existing file in
-// `extra`, reusing `previous` entries (by path) whose size and mtime are
-// unchanged. Thread-safe.
-QVector<LibraryEntry> scanRoms(const QString& romsDir, const QStringList& extra,
+// Every .nes file under `romsDir` and the added `folders` (recursively;
+// a missing folder is skipped) and every existing file in `extra`, reusing
+// `previous` entries (by path) whose size and mtime are unchanged.
+// Thread-safe.
+QVector<LibraryEntry> scanRoms(const QString& romsDir, const QStringList& folders, const QStringList& extra,
     const QHash<QString, LibraryEntry>& previous);
 
 // Fills hasSave, stateCount, lastPlayed and recent.

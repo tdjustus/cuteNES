@@ -194,11 +194,7 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     connect(m_browser, &LibraryBrowser::openRequested, this, &MainWindow::openRom);
     connect(m_browser, &LibraryBrowser::openFileRequested, this,
         [this] { runCommand(QStringLiteral("gui.open_rom")); });
-    connect(m_browser, &LibraryBrowser::openFolderRequested, this, [this] {
-        const QString roms = library().folder(Library::Folder::Roms);
-        if (m_options.openExternally) QDesktopServices::openUrl(QUrl::fromLocalFile(roms));
-        emit libraryFolderOpened(roms);
-    });
+    connect(m_browser, &LibraryBrowser::addFolderRequested, this, &MainWindow::addRomFolder);
     connect(m_browser, &LibraryBrowser::changeLocationRequested, this, &MainWindow::changeLibraryLocation);
     connect(m_browser, &LibraryBrowser::backRequested, this, &MainWindow::returnToGame);
 
@@ -541,13 +537,17 @@ void MainWindow::showSettings(const QString& page)
         if (!m_settingsDialog) {
             m_settingsDialog = new SettingsDialog(this);
             m_settingsDialog->setAttribute(Qt::WA_DeleteOnClose);
-            m_settingsDialog->setLibraryRoot(library().root());
             connect(m_settingsDialog, &SettingsDialog::pageShown, this,
                 [this](const QString& shown) { m_settings.setLastSettingsPage(shown); });
             connect(m_settingsDialog, &SettingsDialog::changeLibraryRequested, this,
                 &MainWindow::changeLibraryLocation);
             connect(m_settingsDialog, &SettingsDialog::openLibraryFolderRequested, this,
                 [this] { runCommand(QStringLiteral("gui.open_library_folder")); });
+            connect(m_settingsDialog, &SettingsDialog::addRomFolderRequested, this, &MainWindow::addRomFolder);
+            connect(m_settingsDialog, &SettingsDialog::removeRomFolderRequested, this, [this](const QString& path) {
+                runCommand(QStringLiteral("gui.remove_rom_folder"), {{QStringLiteral("path"), path}});
+            });
+            updateSettingsDialog();
         }
         m_settingsDialog->showPage(page);
         m_settingsDialog->show(); // non-modal (R11)
@@ -620,6 +620,14 @@ void MainWindow::libraryChanged(const Library& changed)
     QMetaObject::invokeMethod(this, [this, changed] { useLibrary(changed); }, Qt::QueuedConnection);
 }
 
+void MainWindow::romFoldersChanged()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        m_index->rescan();
+        updateSettingsDialog();
+    }, Qt::QueuedConnection);
+}
+
 void MainWindow::sessionEvent(const api::Event& event)
 {
     if (event.type != "run_state_changed") return;
@@ -640,8 +648,23 @@ void MainWindow::useLibrary(const Library& changed)
         m_library = changed;
     }
     m_browser->setLibraryRoot(changed.root());
-    if (m_settingsDialog) m_settingsDialog->setLibraryRoot(changed.root());
+    updateSettingsDialog();
     m_index->setLibrary(changed);
+}
+
+void MainWindow::updateSettingsDialog()
+{
+    if (!m_settingsDialog) return;
+    const Library current = library();
+    m_settingsDialog->setLibraryRoot(current.root());
+    m_settingsDialog->setRomFolders(current.folder(Library::Folder::Roms), m_settings.romFolders());
+}
+
+void MainWindow::addRomFolder()
+{
+    const QString folder = QFileDialog::getExistingDirectory(this, tr("Add a ROM Folder"),
+        QStandardPaths::writableLocation(QStandardPaths::HomeLocation));
+    if (!folder.isEmpty()) runCommand(QStringLiteral("gui.add_rom_folder"), {{QStringLiteral("path"), folder}});
 }
 
 void MainWindow::setRunState(const QString& runState)

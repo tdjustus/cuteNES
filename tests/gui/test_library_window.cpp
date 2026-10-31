@@ -408,3 +408,80 @@ TEST(GuiLibraryWindow, ABatterySaveSurvivesARestartAndARename)
     call(w, "core.pause");
     EXPECT_EQ(peek(w, 0x7F00), 0x5A);
 }
+
+// Added ROM folders (Settings > Library): scanned in place and watched,
+// removable, and kept across restarts. The library's own roms/ folder is
+// always scanned and cannot be removed.
+TEST(GuiLibraryWindow, AnAddedRomFolderIsScannedInPlace)
+{
+    const auto options = windowOptions();
+    QString dir;
+    windowOptions(&dir);
+    const QString mine = dir + QStringLiteral("/My ROMs");
+    const QString rom = copyRom(mine + QStringLiteral("/Mine.nes"));
+    MainWindow w(options);
+
+    const Json added = call(w, "gui.add_rom_folder", {{"path", mine.toStdString()}});
+    ASSERT_EQ(added["romFolders"].size(), 1u);
+    EXPECT_EQ(added["romFolders"][0], mine.toStdString());
+    ASSERT_TRUE(waitUntil([&] { return listed(w) == 1; }));
+    const Json e = call(w, "gui.library_list")["entries"][0];
+    EXPECT_EQ(e["path"], rom.toStdString());
+    EXPECT_EQ(e["relativePath"], "");
+    EXPECT_EQ(QDir(mine).entryList(QDir::AllEntries | QDir::NoDotAndDotDot), QStringList{QStringLiteral("Mine.nes")});
+
+    const Json settings = call(w, "gui.get_settings", {{"group", "library"}})["values"]["library"];
+    EXPECT_EQ(settings["roms"], romsDir(options).toStdString());
+    EXPECT_EQ(settings["romFolders"], Json::array({mine.toStdString()}));
+
+    // A ROM copied there later appears (FR-005).
+    copyRom(mine + QStringLiteral("/sub/Later.nes"));
+    EXPECT_TRUE(waitUntil([&] { return listed(w) == 2; }, 10000));
+}
+
+TEST(GuiLibraryWindow, ARomFolderCanBeRemovedAndIsRemembered)
+{
+    const auto options = windowOptions();
+    QString dir;
+    windowOptions(&dir);
+    const QString mine = dir + QStringLiteral("/mine");
+    copyRom(mine + QStringLiteral("/Mine.nes"));
+    {
+        MainWindow w(options);
+        call(w, "gui.add_rom_folder", {{"path", mine.toStdString()}});
+    }
+    MainWindow w(options);
+    ASSERT_TRUE(waitUntil([&] { return listed(w) == 1; })) << "remembered across a restart";
+    const Json removed = call(w, "gui.remove_rom_folder", {{"path", mine.toStdString()}});
+    EXPECT_TRUE(removed["romFolders"].empty());
+    EXPECT_TRUE(waitUntil([&] { return listed(w) == 0; }));
+    EXPECT_TRUE(QFile::exists(mine + QStringLiteral("/Mine.nes"))) << "removing a folder deletes nothing";
+}
+
+TEST(GuiLibraryWindow, TheLibraryRomsFolderCannotBeRemoved)
+{
+    const auto options = windowOptions();
+    MainWindow w(options);
+    const Result r = w.session().call("gui.remove_rom_folder", {{"path", romsDir(options).toStdString()}});
+    ASSERT_TRUE(r.isError());
+    EXPECT_EQ(r.error->name, "InvalidArgument");
+    EXPECT_TRUE(QDir(romsDir(options)).exists());
+}
+
+TEST(GuiLibraryWindow, AddingAMissingDuplicateOrNestedFolderFails)
+{
+    const auto options = windowOptions();
+    QString dir;
+    windowOptions(&dir);
+    const QString mine = dir + QStringLiteral("/mine");
+    QDir().mkpath(mine + QStringLiteral("/inner"));
+    MainWindow w(options);
+    call(w, "gui.add_rom_folder", {{"path", mine.toStdString()}});
+    for (const QString& bad : {dir + QStringLiteral("/missing"), mine, mine + QStringLiteral("/inner"),
+             romsDir(options), QStringLiteral("relative")}) {
+        const Result r = w.session().call("gui.add_rom_folder", {{"path", bad.toStdString()}});
+        ASSERT_TRUE(r.isError()) << bad.toStdString();
+        EXPECT_EQ(r.error->name, "InvalidArgument") << bad.toStdString();
+    }
+    EXPECT_EQ(w.settings().romFolders(), QStringList{mine});
+}

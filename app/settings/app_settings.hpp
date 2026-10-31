@@ -29,6 +29,11 @@ public:
     QString libraryRoot() const;
     void setLibraryRoot(const QString& root);
 
+    // library.romFolders: folders the user added, scanned in place beside
+    // the library's own roms/ (absolute paths, in the order added).
+    QStringList romFolders() const;
+    void setRomFolders(const QStringList& folders);
+
     // Recently opened ROMs, newest first, absolute paths.
     QStringList recent() const;
     void addRecent(const QString& path);

@@ -5,7 +5,7 @@
 
 | Entity | Fields | Rules |
 |---|---|---|
-| **Library** | `root`, `index` (LibraryEntry list), `recent` (up to 10 paths, newest first) | `root` comes from Settings or `--library`. The subfolders are created on demand. When `root` is missing or read-only, the user is told and saving is refused (US2-5) |
+| **Library** | `root`, `romFolders` (added folders, scanned in place), `index` (LibraryEntry list), `recent` (up to 10 paths, newest first) | `root` comes from Settings or `--library`. The subfolders are created on demand. When `root` is missing or read-only, the user is told and saving is refused (US2-5) |
 | **LibraryEntry** | `path`, `size`, `mtime`, `identity`, `name`, `mapper`, `submapper`, `region`, `battery`, `supported`, `reason`, `lastPlayed`, `hasSave`, `stateCount` | Unique by `path`. Several entries may share an `identity`. `supported`/`reason` come from a scratch `LoadResult` |
 | **GameIdentity** | `sha1` (40 hex), `id8`, `displayName` | `sha1` covers the ROM after the header and trainer (R7). `displayName` is fixed the first time the game gets a file |
 | **BatterySave** | `identity`, `bytes`, `dirty`, `lastWrite` | Written when `dirty` and at least 5 s after `lastWrite`, and always on close (FR-012). Guarded by the game's lock file |
@@ -29,7 +29,7 @@
 | `input` | bindings (InputBinding list), `turboRate` (15), `allowOppositeDirections` (false), `pauseOnGamepadDisconnect` (true) |
 | `hotkeys` | Hotkey list |
 | `emulation` | `pauseWhenInactive` (true), `rewindEnabled` (true), `rewindBudgetMiB` (64), `fastForwardSpeed` (300), `resumeOnOpen` (false), `region` (`auto`) |
-| `library` | `root` (`<Documents>/cuteNES`) |
+| `library` | `root` (`<Documents>/cuteNES`), `romFolders` (empty; changed with `gui.add_rom_folder` / `gui.remove_rom_folder`) |
 | `servers` | ServerSettings |
 
 ## State transitions (window)

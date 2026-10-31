@@ -29,6 +29,10 @@ cuteNES/
 At first launch the application creates the folder and its subfolders, and
 puts a short `README.txt` in `roms/`.
 
+The user can also add ROM folders anywhere (setting `library.romFolders`).
+They are scanned recursively like `roms/`, but only read: per-game files
+for their games still go in this library.
+
 ## Game names
 
 - `<game>` is `<display name> [<id8>]`:

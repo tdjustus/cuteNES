@@ -90,6 +90,8 @@ public slots:
     void openRom(const QString& path);
     // Asks for a new library folder and whether to move the contents.
     void changeLibraryLocation();
+    // Asks for a folder of ROMs and adds it to the library.
+    void addRomFolder();
     // Moves the library to `root` (after closing the game when `moveContents`)
     // and makes it the library.
     QFuture<api::Result> relocateLibrary(const QString& root, bool moveContents);
@@ -120,6 +122,7 @@ private:
     void gameClosed() override;
     void recentChanged() override;
     void libraryChanged(const Library& library) override;
+    void romFoldersChanged() override;
     void sessionEvent(const api::Event& event) override;
 
     void createMenus();
@@ -132,6 +135,7 @@ private:
     void showError(const QString& name, const api::Error& error);
     void showWarning(const QString& message);
     void useLibrary(const Library& library);       // GUI thread
+    void updateSettingsDialog();
     bool hasGame() const { return m_runState != QLatin1String("NeedsRom"); }
 
     Options m_options;

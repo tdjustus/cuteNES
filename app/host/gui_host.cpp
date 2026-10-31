@@ -11,6 +11,8 @@
 #include <QFile>
 #include <QFileInfo>
 
+#include <algorithm>
+
 namespace cutenes::app {
 
 namespace s = api::schema;
@@ -105,6 +107,25 @@ Json entryJson(const LibraryEntry& e)
         {"battery", e.battery}, {"supported", e.supported}, {"reason", str(e.reason)},
         {"lastPlayed", e.lastPlayed.isValid() ? str(e.lastPlayed.toUTC().toString(Qt::ISODate)) : ""},
         {"hasSave", e.hasSave}, {"stateCount", e.stateCount}, {"recent", e.recent}};
+}
+
+// The real path, for telling whether two folders overlap.
+QString canonical(const QString& path)
+{
+    const QString real = QFileInfo(path).canonicalFilePath();
+    return real.isEmpty() ? QDir::cleanPath(QFileInfo(path).absoluteFilePath()) : real;
+}
+
+bool within(const QString& path, const QString& folder)
+{
+    return path == folder || path.startsWith(folder + QLatin1Char('/'));
+}
+
+Json romFoldersValue(const AppSettings& settings)
+{
+    Json list = Json::array();
+    for (const QString& folder : settings.romFolders()) list.push_back(str(folder));
+    return list;
 }
 
 Json entrySchema()
@@ -206,6 +227,42 @@ Result GuiHost::setLibraryRoot(CallContext& ctx, const QString& root)
     ctx.session.setLibraryRoot(str(library.folder(Library::Folder::Roms)));
     m_window.libraryChanged(library);
     return Result::ok({{"key", "library.root"}, {"value", str(library.root())}});
+}
+
+Result GuiHost::addRomFolder(const QString& path)
+{
+    if (path.isEmpty() || QDir::isRelativePath(path)) return invalid("/path", "the folder must be an absolute path");
+    if (!QFileInfo(path).isDir()) return invalid("/path", "no such folder: " + str(path));
+    const QString added = canonical(path);
+    QStringList folders = m_settings.romFolders();
+    QStringList taken = folders;
+    taken.prepend(m_window.library().folder(Library::Folder::Roms));
+    for (const QString& folder : taken) {
+        const QString existing = canonical(folder);
+        if (within(added, existing) || within(existing, added)) {
+            return invalid("/path", "the library already scans " + str(folder) + ", which overlaps this folder");
+        }
+    }
+    folders.append(QDir::cleanPath(path));
+    m_settings.setRomFolders(folders);
+    m_window.romFoldersChanged();
+    return Result::ok({{"romFolders", romFoldersValue(m_settings)}});
+}
+
+Result GuiHost::removeRomFolder(const QString& path)
+{
+    const QString removed = canonical(path);
+    if (removed == canonical(m_window.library().folder(Library::Folder::Roms))) {
+        return invalid("/path", "the library's own roms folder is always scanned and cannot be removed");
+    }
+    QStringList folders = m_settings.romFolders();
+    const auto it = std::find_if(folders.begin(), folders.end(),
+        [&](const QString& folder) { return QDir::cleanPath(folder) == QDir::cleanPath(path) || canonical(folder) == removed; });
+    if (it == folders.end()) return invalid("/path", "not an added ROM folder: " + str(path));
+    folders.erase(it);
+    m_settings.setRomFolders(folders);
+    m_window.romFoldersChanged();
+    return Result::ok({{"romFolders", romFoldersValue(m_settings)}});
 }
 
 void GuiHost::registerCommands(api::Registry& registry)
@@ -337,6 +394,19 @@ void GuiHost::registerCommands(api::Registry& registry)
             return Result::ok();
         });
 
+    const Json romFoldersOutput = s::object({{"romFolders", s::array(s::string(), 1000)}}, {"romFolders"});
+    add(registry, "gui.add_rom_folder",
+        "Scan another folder of ROMs in place, beside the library's roms folder (nothing is written there)",
+        s::object({{"path", s::string("an absolute folder path")}}, {"path"}), romFoldersOutput, true, false,
+        [this](CallContext&, const Json& args) { return addRomFolder(QString::fromStdString(args["path"].get<std::string>())); });
+
+    add(registry, "gui.remove_rom_folder",
+        "Stop scanning an added ROM folder (its files are kept; the library's roms folder cannot be removed)",
+        s::object({{"path", s::string()}}, {"path"}), romFoldersOutput, true, false,
+        [this](CallContext&, const Json& args) {
+            return removeRomFolder(QString::fromStdString(args["path"].get<std::string>()));
+        });
+
     // --- Settings ---------------------------------------------------------------
 
     add(registry, "gui.show_settings", "Show Settings, at a page or the last one shown",
@@ -352,8 +422,13 @@ void GuiHost::registerCommands(api::Registry& registry)
         s::object({{"group", s::stringEnum({"library"})}}),
         s::object({{"values", Json{{"type", "object"}}}, {"schema", Json{{"type", "object"}}}}, {"values", "schema"}),
         false, false, [this](CallContext&, const Json&) {
-            const Json values = {{"library", {{"root", str(m_window.library().root())}}}};
-            const Json schema = {{"library.root", s::string("absolute path of the library folder")}};
+            const Library library = m_window.library();
+            const Json values = {{"library", {{"root", str(library.root())},
+                                     {"roms", str(library.folder(Library::Folder::Roms))},
+                                     {"romFolders", romFoldersValue(m_settings)}}}};
+            const Json schema = {{"library.root", s::string("absolute path of the library folder")},
+                {"library.roms", s::string("the library's own roms folder (always scanned)")},
+                {"library.romFolders", s::array(s::string("added with gui.add_rom_folder"), 1000)}};
             return Result::ok({{"values", values}, {"schema", schema}});
         });
 

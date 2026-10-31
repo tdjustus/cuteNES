@@ -65,7 +65,7 @@ TEST(GuiLibraryIndex, ListsEveryNesFileUnderRomsWithItsHeader)
     put(roms + QStringLiteral("/Sub/Deeper/Beta.NES"), image(1, true, 2, true));
     put(roms + QStringLiteral("/notes.txt"), "not a ROM");
 
-    const auto entries = scanRoms(roms, {}, {});
+    const auto entries = scanRoms(roms, {}, {}, {});
     ASSERT_EQ(entries.size(), 2) << "README.txt and notes.txt are not ROMs";
     const auto* alpha = byName(entries, QStringLiteral("Alpha"));
     const auto* beta = byName(entries, QStringLiteral("Beta"));
@@ -87,7 +87,7 @@ TEST(GuiLibraryIndex, ARejectedRomCarriesTheCoresReason)
     QTemporaryDir tmp;
     put(tmp.filePath(QStringLiteral("Odd.nes")), image(255));
     put(tmp.filePath(QStringLiteral("Broken.nes")), "NES\x1A truncated");
-    const auto entries = scanRoms(tmp.path(), {}, {});
+    const auto entries = scanRoms(tmp.path(), {}, {}, {});
     const auto* odd = byName(entries, QStringLiteral("Odd"));
     const auto* broken = byName(entries, QStringLiteral("Broken"));
     ASSERT_TRUE(odd && broken);
@@ -97,6 +97,25 @@ TEST(GuiLibraryIndex, ARejectedRomCarriesTheCoresReason)
     EXPECT_FALSE(broken->reason.isEmpty());
 }
 
+// Added ROM folders are scanned in place, recursively, by absolute path;
+// a folder that is gone (an unplugged drive) is skipped.
+TEST(GuiLibraryIndex, AddedRomFoldersAreScannedInPlace)
+{
+    QTemporaryDir roms;
+    QTemporaryDir mine;
+    put(mine.filePath(QStringLiteral("Mine.nes")), image(0, false, 3));
+    put(mine.filePath(QStringLiteral("deep/Deeper.nes")), image(1, false, 4));
+    put(mine.filePath(QStringLiteral("notes.txt")), "not a rom");
+    const auto entries = scanRoms(roms.path(), {mine.path(), mine.filePath(QStringLiteral("unplugged"))}, {}, {});
+    ASSERT_EQ(entries.size(), 2);
+    const LibraryEntry* deeper = byName(entries, QStringLiteral("Deeper"));
+    ASSERT_NE(deeper, nullptr);
+    EXPECT_TRUE(deeper->relativePath.isEmpty());
+    EXPECT_EQ(deeper->path, QFileInfo(mine.filePath(QStringLiteral("deep/Deeper.nes"))).absoluteFilePath());
+    EXPECT_EQ(QDir(mine.path()).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).size(), 3)
+        << "nothing is written into a ROM folder";
+}
+
 // Recent games outside the library are listed too (FR-002), by absolute path.
 TEST(GuiLibraryIndex, ExtraPathsAreListedAbsolutely)
 {
@@ -104,7 +123,7 @@ TEST(GuiLibraryIndex, ExtraPathsAreListedAbsolutely)
     QTemporaryDir elsewhere;
     const QString outside = elsewhere.filePath(QStringLiteral("Outside.nes"));
     put(outside, image(0, false, 7));
-    const auto entries = scanRoms(roms.path(), {outside, elsewhere.filePath(QStringLiteral("gone.nes"))}, {});
+    const auto entries = scanRoms(roms.path(), {}, {outside, elsewhere.filePath(QStringLiteral("gone.nes"))}, {});
     ASSERT_EQ(entries.size(), 1) << "a missing recent file is not listed";
     EXPECT_TRUE(entries[0].relativePath.isEmpty());
     EXPECT_EQ(entries[0].path, QFileInfo(outside).absoluteFilePath());
@@ -115,15 +134,15 @@ TEST(GuiLibraryIndex, UnchangedEntriesComeFromThePreviousScan)
 {
     QTemporaryDir tmp;
     put(tmp.filePath(QStringLiteral("A.nes")), image(0));
-    auto first = scanRoms(tmp.path(), {}, {});
+    auto first = scanRoms(tmp.path(), {}, {}, {});
     ASSERT_EQ(first.size(), 1);
     first[0].name = QStringLiteral("from cache");
     QHash<QString, LibraryEntry> previous{{first[0].path, first[0]}};
-    EXPECT_EQ(scanRoms(tmp.path(), {}, previous)[0].name, QStringLiteral("from cache"));
+    EXPECT_EQ(scanRoms(tmp.path(), {}, {}, previous)[0].name, QStringLiteral("from cache"));
 
     QThread::msleep(1100); // mtime has 1 s resolution on some file systems
     put(tmp.filePath(QStringLiteral("A.nes")), image(1));
-    const auto rescanned = scanRoms(tmp.path(), {}, previous);
+    const auto rescanned = scanRoms(tmp.path(), {}, {}, previous);
     EXPECT_EQ(rescanned[0].name, QStringLiteral("A"));
     EXPECT_EQ(rescanned[0].mapper, 1);
 }
@@ -132,7 +151,7 @@ TEST(GuiLibraryIndex, TheCacheRoundTrips)
 {
     QTemporaryDir tmp;
     put(tmp.filePath(QStringLiteral("roms/A.nes")), image(4, true));
-    const auto entries = scanRoms(tmp.filePath(QStringLiteral("roms")), {}, {});
+    const auto entries = scanRoms(tmp.filePath(QStringLiteral("roms")), {}, {}, {});
     const QString cache = tmp.filePath(QStringLiteral("cache/library-index.json"));
     ASSERT_TRUE(writeIndexCache(cache, tmp.path(), entries));
     QString root;
@@ -182,7 +201,7 @@ TEST(GuiLibraryIndex, EntriesShowSavesStatesAndLastPlayed)
     ASSERT_TRUE(library.ensureLayout());
     AppSettings settings(tmp.filePath(QStringLiteral("settings.ini")));
     put(library.folder(Library::Folder::Roms) + QStringLiteral("/G.nes"), image(0, true, 3));
-    auto entries = scanRoms(library.folder(Library::Folder::Roms), {}, {});
+    auto entries = scanRoms(library.folder(Library::Folder::Roms), {}, {}, {});
     ASSERT_EQ(entries.size(), 1);
     const GameIdentity id{entries[0].identity};
 

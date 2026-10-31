@@ -226,6 +226,9 @@ QIcon lineIcon(const QString& kind, const QColor& color)
             p.drawPoint(QPointF(2.5, y));
             p.drawLine(QPointF(6, y), QPointF(14, y));
         }
+    } else if (kind == QLatin1String("plus")) {
+        p.drawLine(QPointF(8, 3), QPointF(8, 13));
+        p.drawLine(QPointF(3, 8), QPointF(13, 8));
     } else if (kind == QLatin1String("chevron")) {
         p.drawPolyline(QPolygonF({QPointF(4.5, 6.5), QPointF(8, 10), QPointF(11.5, 6.5)}));
     }
@@ -587,6 +590,13 @@ QWidget* LibraryBrowser::createHeader()
         connect(action, &QAction::triggered, this, [this, column, order] { sortBy(column, order); });
     }
     m_sort->setMenu(menu);
+    m_addFolder = new QToolButton(header);
+    m_addFolder->setObjectName(QStringLiteral("libraryAddFolder"));
+    m_addFolder->setText(tr("Add Folder…"));
+    m_addFolder->setToolTip(tr("Add a folder of ROMs to the library"));
+    m_addFolder->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_addFolder->setFocusPolicy(Qt::NoFocus);
+    connect(m_addFolder, &QToolButton::clicked, this, &LibraryBrowser::addFolderRequested);
     auto* sortLabel = new QLabel(tr("Sort by"), header);
     sortLabel->setObjectName(QStringLiteral("librarySortLabel"));
 
@@ -595,6 +605,8 @@ QWidget* LibraryBrowser::createHeader()
     top->addWidget(title, 0, Qt::AlignBaseline);
     top->addWidget(m_count, 0, Qt::AlignBaseline);
     top->addStretch();
+    top->addWidget(m_addFolder, 0, Qt::AlignVCenter);
+    top->addSpacing(4);
     top->addWidget(m_filter, 0, Qt::AlignVCenter);
 
     m_controls = new QWidget(header);
@@ -636,21 +648,21 @@ QWidget* LibraryBrowser::createEmptyPage()
     m_emptyText->setFixedWidth(460);
     m_emptyText->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
-    auto* openFolder = new QPushButton(tr("Open ROM Folder"), page);
-    openFolder->setObjectName(QStringLiteral("primaryButton"));
+    auto* addFolder = new QPushButton(tr("Add ROM Folder…"), page);
+    addFolder->setObjectName(QStringLiteral("primaryButton"));
     auto* openFile = new QPushButton(tr("Open ROM…"), page);
     openFile->setObjectName(QStringLiteral("secondaryButton"));
     auto* change = new QPushButton(tr("Change Library Location…"), page);
     change->setObjectName(QStringLiteral("linkButton"));
-    for (QPushButton* button : {openFolder, openFile, change}) button->setCursor(Qt::PointingHandCursor);
-    connect(openFolder, &QPushButton::clicked, this, &LibraryBrowser::openFolderRequested);
+    for (QPushButton* button : {addFolder, openFile, change}) button->setCursor(Qt::PointingHandCursor);
+    connect(addFolder, &QPushButton::clicked, this, &LibraryBrowser::addFolderRequested);
     connect(openFile, &QPushButton::clicked, this, &LibraryBrowser::openFileRequested);
     connect(change, &QPushButton::clicked, this, &LibraryBrowser::changeLocationRequested);
 
     auto* buttons = new QHBoxLayout;
     buttons->setSpacing(10);
     buttons->addStretch();
-    buttons->addWidget(openFolder);
+    buttons->addWidget(addFolder);
     buttons->addWidget(openFile);
     buttons->addStretch();
 
@@ -710,6 +722,8 @@ void LibraryBrowser::updateStyle()
         QToolButton#librarySort { background: transparent; border: none; border-radius: 6px; padding: 3px 6px; color: %2; font-weight: 600; }
         QToolButton#librarySort:hover { background: %6; }
         QToolButton#librarySort::menu-indicator { image: none; width: 0; }
+        QToolButton#libraryAddFolder { background: %6; border: none; border-radius: 8px; padding: 5px 10px; color: %2; }
+        QToolButton#libraryAddFolder:hover { background: %4; }
         QListView#libraryGrid, QTreeView#libraryList { background: transparent; border: none; }
         QTreeView#libraryList { selection-background-color: %5; selection-color: %9; }
         QTreeView#libraryList::item { padding: 5px 2px; }
@@ -733,6 +747,7 @@ void LibraryBrowser::updateStyle()
     m_gridButton->setIcon(lineIcon(QStringLiteral("grid"), text));
     m_listButton->setIcon(lineIcon(QStringLiteral("list"), text));
     m_sort->setIcon(lineIcon(QStringLiteral("chevron"), text));
+    m_addFolder->setIcon(lineIcon(QStringLiteral("plus"), text));
     m_emptyIcon->setPixmap(controllerPicture(palette));
     m_styling = false;
 }
@@ -758,8 +773,8 @@ void LibraryBrowser::setEntries(QVector<LibraryEntry> entries)
 
 void LibraryBrowser::setLibraryRoot(const QString& root)
 {
-    QString text = tr("Put your .nes files in the library's roms folder and they show up here. "
-                      "You can also open a ROM from anywhere.");
+    QString text = tr("Add a folder where you keep your .nes files, or put them in the library's "
+                      "roms folder. They show up here.");
     if (!root.isEmpty()) text += QStringLiteral("\n\n") + QDir::toNativeSeparators(QDir(root).filePath(QStringLiteral("roms")));
     m_emptyText->setText(text);
 }
@@ -835,6 +850,7 @@ void LibraryBrowser::updateState()
     const int games = m_model->rowCount();
     m_count->setText(games > 0 ? (games == 1 ? tr("1 game") : tr("%1 games").arg(games)) : QString());
     m_filter->setVisible(games > 0);
+    m_addFolder->setVisible(games > 0);
     m_controls->setVisible(games > 0);
     if (games == 0) {
         m_pages->setCurrentIndex(2);

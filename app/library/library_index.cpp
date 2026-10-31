@@ -150,7 +150,7 @@ LibraryEntry describeRom(const QString& path, const QString& romsDir)
     return e;
 }
 
-QVector<LibraryEntry> scanRoms(const QString& romsDir, const QStringList& extra,
+QVector<LibraryEntry> scanRoms(const QString& romsDir, const QStringList& folders, const QStringList& extra,
     const QHash<QString, LibraryEntry>& previous)
 {
     QVector<LibraryEntry> entries;
@@ -167,8 +167,11 @@ QVector<LibraryEntry> scanRoms(const QString& romsDir, const QStringList& extra,
             entries.append(describeRom(path, romsDir));
         }
     };
-    if (!romsDir.isEmpty()) {
-        QDirIterator it(romsDir, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    QStringList dirs = folders;
+    if (!romsDir.isEmpty()) dirs.prepend(romsDir);
+    for (const QString& dir : dirs) {
+        if (!QFileInfo(dir).isDir()) continue;
+        QDirIterator it(dir, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
         while (it.hasNext()) {
             const QFileInfo info = it.nextFileInfo();
             if (isRom(info)) add(info);
@@ -278,7 +281,7 @@ void LibraryIndex::rescan()
     QHash<QString, LibraryEntry> previous;
     for (const auto& e : entries()) previous.insert(e.path, e);
     m_scan.setFuture(QtConcurrent::run(scanRoms, m_library->folder(Library::Folder::Roms),
-        m_settings.recent(), previous));
+        m_settings.romFolders(), m_settings.recent(), previous));
 }
 
 void LibraryIndex::onScanFinished()
@@ -315,10 +318,12 @@ void LibraryIndex::watchFolders()
 {
     QStringList folders;
     if (m_library) {
-        const QString roms = m_library->folder(Library::Folder::Roms);
-        if (QFileInfo(roms).isDir()) {
-            folders << roms;
-            QDirIterator it(roms, QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+        QStringList tops = m_settings.romFolders();
+        tops.prepend(m_library->folder(Library::Folder::Roms));
+        for (const QString& top : tops) {
+            if (!QFileInfo(top).isDir()) continue;
+            folders << top;
+            QDirIterator it(top, QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
             while (it.hasNext()) folders << it.next();
         }
     }
