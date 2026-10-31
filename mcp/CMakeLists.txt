@@ -5,7 +5,8 @@
 add_library(cutenes-mcp
     src/server.cpp
     src/stdio.cpp
-    src/http.cpp)
+    src/http.cpp
+    src/bridge.cpp)
 
 add_library(cutenes-mcp::cutenes-mcp ALIAS cutenes-mcp)
 
@@ -20,4 +21,10 @@ if(MSVC)
 else()
     target_compile_options(cutenes-mcp PRIVATE
         -Wall -Wextra -Wconversion -Wshadow -Werror)
+    # GCC 13 reports a false -Wmaybe-uninitialized inside libstdc++'s
+    # <regex>, which httplib's client uses (GCC bug 105562; cutenes-api
+    # has the same exception).
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(cutenes-mcp PRIVATE -Wno-maybe-uninitialized)
+    endif()
 endif()

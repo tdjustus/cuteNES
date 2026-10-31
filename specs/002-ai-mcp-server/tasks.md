@@ -80,11 +80,11 @@ Implementation
 
 ## Phase P4: Host extension and the attach bridge (branch `feature/api-host-extension`)
 
-- [ ] A050 [P] [US5] Tests first, in `tests/api/test_host.cpp` (Q9): `FakeHost` registers `gui.test_echo` and `gui.test_toggle`; they appear in `api.catalog` and `tools/list`; they dispatch on the emulation thread; adding or removing them emits `catalog_changed` and an MCP list-changed notification (both revisions)
-- [ ] A051 [P] `tests/mcp/test_attach.cpp`: instance A runs `--mcp-port`; instance B runs `--attach` over stdio and finds A through A's token file. A stdio client through B sees A's catalog and state; with A down (no token file), B exits 4 with a message naming the setting; with a stale token, B reports 401 clearly
-- [ ] A052 `IHost` registration, event fan-out, and `catalog_changed`
-- [ ] A053 `--attach` bridge (cpp-httplib client relaying stdio to Streamable HTTP; reads the URL and token from the token file, or `--token-file`)
-- [ ] A054 Add the `gui.*` command requirement to issue #32 and to the feature 003 spec input: every GUI action gets a command, plus the host lifecycle (register at startup, marshal to the GUI thread)
+- [x] A050 [P] [US5] Tests first, in `tests/api/test_host.cpp` (Q9): `FakeHost` registers `gui.test_echo` and `gui.test_toggle`; they appear in `api.catalog` and `tools/list`; they dispatch on the emulation thread; adding or removing them emits `catalog_changed` and an MCP list-changed notification (both revisions)
+- [x] A051 [P] `tests/mcp/test_attach.cpp`: instance A runs `--mcp-port`; instance B runs `--attach` over stdio and finds A through A's token file. A stdio client through B sees A's catalog and state; with A down (no token file), B exits 4 with a message naming the setting; with a stale token, B reports 401 clearly
+- [x] A052 `IHost` registration, event fan-out, and `catalog_changed`
+- [x] A053 `--attach` bridge (cpp-httplib client relaying stdio to Streamable HTTP; reads the URL and token from the token file, or `--token-file`)
+- [x] A054 Add the `gui.*` command requirement to issue #32 and to the feature 003 spec input: every GUI action gets a command, plus the host lifecycle (register at startup, marshal to the GUI thread)
 
 ## Phase P5: Docs and client verification (branch `docs/mcp-usage`)
 

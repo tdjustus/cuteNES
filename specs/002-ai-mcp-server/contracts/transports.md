@@ -25,7 +25,7 @@ cutenes-server [--library DIR] [--debug-dir DIR]
 | `--api-port N` | Serve the API at `http://127.0.0.1:N/api/v1` (`0` picks a free port; the API token file has the URL) | off |
 | `--token-file PATH` | Where to write the API token file (FR-024) | `<user state dir>/cutenes/api.token` |
 | `--bind ADDR` | Bind HTTP listeners to `ADDR` instead of loopback (FR-008 network exposure) | loopback |
-| `--attach [URL]` | **Bridge mode**: no session; relay stdio MCP to a running GUI's MCP endpoint (P4; until then it exits 2) | off |
+| `--attach [URL]` | **Bridge mode**: no session; relay stdio MCP to a running instance's MCP endpoint, found through `--mcp-token-file` (a `URL` replaces the file's) | off |
 
 - Launching is the opt-in (FR-009). With no flags it opens no socket.
 - MCP on stdio runs when no listener flag is given, or with `--mcp-stdio`.
@@ -36,13 +36,24 @@ cutenes-server [--library DIR] [--debug-dir DIR]
   In headless mode the catalog is `core.*`, `session.*` and `api.*`.
 - Exit codes: 0 on a clean stdin EOF or on SIGINT/SIGTERM, 2 on a usage
   error, 3 when a bind fails (or a token file cannot be written), 4 when
-  `--attach` finds no endpoint (the GUI's MCP toggle is off).
+  `--attach` finds no usable endpoint: no token file (the GUI's MCP toggle is
+  off), nothing answering at its URL, or the token refused (HTTP 401, a file
+  from an earlier launch).
+- `--attach` takes no listener, `--mcp-stdio` or `--library` flag (exit 2).
+  It checks the endpoint with `server/discover` before relaying. Requests
+  go to the endpoint one at a time in arrival order. A
+  `subscriptions/listen` runs on its own connection. `notifications/cancelled`
+  closes the request's connection, which is HTTP's cancellation. A
+  2025-11-25 client gets `notifications/tools/list_changed` through a
+  subscription the bridge holds for it. End of input cancels what is
+  running, as for any client.
 - Each HTTP listener has its own token, generated at launch. On start the
   server prints each listener's URL and token file path to stderr, never a
   token. A token file is JSON, `{"url": ..., "token": ...}`, owner-only
   (mode 0600; a protected owner-only DACL on Windows), replaced on each
   start and removed on a clean exit.
-  The `--attach` message names the setting to enable.
+  The `--attach` message names the setting to enable ("MCP server") and the
+  token file it read.
 
 ### GUI: the Qt application (feature 003)
 

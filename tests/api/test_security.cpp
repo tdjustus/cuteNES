@@ -152,8 +152,9 @@ TEST(ApiSecurity, ServerWithoutFlagsServesOnlyStdio)
         cutenes::server::kExitUsage);
     EXPECT_EQ(cutenes::server::run({"--mcp-port", "x"}, in, out, usage, stop),
         cutenes::server::kExitUsage);
-    // The --attach bridge arrives in P4.
-    EXPECT_EQ(cutenes::server::run({"--attach"}, in, out, usage, stop), cutenes::server::kExitUsage);
+    // The --attach bridge runs no session, so it takes no listener.
+    EXPECT_EQ(cutenes::server::run({"--attach", "--api-port", "0"}, in, out, usage, stop),
+        cutenes::server::kExitUsage);
 }
 
 TEST(ApiSecurity, ServerWritesTheTokenFileAndNeverPrintsTheToken)
