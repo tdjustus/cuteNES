@@ -3,6 +3,7 @@
 #include <cutenes/api/http_server.hpp>
 #include <cutenes/api/session.hpp>
 #include <cutenes/api/token.hpp>
+#include <cutenes/mcp/bridge.hpp>
 #include <cutenes/mcp/http.hpp>
 #include <cutenes/mcp/server.hpp>
 #include <cutenes/mcp/stdio.hpp>
@@ -36,7 +37,10 @@ const char* const kUsage =
     "  --api-port N           serve the API at http://127.0.0.1:N/api/v1 (0 = any port)\n"
     "  --token-file PATH      where to write the API token file\n"
     "                         (default <user state dir>/cutenes/api.token)\n"
-    "  --bind ADDR            listen on ADDR instead of loopback (network exposure)\n";
+    "  --bind ADDR            listen on ADDR instead of loopback (network exposure)\n"
+    "  --attach [URL]         no session: relay stdio MCP to a running instance's MCP\n"
+    "                         endpoint, found through --mcp-token-file (URL overrides\n"
+    "                         the file's)\n";
 
 struct Options {
     std::string library;
@@ -48,7 +52,8 @@ struct Options {
     std::string tokenFile;
     std::string mcpTokenFile;
     bool help = false;
-    bool attach = false; // the bridge arrives in feature 002 P4
+    bool attach = false;
+    std::string attachUrl;
 };
 
 bool parsePort(const std::string& text, int& port)
@@ -98,7 +103,7 @@ std::optional<Options> parse(const std::vector<std::string>& args, std::ostream&
             o.mcpStdio = true;
         } else if (a == "--attach") {
             o.attach = true;
-            if (i + 1 < args.size() && args[i + 1].rfind("--", 0) != 0) ++i;
+            if (i + 1 < args.size() && args[i + 1].rfind("--", 0) != 0) o.attachUrl = args[++i];
         } else {
             err << "cutenes-server: unknown option " << a << "\n";
             return std::nullopt;
@@ -136,6 +141,46 @@ std::filesystem::path tokenPath(const std::string& flag, const char* defaultName
     return flag.empty() ? api::token::defaultDirectory() / defaultName : std::filesystem::path(flag);
 }
 
+// --attach: relay stdio to a running instance (the GUI with its MCP setting
+// on, or cutenes-server --mcp-port). Exit 4 when there is nothing usable
+// to attach to.
+int attach(const Options& o, std::istream& in, std::ostream& out, std::ostream& err,
+    const std::atomic<bool>& stop)
+{
+    if (o.apiPort || o.mcpPort || o.mcpStdio || !o.library.empty()) {
+        err << "cutenes-server: --attach runs no session, so it takes no listener or "
+               "--library flags\n"
+            << kUsage;
+        return kExitUsage;
+    }
+    const auto path = tokenPath(o.mcpTokenFile, "mcp.token");
+    const char* const remedy = "Turn on the \"MCP server\" setting in cuteNES, or start "
+                               "cutenes-server --mcp-port N.";
+    std::string error;
+    auto endpoint = mcp::readTokenFile(path, error);
+    if (!endpoint) {
+        err << "cutenes-server: --attach found no MCP endpoint: " << error << ". " << remedy << "\n";
+        return kExitNoEndpoint;
+    }
+    if (!o.attachUrl.empty()) endpoint->url = o.attachUrl;
+    const int status = mcp::probe(*endpoint, error);
+    if (status == 401) {
+        err << "cutenes-server: --attach: " << endpoint->url << " refused the token in "
+            << path.string() << " (HTTP 401); the file is from an earlier launch of the "
+               "endpoint, so restart it or point --mcp-token-file at its current file\n";
+        return kExitNoEndpoint;
+    }
+    if (status != 0) {
+        err << "cutenes-server: --attach found no MCP endpoint: " << error << " (from "
+            << path.string() << "). " << remedy << "\n";
+        return kExitNoEndpoint;
+    }
+    err << "cutenes-server " << coreVersionString() << ": relaying stdio MCP to "
+        << endpoint->url << std::endl;
+    mcp::serveBridge(*endpoint, in, out, stop);
+    return kExitOk;
+}
+
 } // namespace
 
 int run(const std::vector<std::string>& args, std::istream& in, std::ostream& out,
@@ -152,8 +197,7 @@ int run(const std::vector<std::string>& args, std::istream& in, std::ostream& ou
         return kExitOk;
     }
     if (o.attach) {
-        err << "cutenes-server: --attach is not available yet (feature 002 P4)\n";
-        return kExitUsage;
+        return attach(o, in, out, err, stop);
     }
     // Launching is the opt-in (FR-009): stdio unless a listener was asked
     // for, and then stdio only when asked too.

@@ -9,7 +9,8 @@ add_executable(cutenes-mcp-tests
     test_playloop.cpp
     test_parity.cpp
     test_disconnect.cpp
-    test_streamable_http.cpp)
+    test_streamable_http.cpp
+    test_attach.cpp)
 
 target_link_libraries(cutenes-mcp-tests PRIVATE
     cutenes-mcp cutenes-server-lib cutenes-httplib gtest_main)

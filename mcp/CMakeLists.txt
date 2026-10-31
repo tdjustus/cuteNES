@@ -5,7 +5,8 @@
 add_library(cutenes-mcp
     src/server.cpp
     src/stdio.cpp
-    src/http.cpp)
+    src/http.cpp
+    src/bridge.cpp)
 
 add_library(cutenes-mcp::cutenes-mcp ALIAS cutenes-mcp)
 
