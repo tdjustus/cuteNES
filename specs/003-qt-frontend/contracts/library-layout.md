@@ -16,7 +16,7 @@
 ```text
 cuteNES/
 ├── roms/            the user's ROMs (*.nes), scanned recursively; any subfolders
-├── saves/           battery saves:   <game>.sav  (+ <game>.lock while open)
+├── saves/           battery saves:   <game>.sav  (+ <game>.lock while open), identities.json
 ├── states/          save states:     <game>/slot-01.state + slot-01.png … slot-10
 │                                     <game>/auto.state    (resume where left off)
 ├── screenshots/     <game>/<YYYYMMDD-HHMMSS>.png   (native 256x240, FR-043)
@@ -29,6 +29,10 @@ cuteNES/
 At first launch the application creates the folder and its subfolders, and
 puts a short `README.txt` in `roms/`.
 
+The user can also add ROM folders anywhere (setting `library.romFolders`).
+They are scanned recursively like `roms/`, but only read: per-game files
+for their games still go in this library.
+
 ## Game names
 
 - `<game>` is `<display name> [<id8>]`:
@@ -38,12 +42,17 @@ puts a short `README.txt` in `roms/`.
   - `<display name>` is the ROM file's stem when the game first gets a file,
     with `<>:"/\|?*` and control characters replaced by `_`, and trimmed to
     80 characters.
-- A lookup matches on `[<id8>]` and reads the full identity inside the file
-  (or `identity.txt` in per-game folders). So:
+- The full identity is recorded beside each per-game item: in
+  `identity.txt` inside a per-game folder (`states/<game>/`), and in the
+  folder's `identities.json` (`{"<file name>": "<sha1>"}`) for flat files
+  such as `saves/<game>.sav`, whose raw format has no room for it.
+- A lookup matches on `[<id8>]` (or `[<id8>-<n>]`) and compares the recorded
+  identity. A file with no record, such as a save copied in by hand, matches
+  on its `id8` alone. So:
   - a renamed ROM keeps its saves;
   - two ROMs that differ only in their headers share saves;
   - an `id8` collision between different games is told apart by the full
-    hash.
+    hash, and the second game's files are named `[<id8>-2]`.
 
 ## File formats
 

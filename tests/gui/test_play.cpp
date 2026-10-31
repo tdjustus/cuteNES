@@ -13,6 +13,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QByteArray>
+#include <QDir>
 #include <QFile>
 #include <QKeyEvent>
 #include <QMenuBar>
@@ -25,6 +26,7 @@ using cutenes::api::Json;
 using cutenes::api::Result;
 using cutenes::app::MainWindow;
 using cutenes::test::waitUntil;
+using cutenes::test::windowOptions;
 
 namespace {
 
@@ -69,21 +71,29 @@ int statusByte(MainWindow& w, int addr)
 
 } // namespace
 
-TEST(GuiPlay, WithoutAGameOnlyOpenExitAndAboutAreEnabled)
+// G1 and G2's commands that need no game; Settings shows only its Library
+// page so far, and Clear List needs a recent game.
+TEST(GuiPlay, WithoutAGameOnlyTheImplementedNonGameActionsAreEnabled)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
+    const QStringList noGame = {QStringLiteral("gui.open_rom"), QStringLiteral("gui.exit"),
+        QStringLiteral("gui.show_about"), QStringLiteral("gui.show_library"),
+        QStringLiteral("gui.open_library_folder")};
     for (QAction* a : w.menuBar()->findChildren<QAction*>()) {
         const QString command = a->property("command").toString();
         if (command.isEmpty()) continue;
-        const bool enabled = command == QLatin1String("gui.open_rom")
-            || command == QLatin1String("gui.exit") || command == QLatin1String("gui.show_about");
-        EXPECT_EQ(a->isEnabled(), enabled) << command.toStdString();
+        bool enabled = noGame.contains(command);
+        if (command == QLatin1String("gui.show_settings")) {
+            const QString page = a->property("commandArgs").toMap().value(QStringLiteral("page")).toString();
+            enabled = page.isEmpty() || page == QLatin1String("library");
+        }
+        EXPECT_EQ(a->isEnabled(), enabled) << command.toStdString() << " " << a->text().toStdString();
     }
 }
 
 TEST(GuiPlay, GameOnlyCommandsFailWithoutAGame)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     for (const char* name : {"gui.close_game", "gui.toggle_pause", "gui.reset", "gui.power_cycle"}) {
         const Result r = w.session().call(name);
         ASSERT_TRUE(r.isError()) << name;
@@ -94,7 +104,7 @@ TEST(GuiPlay, GameOnlyCommandsFailWithoutAGame)
 // The real-time loop plays the ROM to its end: the test passes on its own.
 TEST(GuiPlay, OpeningARomPlaysItInRealTime)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     openGame(w);
     ASSERT_TRUE(waitUntil([&] { return action(w, "gui.reset")->isEnabled(); }));
     EXPECT_TRUE(w.windowTitle().contains(QStringLiteral("01-basics.nes")));
@@ -109,7 +119,7 @@ TEST(GuiPlay, OpeningARomPlaysItInRealTime)
 // media-output: 256x240 XRGB8888).
 TEST(GuiPlay, TheViewShowsTheCoresFrame)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     openGame(w);
     ASSERT_TRUE(waitUntil([&] { return call(w, "session.status")["frame"].get<std::uint64_t>() >= 30; }));
     call(w, "core.pause");
@@ -126,7 +136,7 @@ TEST(GuiPlay, TheViewShowsTheCoresFrame)
 
 TEST(GuiPlay, PauseResetAndPowerCycle)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     openGame(w);
     EXPECT_EQ(call(w, "gui.toggle_pause")["runState"], "Paused");
     EXPECT_EQ(runState(w), "Paused");
@@ -144,7 +154,7 @@ TEST(GuiPlay, PauseResetAndPowerCycle)
 // already running keeps running.
 TEST(GuiPlay, AnInvalidRomShowsWhyAndKeepsTheRunningGame)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     openGame(w);
     QTemporaryDir dir;
     const QString bad = dir.filePath(QStringLiteral("bad.nes"));
@@ -169,7 +179,7 @@ TEST(GuiPlay, AnInvalidRomShowsWhyAndKeepsTheRunningGame)
 
 TEST(GuiPlay, ClosingTheGameClearsTheViewAndDisablesGameActions)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     openGame(w);
     // The window is hidden, so nothing paints: take frames by hand.
     ASSERT_TRUE(waitUntil([&] { return w.view()->takeFrame() || !w.view()->shownPixels().empty(); }));
@@ -184,7 +194,7 @@ TEST(GuiPlay, ClosingTheGameClearsTheViewAndDisablesGameActions)
 // A menu action runs its command through the session (R11).
 TEST(GuiPlay, MenuActionsRunTheirCommands)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     openGame(w);
     ASSERT_TRUE(waitUntil([&] { return action(w, "gui.toggle_pause")->isEnabled(); }));
     action(w, "gui.toggle_pause")->trigger();
@@ -194,7 +204,7 @@ TEST(GuiPlay, MenuActionsRunTheirCommands)
 
 TEST(GuiPlay, ExitClosesTheWindow)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     w.show();
     call(w, "gui.exit");
     EXPECT_TRUE(waitUntil([&] { return !w.isVisible(); }));
@@ -203,7 +213,7 @@ TEST(GuiPlay, ExitClosesTheWindow)
 // FR-031: a held key reaches the game at the next frame.
 TEST(GuiPlay, KeysReachTheController)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     w.show();
     w.activateWindow();
     ASSERT_TRUE(waitUntil([&] { return QApplication::activeWindow() == &w; }));
@@ -230,6 +240,17 @@ TEST(GuiCli, ParsesTheRomAndFullscreen)
     EXPECT_EQ(cli.rom, QStringLiteral("game.nes"));
     EXPECT_TRUE(cli.fullscreen);
     EXPECT_TRUE(cutenes::app::parseCommandLine({QStringLiteral("cutenes")}).rom.isEmpty());
+}
+
+// contracts/cli.md: --library DIR for this run, made absolute.
+TEST(GuiCli, LibraryNamesTheLibraryForThisRun)
+{
+    const auto cli = cutenes::app::parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("--library"),
+        QStringLiteral("games")});
+    EXPECT_FALSE(cli.exitCode.has_value());
+    EXPECT_EQ(cli.library, QDir(QStringLiteral("games")).absolutePath());
+    EXPECT_TRUE(cutenes::app::parseCommandLine({QStringLiteral("cutenes")}).library.isEmpty());
+    EXPECT_EQ(cutenes::app::parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("--library")}).exitCode, 2);
 }
 
 TEST(GuiCli, HelpAndVersionExitZeroAndErrorsExitTwo)

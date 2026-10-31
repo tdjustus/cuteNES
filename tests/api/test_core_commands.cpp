@@ -343,6 +343,28 @@ TEST(ApiCore, LibraryListIsRelativeAndSorted)
     }
 }
 
+// The GUI's library can move while it runs (003 US2-4); session.library_list
+// and core.load_rom paths then follow the new root (003 FR-074).
+TEST(ApiCore, TheLibraryRootCanChange)
+{
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / "cutenes-api-library-root-test";
+    fs::remove_all(root);
+    fs::create_directories(root / "sub");
+    fs::copy_file(fs::path(romDir()) / "instr_test-v5/rom_singles/01-basics.nes", root / "sub/game.nes");
+
+    SessionConfig c = testConfig();
+    c.libraryRoot.clear();
+    Session s(c);
+    EXPECT_TRUE(ok(s, "session.library_list")["roms"].empty());
+    EXPECT_FALSE(ok(s, "session.status")["libraryConfigured"]);
+    s.setLibraryRoot(root.string());
+    EXPECT_EQ(ok(s, "session.library_list")["roms"], Json::array({"sub/game.nes"}));
+    EXPECT_TRUE(ok(s, "session.status")["libraryConfigured"]);
+    ok(s, "core.load_rom", {{"path", "sub/game.nes"}});
+    fs::remove_all(root);
+}
+
 TEST(ApiCore, WriteDumpWritesIntoTheDebugDirectory)
 {
     SessionConfig c = testConfig();

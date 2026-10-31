@@ -78,6 +78,12 @@ public:
     // emulation thread and must not block; null removes them.
     void setMediaSinks(IVideoSink* video, IAudioSink* audio);
 
+    // Changes the library root of core.load_rom paths and
+    // session.library_list (SessionConfig::libraryRoot). Safe from any
+    // thread: it is queued like a command, or applied at once when called
+    // on the emulation thread.
+    void setLibraryRoot(const std::string& root);
+
     // Event subscribers (API SSE, MCP list-changed, the host). Callbacks run
     // on the emulation thread and must not block.
     int subscribe(std::function<void(const Event&)> listener);
