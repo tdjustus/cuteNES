@@ -31,6 +31,9 @@ struct SessionConfig {
 };
 
 using CancelFlag = std::shared_ptr<std::atomic<bool>>;
+// Long runs report (done, total) between frames, on the emulation thread
+// (MCP notifications/progress).
+using ProgressFn = std::function<void(double done, double total)>;
 
 // The one emulation session of a process (data-model.md "Session"). Only
 // its emulation thread touches the Machine: every call is queued and runs
@@ -44,10 +47,11 @@ public:
     Session& operator=(const Session&) = delete;
 
     // Queue a command. Setting *cancel makes a long run stop at the next
-    // frame boundary with Cancelled. Called from the emulation thread (a
-    // host command calling another command), it runs inline instead.
+    // frame boundary with Cancelled; `progress` hears how far a long run
+    // has got and must not block. Called from the emulation thread (a host
+    // command calling another command), it runs inline instead.
     std::future<Result> submit(const std::string& name, const Json& args,
-        CancelFlag cancel = nullptr);
+        CancelFlag cancel = nullptr, ProgressFn progress = {});
     // submit() and wait.
     Result call(const std::string& name, const Json& args = Json::object());
 

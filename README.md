@@ -9,8 +9,11 @@ can connect to and drive the emulator.
 - **Core** (`core/`): native C++20, no runtime dependencies, deterministic
   (the same ROM and inputs give byte-identical video and audio on every
   platform), validated against community test-ROM suites.
-- **Frontends** (planned, not started): a Qt 6 desktop app and an MCP server
-  ([`specs/002-ai-mcp-server`](specs/002-ai-mcp-server)).
+- **Server** (`cutenes-server`, in progress): the core behind MCP, for AI
+  agents (stdio by default, or Streamable HTTP), and a local JSON-RPC API
+  ([`specs/002-ai-mcp-server`](specs/002-ai-mcp-server)). Usage docs arrive
+  with the feature's last phase.
+- **Frontend** (planned, not started): a Qt 6 desktop app.
 - **Normative hardware reference**: the
   [NESdev NES Reference Guide](https://www.nesdev.org/wiki/NES_reference_guide).
 
@@ -77,6 +80,7 @@ Tests are labelled in CTest. Counts are from the current tree.
 | `behavior` | 18 | Determinism (run twice, byte-identical), save-state round trip, instruction-step equivalence | every PR |
 | `playtest`, `corpus` | 113 | Scripted ROM runs with on-screen text or pinned, hand-viewed frame hashes | every PR, except entries needing `roms-local/` |
 | `api` | 84 | The `cutenes-api` command layer and HTTP API (feature 002): every `core.*`/`session.*` command against the contracts, a test ROM's own verdict through the commands, save-slot branching, structured errors that change no state, call ordering across threads and clients, JSON-RPC 2.0 framing, the token, Host and Origin checks, and the frozen catalog | every PR |
+| `mcp` | 26 | The MCP adapter (feature 002) against MCP's own pinned `schema.json` for both revisions it serves (2026-07-28 and 2025-11-25): discovery over stdio with the real executable, a test ROM's verdict and a PNG image block through tool calls, `tools/list` equal to `api.catalog`, Streamable HTTP's header and status rules, progress and subscription streams, and cancellation when a client goes away | every PR |
 | `known-failing` | 1 | A documented hardware discrepancy (#42) | never (run with `ctest -L known-failing`) |
 
 What the numbers do not say: a golden hash records what this emulator draws,

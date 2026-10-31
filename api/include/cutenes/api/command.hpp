@@ -41,10 +41,13 @@ struct Result {
 class Session;
 
 // Context a handler runs with: the session, plus the invocation's cancel
-// check (polled between frames by long runs, research R5).
+// check (polled between frames by long runs, research R5) and its progress
+// report (done of total; long runs call it between frames, and it may be
+// empty).
 struct CallContext {
     Session& session;
     std::function<bool()> cancelled;
+    std::function<void(double done, double total)> progress;
 };
 
 struct Command {

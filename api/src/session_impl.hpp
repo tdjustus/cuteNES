@@ -88,7 +88,7 @@ struct Session::Impl {
     void emitFrame();
 
     Result dispatch(Session& session, const std::string& name, const Json& args,
-        const CancelFlag& cancel);
+        const CancelFlag& cancel, const ProgressFn& progress = {});
 };
 
 void registerCoreCommands(Registry& registry);

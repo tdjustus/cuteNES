@@ -151,7 +151,7 @@ void Session::Impl::emitFrame()
 }
 
 Result Session::Impl::dispatch(Session& session, const std::string& name,
-    const Json& rawArgs, const CancelFlag& cancel)
+    const Json& rawArgs, const CancelFlag& cancel, const ProgressFn& progress)
 {
     if (cancel && cancel->load()) {
         // Cancelled while queued (a client gone, or a listener closing).
@@ -177,9 +177,9 @@ Result Session::Impl::dispatch(Session& session, const std::string& name,
     const std::uint64_t frameBefore = machine.frameCounter();
     const RunState runBefore = machine.runState();
     const bool pausedBefore = pausedByAutomation;
-    CallContext ctx{session, [this, cancel] {
-                        return stopFlag.load() || (cancel && cancel->load());
-                    }};
+    CallContext ctx{session,
+        [this, cancel] { return stopFlag.load() || (cancel && cancel->load()); },
+        progress};
     Result result;
     try {
         result = command->handler(ctx, args);
@@ -240,13 +240,13 @@ Session::Session(SessionConfig config)
 Session::~Session() { shutdown(); }
 
 std::future<Result> Session::submit(const std::string& name, const Json& args,
-    CancelFlag cancel)
+    CancelFlag cancel, ProgressFn progress)
 {
     if (onEmulationThread()) {
-        return ready(m_impl->dispatch(*this, name, args, cancel));
+        return ready(m_impl->dispatch(*this, name, args, cancel, progress));
     }
-    return m_impl->post([this, name, args, cancel] {
-        return m_impl->dispatch(*this, name, args, cancel);
+    return m_impl->post([this, name, args, cancel, progress] {
+        return m_impl->dispatch(*this, name, args, cancel, progress);
     });
 }
 

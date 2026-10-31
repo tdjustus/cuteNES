@@ -8,31 +8,40 @@ research R3-R5, R11
 ### Headless: `cutenes-server`
 
 ```
-cutenes-server [--library DIR] [--mcp-stdio] [--mcp-port N] [--api-port N]
-               [--bind ADDR] [--attach URL]
+cutenes-server [--library DIR] [--debug-dir DIR]
+               [--mcp-stdio] [--mcp-port N] [--mcp-token-file PATH]
+               [--api-port N] [--token-file PATH] [--bind ADDR]
+               [--attach [URL]]
 ```
 
 | Flag | Effect | Default |
 |---|---|---|
-| (none) | MCP over stdio, no listener (until P3 lands, it exits 2 and asks for `--api-port`) | on |
+| (none) | MCP over stdio, no listener | on |
 | `--library DIR` | ROM library root for `core.load_rom` paths | none: uploads only |
 | `--debug-dir DIR` | Where `session.write_dump` writes | `debug` |
-| `--api-port N` | Serve the API at `http://127.0.0.1:N/api/v1` (`0` picks a free port; the token file has the URL) | off |
-| `--mcp-port N` | Serve MCP Streamable HTTP at `http://127.0.0.1:N/mcp` | off |
+| `--mcp-stdio` | Serve MCP on stdio as well as the listeners asked for | off, unless no listener flag is given |
+| `--mcp-port N` | Serve MCP Streamable HTTP at `http://127.0.0.1:N/mcp` (`0` picks a free port; the MCP token file has the URL) | off |
+| `--mcp-token-file PATH` | Where to write the MCP token file (FR-024) | `<user state dir>/cutenes/mcp.token` |
+| `--api-port N` | Serve the API at `http://127.0.0.1:N/api/v1` (`0` picks a free port; the API token file has the URL) | off |
+| `--token-file PATH` | Where to write the API token file (FR-024) | `<user state dir>/cutenes/api.token` |
 | `--bind ADDR` | Bind HTTP listeners to `ADDR` instead of loopback (FR-008 network exposure) | loopback |
-| `--token-file PATH` | Where to write the HTTP token file (FR-024) | `<user state dir>/cutenes/api.token` |
-| `--attach URL` | **Bridge mode**: no session; relay stdio MCP to a running GUI's MCP endpoint | off |
+| `--attach [URL]` | **Bridge mode**: no session; relay stdio MCP to a running GUI's MCP endpoint (P4; until then it exits 2) | off |
 
 - Launching is the opt-in (FR-009). With no flags it opens no socket.
-- One session per process. In headless mode the catalog is `core.*`,
-  `session.*` and `api.*`.
+- MCP on stdio runs when no listener flag is given, or with `--mcp-stdio`.
+  Then the server exits at the end of its input, and in-flight calls are
+  cancelled at the next frame boundary, as for any client that goes away.
+  With listeners only, it runs until SIGINT/SIGTERM.
+- One session per process: stdio, the MCP endpoint and the API share it.
+  In headless mode the catalog is `core.*`, `session.*` and `api.*`.
 - Exit codes: 0 on a clean stdin EOF or on SIGINT/SIGTERM, 2 on a usage
-  error, 3 when a bind fails (or the token file cannot be written), 4 when
+  error, 3 when a bind fails (or a token file cannot be written), 4 when
   `--attach` finds no endpoint (the GUI's MCP toggle is off).
-- On start it prints the API URL and the token file's path to stderr, never
-  the token. The token file is JSON, `{"url": ..., "token": ...}`, owner-only
-  (mode 0600; a protected owner-only DACL on Windows), replaced on each start
-  and removed on a clean exit.
+- Each HTTP listener has its own token, generated at launch. On start the
+  server prints each listener's URL and token file path to stderr, never a
+  token. A token file is JSON, `{"url": ..., "token": ...}`, owner-only
+  (mode 0600; a protected owner-only DACL on Windows), replaced on each
+  start and removed on a clean exit.
   The `--attach` message names the setting to enable.
 
 ### GUI: the Qt application (feature 003)
@@ -102,17 +111,38 @@ Example:
 | `subscriptions/listen` (2026-07-28) / `notifications/tools/list_changed` (2025-11-25) | Sent when host commands change (`catalog_changed`) |
 | Tool error | `isError: true` with `structuredContent` `{ name, message, data }` (command-catalog "Errors") |
 
-- Per-request `_meta` version and capabilities (2026-07-28) are read on every
-  request. An unsupported version returns `UnsupportedProtocolVersion`
-  (`-32022`).
+- Revision per request: a request whose `_meta` carries
+  `io.modelcontextprotocol/protocolVersion` is served under that version,
+  statelessly. An unsupported version returns `UnsupportedProtocolVersion`
+  (`-32022`, `data: {supported, requested}`). `initialize` makes a stdio
+  process 2025-11-25 for its requests without `_meta`; on HTTP the
+  `MCP-Protocol-Version: 2025-11-25` header does the same per request. A
+  request with neither is `-32602`.
 - Handles (`blobId`, slot names) are explicit tool arguments.
   There is no protocol session state (2026-07-28 SEP-2567).
+- `tools/list` returns the whole catalog in one page, with
+  `annotations.readOnlyHint` for commands that change nothing. Finding the
+  tool is a protocol error (unknown tool: `-32602`); everything after is a
+  tool result. A success's text block is the result as JSON, with
+  `core.screen`'s PNG replaced by a note, since the PNG is in its own image
+  block. Batches are `-32600` (MCP removed them).
+- `notifications/progress` for `core.run_frames` when the request's `_meta`
+  has a `progressToken`: at most every 100 ms, `progress` frames run of
+  `total`.
 - stdio: newline-delimited JSON-RPC, with nothing but protocol on stdout.
-  Logs go to stderr.
-- Streamable HTTP: a single `POST /mcp` endpoint that requires
-  `Mcp-Method`/`Mcp-Name` and the bearer token, has the same loopback and
-  Origin rules as the API,
-  and returns a JSON response, or SSE for runs long enough to emit
-  `notifications/progress`.
+  Logs go to stderr. A client cancels with `notifications/cancelled`; no
+  response follows. `ping` is answered for 2025-11-25 clients.
+- Streamable HTTP: a single `POST /mcp` endpoint behind the bearer token and
+  the API's loopback and Origin rules. A 2026-07-28 request must send
+  `MCP-Protocol-Version` (equal to its `_meta` version), `Mcp-Method`, and,
+  for `tools/call`, `Mcp-Name` (plain or `=?base64?...?=`); a missing or
+  mismatched header is `400` with `HeaderMismatch` (`-32020`). An
+  unsupported version is `400`, an unknown method `404` with `-32601`, a
+  notification `202`, and `GET`/`DELETE` `405`. A request gets a JSON
+  response, or an SSE stream (`X-Accel-Buffering: no`) when it is a
+  `tools/call` with a `progressToken` (progress, then the result) or
+  `subscriptions/listen` (the acknowledgement, list changes, keep-alive
+  comments, and the closing response when the endpoint stops).
 - Disconnect (FR-013): a broken stream cancels that request at the next frame
-  boundary with `Cancelled`. Nothing else in the session changes.
+  boundary with `Cancelled`. Nothing else in the session changes. Closing
+  the endpoint fails in-flight calls with `ShuttingDown`.

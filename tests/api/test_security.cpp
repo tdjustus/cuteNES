@@ -134,15 +134,26 @@ TEST(ApiSecurity, TokenFileIsOwnerOnly)
     std::filesystem::remove(path);
 }
 
-TEST(ApiSecurity, ServerWithoutFlagsOpensNoListener)
+TEST(ApiSecurity, ServerWithoutFlagsServesOnlyStdio)
 {
-    const std::atomic<bool> stop{true};
-    std::ostringstream err;
-    EXPECT_EQ(cutenes::server::run({}, err, stop), cutenes::server::kExitUsage);
-    EXPECT_NE(err.str().find("--api-port"), std::string::npos);
+    // The default is MCP on stdio and no listener (FR-009): it reports no
+    // URL, writes no token file, and ends cleanly with its input.
+    const std::atomic<bool> stop{false};
+    std::istringstream in;
+    std::ostringstream out, err;
+    EXPECT_EQ(cutenes::server::run({}, in, out, err, stop), cutenes::server::kExitOk);
+    EXPECT_EQ(err.str().find("http://"), std::string::npos) << err.str();
+    EXPECT_EQ(err.str().find("token"), std::string::npos) << err.str();
+    EXPECT_TRUE(out.str().empty()) << out.str();
+
     std::ostringstream usage;
-    EXPECT_EQ(cutenes::server::run({"--bogus"}, usage, stop), cutenes::server::kExitUsage);
-    EXPECT_EQ(cutenes::server::run({"--api-port", "70000"}, usage, stop), cutenes::server::kExitUsage);
+    EXPECT_EQ(cutenes::server::run({"--bogus"}, in, out, usage, stop), cutenes::server::kExitUsage);
+    EXPECT_EQ(cutenes::server::run({"--api-port", "70000"}, in, out, usage, stop),
+        cutenes::server::kExitUsage);
+    EXPECT_EQ(cutenes::server::run({"--mcp-port", "x"}, in, out, usage, stop),
+        cutenes::server::kExitUsage);
+    // The --attach bridge arrives in P4.
+    EXPECT_EQ(cutenes::server::run({"--attach"}, in, out, usage, stop), cutenes::server::kExitUsage);
 }
 
 TEST(ApiSecurity, ServerWritesTheTokenFileAndNeverPrintsTheToken)
@@ -150,12 +161,13 @@ TEST(ApiSecurity, ServerWritesTheTokenFileAndNeverPrintsTheToken)
     const auto path = tempFile("server.token");
     std::filesystem::remove(path);
     std::atomic<bool> stop{false};
-    std::ostringstream err;
+    std::istringstream in;
+    std::ostringstream out, err;
     int code = -1;
     std::thread server([&] {
         code = cutenes::server::run({"--api-port", "0", "--token-file", path.string(),
                                         "--library", romDir()},
-            err, stop);
+            in, out, err, stop);
     });
     // Stop and join on every exit from the test, failed assertions included.
     struct Joiner {

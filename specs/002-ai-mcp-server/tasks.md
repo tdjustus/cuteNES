@@ -69,14 +69,14 @@ Implementation
 
 ## Phase P3: MCP adapter (branch `feature/mcp-adapter`)
 
-- [ ] A040 [P] [US1] Tests first, in `tests/mcp/test_discovery.cpp` (Q1): a stdio subprocess; `server/discover` (2026-07-28) and `initialize` (2025-11-25) each give the catalog; deterministic `tools/list` order; `ttlMs`/`cacheScope`; `UnsupportedProtocolVersion` (-32022)
-- [ ] A041 [P] `tests/mcp/test_schema.cpp`: validate every `tools/list` result and tool result against the pinned official MCP `schema.json` for both revisions (the release gate "MCP schema validates")
-- [ ] A042 [P] [US2] `tests/mcp/test_playloop.cpp` (Q3 over MCP): load, run, `core.screen` returns a valid PNG `image` block, and `$6000` shows the verdict
-- [ ] A043 [P] `tests/mcp/test_parity.cpp` (SC-008): the `tools/list` names equal the `api.catalog` names
-- [ ] A044 [P] `tests/mcp/test_disconnect.cpp` (Q11): kill the client mid-run; the run stops with `Cancelled` and the next client sees a consistent session
-- [ ] A045 `mcp/src`: JSON-RPC dispatcher, `server/discover`, `initialize`, `tools/list`, `tools/call`, the error mapping, and the image content for `core.screen`
-- [ ] A046 stdio transport (stdout is protocol only; logs go to stderr) as the default `cutenes-server` mode
-- [ ] A047 Streamable HTTP at `POST /mcp` (`--mcp-port`): `Mcp-Method`/`Mcp-Name` headers, a JSON or SSE response, `notifications/progress` on long runs, the same security checks as the API (token, Host, Origin)
+- [x] A040 [P] [US1] Tests first, in `tests/mcp/test_discovery.cpp` (Q1): a stdio subprocess; `server/discover` (2026-07-28) and `initialize` (2025-11-25) each give the catalog; deterministic `tools/list` order; `ttlMs`/`cacheScope`; `UnsupportedProtocolVersion` (-32022)
+- [x] A041 [P] `tests/mcp/test_schema.cpp`: validate every `tools/list` result and tool result against the pinned official MCP `schema.json` for both revisions (the release gate "MCP schema validates")
+- [x] A042 [P] [US2] `tests/mcp/test_playloop.cpp` (Q3 over MCP): load, run, `core.screen` returns a valid PNG `image` block, and `$6000` shows the verdict
+- [x] A043 [P] `tests/mcp/test_parity.cpp` (SC-008): the `tools/list` names equal the `api.catalog` names
+- [x] A044 [P] `tests/mcp/test_disconnect.cpp` (Q11): kill the client mid-run; the run stops with `Cancelled` and the next client sees a consistent session
+- [x] A045 `mcp/src`: JSON-RPC dispatcher, `server/discover`, `initialize`, `tools/list`, `tools/call`, the error mapping, and the image content for `core.screen`
+- [x] A046 stdio transport (stdout is protocol only; logs go to stderr) as the default `cutenes-server` mode
+- [x] A047 Streamable HTTP at `POST /mcp` (`--mcp-port`): `Mcp-Method`/`Mcp-Name` headers, a JSON or SSE response, `notifications/progress` on long runs, the same security checks as the API (token, Host, Origin)
 
 ## Phase P4: Host extension and the attach bridge (branch `feature/api-host-extension`)
 

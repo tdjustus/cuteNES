@@ -11,6 +11,7 @@ add_subdirectory(core)
 option(CUTENES_BUILD_API "Build the cutenes-api library" ON)
 if(CUTENES_BUILD_API)
     add_subdirectory(api)
+    add_subdirectory(mcp)
     add_subdirectory(server)
 endif()
 

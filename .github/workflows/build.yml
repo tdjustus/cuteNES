@@ -35,6 +35,7 @@ jobs:
             code:
               - 'core/**'
               - 'api/**'
+              - 'mcp/**'
               - 'server/**'
               - 'tests/**'
               - 'third_party/**'
@@ -126,7 +127,7 @@ jobs:
 
       - name: Test (fast groups, Debug on pull requests)
         if: matrix.buildtype == 'Debug' && github.event_name == 'pull_request'
-        run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior|api" -LE known-failing
+        run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior|api|mcp" -LE known-failing
 
       # Performance gate (constitution: no regression of real-time speed).
       # Shared runners are noisy, so CI fails only below 1.0x real-time; the
@@ -184,7 +185,7 @@ jobs:
 
       - name: Test (fast groups, pull requests)
         if: github.event_name == 'pull_request'
-        run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior|api" -LE known-failing
+        run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior|api|mcp" -LE known-failing
 
   # The single required status check for branch protection. It passes when
   # the jobs above passed or were skipped (docs-only PRs), and fails if any
