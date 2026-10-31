@@ -20,10 +20,11 @@ endif()
 set(CUTENES_BUILD_GUI AUTO CACHE STRING "Build the Qt frontend: AUTO, ON or OFF")
 set_property(CACHE CUTENES_BUILD_GUI PROPERTY STRINGS AUTO ON OFF)
 if(NOT CUTENES_BUILD_GUI STREQUAL "OFF")
-    # QRhi (the view's renderer) is semi-public API in GuiPrivate; Qt keeps
-    # it compatible within a minor release (research R2).
+    # QRhi (the view's renderer) is semi-public API in Qt6::GuiPrivate; Qt
+    # keeps it compatible within a minor release (research R2). Before 6.9
+    # that target comes with Gui; from 6.9 it is a package of its own.
     set(QT_NO_PRIVATE_MODULE_WARNING ON)
-    set(qt_components Widgets Concurrent ShaderTools GuiPrivate)
+    set(qt_components Widgets Concurrent ShaderTools)
     if(NOT CUTENES_BUILD_API)
         if(CUTENES_BUILD_GUI STREQUAL "ON")
             message(FATAL_ERROR "CUTENES_BUILD_GUI=ON needs CUTENES_BUILD_API=ON")
@@ -32,6 +33,9 @@ if(NOT CUTENES_BUILD_GUI STREQUAL "OFF")
         find_package(Qt6 6.8 REQUIRED COMPONENTS ${qt_components})
     else()
         find_package(Qt6 6.8 QUIET COMPONENTS ${qt_components})
+    endif()
+    if(CUTENES_BUILD_API AND Qt6_FOUND AND Qt6_VERSION VERSION_GREATER_EQUAL 6.9)
+        find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
     endif()
     if(CUTENES_BUILD_API AND Qt6_FOUND)
         # Qt before 6.9 links Apple's AGL framework through WrapOpenGL, and
