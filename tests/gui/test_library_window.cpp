@@ -21,7 +21,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMimeData>
-#include <QTreeView>
+#include <QAbstractItemView>
 #include <QUrl>
 
 #include <gtest/gtest.h>
@@ -166,6 +166,25 @@ TEST(GuiLibraryWindow, TypingFiltersAndEnterLaunches)
     QApplication::sendEvent(b->view(), &enter);
     EXPECT_TRUE(waitUntil([&] { return showsGame(w, QStringLiteral("01-basics.nes")); }));
     EXPECT_EQ(runState(w), "Running");
+}
+
+// The grid and the list show the same games with one selection.
+TEST(GuiLibraryWindow, SwitchingToTheListKeepsTheSelection)
+{
+    const auto options = windowOptions();
+    copyRom(romsDir(options) + QStringLiteral("/a.nes"));
+    const QString b = copyRom(romsDir(options) + QStringLiteral("/b.nes"));
+    MainWindow w(options);
+    w.show();
+    LibraryBrowser* browser = w.browser();
+    ASSERT_TRUE(waitUntil([&] { return browser->visibleCount() == 2; }));
+    ASSERT_TRUE(browser->select(b));
+    browser->setViewLayout(LibraryBrowser::Layout::List);
+    EXPECT_EQ(browser->view()->objectName(), QStringLiteral("libraryList"));
+    EXPECT_EQ(browser->selectedPath(), b);
+    QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QApplication::sendEvent(browser->view(), &enter);
+    EXPECT_TRUE(waitUntil([&] { return showsGame(w, QStringLiteral("b.nes")); }));
 }
 
 TEST(GuiLibraryWindow, TheLibraryPausesTheGameAndEscapeReturnsToIt)

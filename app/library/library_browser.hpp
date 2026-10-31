@@ -2,9 +2,10 @@
 
 // The library browser (spec US1, FR-002, FR-003): the ROMs of the library
 // and recent games, with name, mapper, region, support, save and state
-// flags and last played. Type to filter, sort by any column, show only
-// recent games, and launch with Enter or a double click. Fully usable from
-// the keyboard; gamepad focus arrives in G4.
+// flags and last played. Games show as cards in a grid, or as rows in a
+// list. Type to filter, sort, show only recent games, and launch with Enter
+// or a double click. Fully usable from the keyboard; gamepad focus arrives
+// in G4.
 
 #include "library/library_index.hpp"
 
@@ -12,10 +13,12 @@
 #include <QSortFilterProxyModel>
 #include <QWidget>
 
-class QComboBox;
+class QAbstractItemView;
 class QLabel;
 class QLineEdit;
+class QListView;
 class QStackedWidget;
+class QToolButton;
 class QTreeView;
 
 namespace cutenes::app {
@@ -60,6 +63,8 @@ class LibraryBrowser final : public QWidget {
     Q_OBJECT
 
 public:
+    enum class Layout { Grid, List };
+
     explicit LibraryBrowser(QWidget* parent = nullptr);
 
     void setEntries(QVector<LibraryEntry> entries);
@@ -73,8 +78,11 @@ public:
     void setFilterText(const QString& text);
     void setRecentOnly(bool recentOnly);
     int visibleCount() const;
+    Layout viewLayout() const { return m_layout; }
+    void setViewLayout(Layout layout);
 
-    QTreeView* view() const { return m_view; }
+    // The view showing the games (the grid or the list).
+    QAbstractItemView* view() const;
     QLineEdit* filterEdit() const { return m_filter; }
 
 signals:
@@ -88,18 +96,34 @@ signals:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void showEvent(QShowEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
+    QWidget* createHeader();
+    QWidget* createEmptyPage();
     void activate(const QModelIndex& index);
-    void updateEmptyState();
+    void sortBy(int column, Qt::SortOrder order);
+    void updateState();
+    void updateStyle();
 
     LibraryModel* m_model;
     LibraryFilter* m_proxy;
-    QLineEdit* m_filter;
-    QComboBox* m_show;
-    QTreeView* m_view;
-    QStackedWidget* m_pages;
-    QLabel* m_emptyText;
+    QLineEdit* m_filter = nullptr;
+    QLabel* m_count = nullptr;
+    QToolButton* m_all = nullptr;
+    QToolButton* m_recent = nullptr;
+    QToolButton* m_gridButton = nullptr;
+    QToolButton* m_listButton = nullptr;
+    QToolButton* m_sort = nullptr;
+    QWidget* m_controls = nullptr;
+    QLabel* m_emptyIcon = nullptr;
+    Layout m_layout = Layout::Grid;
+    bool m_styling = false;
+    QListView* m_grid = nullptr;
+    QTreeView* m_list = nullptr;
+    QStackedWidget* m_pages = nullptr;
+    QLabel* m_emptyText = nullptr;
+    QLabel* m_noMatch = nullptr;
 };
 
 } // namespace cutenes::app
