@@ -58,12 +58,15 @@ constitution's licensing rules (research.md D11).
 - **Used by**: `cutenes-api` PNG screenshots (`core.screen`), in memory only
   (`STBI_WRITE_NO_STDIO`)
 
-## cpp-httplib (Yuji Hirose) — planned, feature 002 phase P2
+## cpp-httplib v0.61.0 (Yuji Hirose) — fetched at configure time
 
-- **Origin**: https://github.com/yhirose/cpp-httplib (a release at least two
-  weeks old will be pinned by version and hash when P2 adds it)
+- **Origin**: https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.61.0.tar.gz
+  (release 2026-10-14), SHA-256
+  `f03bdb0bee4911d6db0335bc103f0f441ae70c527e993c1f4b3f177586b042d3`,
+  pinned in `api/CMakeLists.txt`. Only the header is used (no OpenSSL)
 - **License**: MIT
-- **Used by**: the API and MCP HTTP listeners (not yet added)
+- **Used by**: the API HTTP listener, its tests, and later the MCP
+  Streamable HTTP listener and the `--attach` bridge
 
 ## No other third-party code is redistributed in this repository.
 

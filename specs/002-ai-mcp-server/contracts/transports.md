@@ -14,19 +14,25 @@ cutenes-server [--library DIR] [--mcp-stdio] [--mcp-port N] [--api-port N]
 
 | Flag | Effect | Default |
 |---|---|---|
-| (none) | MCP over stdio, no listener | on |
+| (none) | MCP over stdio, no listener (until P3 lands, it exits 2 and asks for `--api-port`) | on |
 | `--library DIR` | ROM library root for `core.load_rom` paths | none: uploads only |
-| `--api-port N` | Serve the API at `http://127.0.0.1:N/api/v1` | off |
+| `--debug-dir DIR` | Where `session.write_dump` writes | `debug` |
+| `--api-port N` | Serve the API at `http://127.0.0.1:N/api/v1` (`0` picks a free port; the token file has the URL) | off |
 | `--mcp-port N` | Serve MCP Streamable HTTP at `http://127.0.0.1:N/mcp` | off |
 | `--bind ADDR` | Bind HTTP listeners to `ADDR` instead of loopback (FR-008 network exposure) | loopback |
-| `--token-file PATH` | Where to write the HTTP token file (FR-024) | per-user state dir |
+| `--token-file PATH` | Where to write the HTTP token file (FR-024) | `<user state dir>/cutenes/api.token` |
 | `--attach URL` | **Bridge mode**: no session; relay stdio MCP to a running GUI's MCP endpoint | off |
 
 - Launching is the opt-in (FR-009). With no flags it opens no socket.
 - One session per process. In headless mode the catalog is `core.*`,
   `session.*` and `api.*`.
-- Exit codes: 0 on a clean stdin EOF, 2 on a usage error, 3 when a bind
-  fails, 4 when `--attach` finds no endpoint (the GUI's MCP toggle is off).
+- Exit codes: 0 on a clean stdin EOF or on SIGINT/SIGTERM, 2 on a usage
+  error, 3 when a bind fails (or the token file cannot be written), 4 when
+  `--attach` finds no endpoint (the GUI's MCP toggle is off).
+- On start it prints the API URL and the token file's path to stderr, never
+  the token. The token file is JSON, `{"url": ..., "token": ...}`, owner-only
+  (mode 0600; a protected owner-only DACL on Windows), replaced on each start
+  and removed on a clean exit.
   The `--attach` message names the setting to enable.
 
 ### GUI: the Qt application (feature 003)
@@ -48,11 +54,26 @@ cutenes-server [--library DIR] [--mcp-stdio] [--mcp-port N] [--api-port N]
 - **Endpoint**: `POST /api/v1/rpc`, `Content-Type: application/json`, with a
   JSON-RPC 2.0 request or batch. `method` is the command name and `params`
   is its arguments object.
+- **Responses**: a batch made only of notifications, or a single
+  notification, gets `204 No Content`. Parameters are by name only (an
+  array `params` is `-32602`).
+- **Errors**: the JSON-RPC `error` is `{ code, message, data }`, and
+  `data.name` is the command-catalog error name next to its details.
+  `UnknownCommand` is `-32601`, `InvalidArguments` `-32602`, `InternalError`
+  `-32603`; the rest are `NoCartridge -32001`, `LoadError -32002`,
+  `LoadStateError -32003`, `WriteError -32004`, `PathOutsideLibrary -32005`,
+  `LimitExceeded -32006`, `UnknownHandle -32007`, `Cancelled -32008`,
+  `ShuttingDown -32009`, `NotFound -32010`, `NoBattery -32011`.
+- **Disconnect**: a client that closes its connection mid-call cancels it at
+  the next frame boundary (FR-013), as for MCP.
 - **Events**: `GET /api/v1/events` is a Server-Sent Events stream. Events are
   `state_changed` (load, eject, reset, power, state load, CPU or memory
   write), `run_state_changed`, `frame` (at most 10 per second, with
   `frame`/`frameHash`) and `catalog_changed` (host commands added or
-  removed).
+  removed). Each `data` is a JSON object with the event's fields plus `frame`
+  and `masterCycle`. The stream starts with a `: connected` comment and
+  sends a `: keepalive` comment after 15 s without events; a client that
+  falls 256 events behind loses the oldest.
 - **Discovery**: `api.catalog` returns every command with its `inputSchema`
   and `outputSchema` (JSON Schema 2020-12).
 - **Security** (R11): loopback bind by default. Every request needs

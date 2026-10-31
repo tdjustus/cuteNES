@@ -11,6 +11,7 @@ add_subdirectory(core)
 option(CUTENES_BUILD_API "Build the cutenes-api library" ON)
 if(CUTENES_BUILD_API)
     add_subdirectory(api)
+    add_subdirectory(server)
 endif()
 
 # Dev/standalone-only targets. Consumers who add_subdirectory() or
