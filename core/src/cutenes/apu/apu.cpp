@@ -120,7 +120,7 @@ void Apu::buildTables()
             const double window = 0.54 - 0.46 * std::cos(
                 2.0 * kPi * (t + frac) / 16.0);
             sTaps[static_cast<std::size_t>(p) * 16 + static_cast<std::size_t>(t)] = static_cast<std::int32_t>(
-                std::lround(8192.0 * sinc * window));
+                std::lround(16384.0 * sinc * window));
         }
     }
     sTablesBuilt = true;
@@ -433,16 +433,16 @@ void Apu::computeFilterCoefficients()
 {
     const std::uint32_t rate = m_outRate;
     // One-pole coefficients (Q30), computed once per configuration — double
-    // is allowed here, never in the emulated path (research.md D7).
-    const auto alphaQ30 = [rate](double hz) {
-        const double dt = 1.0 / static_cast<double>(rate);
-        const double rc = 1.0 / (2.0 * kPi * hz);
-        const double a = dt / (rc + dt);
-        return static_cast<std::int64_t>(a * 1073741824.0);
-    };
-    m_hpf1B = alphaQ30(90.0);
-    m_hpf2B = alphaQ30(440.0);
-    m_lpfB = alphaQ30(14000.0);
+    // is allowed here, never in the emulated path (research.md D7). A
+    // low-pass uses dt/(rc+dt); a high-pass, rc/(rc+dt) (issue #87).
+    const double dt = 1.0 / static_cast<double>(rate);
+    const auto q30 = [](double a) { return static_cast<std::int64_t>(a * 1073741824.0); };
+    const auto rcOf = [](double hz) { return 1.0 / (2.0 * kPi * hz); };
+    const auto highPass = [&](double hz) { return q30(rcOf(hz) / (rcOf(hz) + dt)); };
+    const auto lowPass = [&](double hz) { return q30(dt / (rcOf(hz) + dt)); };
+    m_hpf1B = highPass(90.0);
+    m_hpf2B = highPass(440.0);
+    m_lpfB = lowPass(14000.0);
 }
 
 void Apu::setAudioSink(IAudioSink* sink) { m_sink = sink; }

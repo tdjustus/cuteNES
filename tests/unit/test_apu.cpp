@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace {
@@ -86,6 +87,35 @@ TEST(Apu, EnabledPulseProducesSound)
         }
     }
     EXPECT_TRUE(anyNonZero);
+}
+
+// Issue #87. The output chain is the NES's (nesdev wiki "APU Mixer"):
+// high-pass 90 Hz, high-pass 440 Hz, then low-pass 14 kHz, with no other
+// gain. A steady ~4 kHz square wave (pulse timer 27: 1.789773 MHz / 16 / 28)
+// sits well inside that band. A step of S through a one-pole high-pass with
+// time constant tau settles to a peak-to-peak of 2S / (1 + e^(-T/(2 tau))),
+// which for a 125 us half-period and 440 Hz (tau 362 us) is about 1.17 S.
+// The 90 Hz stage adds a little and the 14 kHz low-pass rounds the edges,
+// so expect 0.9 S to 1.4 S, where S is the mixer's value for one pulse at
+// volume 15.
+TEST(Apu, APulseToneKeepsItsMixerAmplitude)
+{
+    ApuHarness h;
+    h.apu.registerWrite(0x4015, 0x01); // pulse 1 on
+    h.apu.registerWrite(0x4000, 0xBF); // duty 2 (50%), length halt, constant volume 15
+    h.apu.registerWrite(0x4002, 27);   // timer 27: about 3995 Hz
+    h.apu.registerWrite(0x4003, 0x00);
+    h.runFrames(6);
+    ASSERT_GT(h.sink.samples.size(), 3200u);
+    // The last two frames, once the filters have settled.
+    const auto last = h.sink.samples.end() - 1600;
+    const auto [lo, hi] = std::minmax_element(last, h.sink.samples.end());
+    const double peakToPeak = static_cast<double>(*hi) - *lo;
+    const double step = cutenes::Apu::mixerPulse(15);
+    EXPECT_GT(peakToPeak, 0.9 * step) << "min " << *lo << ", max " << *hi << ", step " << step;
+    EXPECT_LT(peakToPeak, 1.4 * step) << "min " << *lo << ", max " << *hi << ", step " << step;
+    // The high-passes remove the DC: the tone is centred on zero.
+    EXPECT_LT(std::abs(*hi + *lo), 0.2 * step);
 }
 
 TEST(Apu, LengthCounterExpiresAndStatusReflectsIt)
