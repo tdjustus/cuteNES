@@ -25,6 +25,11 @@ target_include_directories(cutenes-httplib SYSTEM INTERFACE ${httplib_SOURCE_DIR
 if(WIN32)
     target_link_libraries(cutenes-httplib INTERFACE ws2_32)
 endif()
+# MinGW debug objects that include httplib and nlohmann/json exceed COFF's
+# 32767-section limit; the big-object format lifts it.
+if(MINGW)
+    target_compile_options(cutenes-httplib INTERFACE -Wa,-mbig-obj)
+endif()
 
 add_library(cutenes-api
     src/registry.cpp
@@ -55,6 +60,10 @@ target_include_directories(cutenes-api SYSTEM PUBLIC ${_json_includes})
 find_package(Threads REQUIRED)
 target_link_libraries(cutenes-api PUBLIC cutenes-core::cutenes-core Threads::Threads)
 target_link_libraries(cutenes-api PRIVATE cutenes-httplib)
+if(MINGW)
+    # The big-object format for every target that includes nlohmann/json.
+    target_compile_options(cutenes-api PUBLIC -Wa,-mbig-obj)
+endif()
 if(WIN32)
     # BCryptGenRandom and the token file's owner-only DACL.
     target_link_libraries(cutenes-api PRIVATE bcrypt advapi32)
