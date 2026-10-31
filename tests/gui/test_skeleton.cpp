@@ -22,6 +22,7 @@
 
 using cutenes::app::AboutDialog;
 using cutenes::app::MainWindow;
+using cutenes::test::windowOptions;
 
 namespace {
 
@@ -42,13 +43,13 @@ QAction* actionFor(const QMenu* menu, const char* command)
 
 TEST(GuiSkeleton, MainWindowIsTitledCuteNes)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     EXPECT_EQ(w.windowTitle(), QStringLiteral("cuteNES"));
 }
 
 TEST(GuiSkeleton, MenuBarHasTheSevenMenusInOrder)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     QStringList titles;
     for (QAction* a : w.menuBar()->actions()) titles << plain(a->text());
     EXPECT_EQ(titles, (QStringList{QStringLiteral("File"), QStringLiteral("Emulation"),
@@ -58,7 +59,7 @@ TEST(GuiSkeleton, MenuBarHasTheSevenMenusInOrder)
 
 TEST(GuiSkeleton, ExitAndAboutCarryTheirCommandsShortcutsAndRoles)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     QAction* exitAction = actionFor(w.menu(QStringLiteral("menuFile")), "gui.exit");
     ASSERT_NE(exitAction, nullptr);
     EXPECT_EQ(exitAction->shortcut(), QKeySequence(Qt::CTRL | Qt::Key_Q));
@@ -71,7 +72,7 @@ TEST(GuiSkeleton, ExitAndAboutCarryTheirCommandsShortcutsAndRoles)
 
 TEST(GuiSkeleton, AboutShowsTheVersionsAndTheLicenses)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     actionFor(w.menu(QStringLiteral("menuHelp")), "gui.show_about")->trigger();
     AboutDialog* dialog = nullptr;
     ASSERT_TRUE(cutenes::test::waitUntil([&] {
@@ -126,7 +127,7 @@ TEST(GuiMediaRuntime, LeavesSigtermToTheProcess)
 // Recent's entries (gui.open_recent) appear only once there are recent games.
 TEST(GuiMenus, EveryContractCommandIsOnTheMenus)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     QSet<QString> found;
     for (QAction* a : w.menuBar()->findChildren<QAction*>()) {
         const QString command = a->property("command").toString();
@@ -168,7 +169,7 @@ TEST(GuiMenus, EveryContractCommandIsOnTheMenus)
 // an item of its own (contract "Conventions").
 TEST(GuiMenus, EveryMenuKeepsAnItemOfItsOwnOnMacOs)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     for (QAction* top : w.menuBar()->actions()) {
         int own = 0;
         for (QAction* a : top->menu()->actions()) {
@@ -197,7 +198,7 @@ QAction* actionWith(const MainWindow& w, const char* command, const char* arg = 
 // Default shortcuts from the contract's tables.
 TEST(GuiMenus, DefaultShortcutsFollowTheContract)
 {
-    MainWindow w;
+    MainWindow w(windowOptions());
     const struct {
         const char* command;
         const char* arg;

@@ -410,8 +410,10 @@ and compare the pattern table with the CHR data.
   location override, loading a state slot at start, and enabling the API or
   MCP server for that run; `--help` and `--version` MUST be provided.
 - **FR-002**: The library browser MUST list every ROM found under the
-  library's ROM folder, including subfolders, plus recently opened ROMs from
-  any other location. For each it MUST show the name, the board/mapper,
+  library's ROM folder and under any ROM folders the user added (Settings >
+  Library), including subfolders, plus recently opened ROMs from any other
+  location. Added folders are scanned in place and never written to; the
+  user can remove them, but not the library's own ROM folder. For each it MUST show the name, the board/mapper,
   region, whether it is supported, whether a battery save or states exist,
   and when it was last played.
 - **FR-003**: The library browser MUST support filtering by typed text,
@@ -422,7 +424,7 @@ and compare the pattern table with the CHR data.
   dragging a file onto the window, from the command line, or through the
   operating system's "open with". The library is for quick discovery only.
 - **FR-005**: The library index MUST appear immediately from its last
-  contents and refresh in the background. Changes to the ROM folder MUST be
+  contents and refresh in the background. Changes to the ROM folders MUST be
   picked up without restarting.
 - **FR-006**: A ROM the core rejects MUST be listed as unsupported with the
   core's reason. Opening it MUST show that reason and leave any running game

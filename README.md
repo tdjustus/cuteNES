@@ -57,7 +57,11 @@ distribution, or the Qt online installer. SDL3 is fetched automatically.
 When CMake can't find Qt, it builds everything except the GUI. Point it at
 a Qt installation with `-DCMAKE_PREFIX_PATH=<Qt dir>`, or pass
 `-DCUTENES_BUILD_GUI=ON` to make a missing Qt an error. The GUI is at
-`build/app/cutenes` (`build/app/cutenes.app` on macOS). On Linux, install
+`build/app/cutenes` (`build/app/cutenes.app` on macOS). It keeps your
+games in a library folder, `Documents/cuteNES` by default: put ROMs in its
+`roms/` folder or add your own ROM folders (Add Folder… in the library),
+and battery saves go to `saves/`. Change the location in
+Settings > Library, or use `--library DIR` for one run. On Linux, install
 the ALSA, PulseAudio and udev development headers first
 (`libasound2-dev libpulse-dev libudev-dev` on Debian and Ubuntu), so SDL3
 builds with real audio and gamepad support. Clone with `--recurse-submodules` to get the test-ROM archive
@@ -185,9 +189,9 @@ Tests are labelled in CTest. Counts are from the current tree.
 | `tier2` | 28 | Broader ROM suites incl. 22 Holy Mapperel board tests | every PR (Release builds) |
 | `behavior` | 18 | Determinism (run twice, byte-identical), save-state round trip, instruction-step equivalence | every PR |
 | `playtest`, `corpus` | 113 | Scripted ROM runs with on-screen text or pinned, hand-viewed frame hashes | every PR, except entries needing `roms-local/` |
-| `api` | 95 | The `cutenes-api` command layer and HTTP API (feature 002): every `core.*`/`session.*` command against the contracts, a test ROM's own verdict through the commands, save-slot branching, structured errors that change no state, call ordering across threads and clients, JSON-RPC 2.0 framing, the token, Host and Origin checks, the frozen catalog, a GUI host's `gui.*` commands reaching both catalogs and MCP clients' list-changed notifications, and real-time play (one frame per requested frame, commands between frames, human and automation input combined) | every PR |
+| `api` | 96 | The `cutenes-api` command layer and HTTP API (feature 002): every `core.*`/`session.*` command against the contracts, a test ROM's own verdict through the commands, save-slot branching, structured errors that change no state, call ordering across threads and clients, JSON-RPC 2.0 framing, the token, Host and Origin checks, the frozen catalog, a GUI host's `gui.*` commands reaching both catalogs and MCP clients' list-changed notifications, and real-time play (one frame per requested frame, commands between frames, human and automation input combined) | every PR |
 | `mcp` | 33 | The MCP adapter (feature 002) against MCP's own pinned `schema.json` for both revisions it serves (2026-07-28 and 2025-11-25): discovery over stdio with the real executable, a test ROM's verdict and a PNG image block through tool calls, `tools/list` equal to `api.catalog`, Streamable HTTP's header and status rules, progress and subscription streams, cancellation when a client goes away, and the `--attach` bridge relaying a stdio client to a running instance (exit 4 when there is none) | every PR |
-| `gui` | 32 | The Qt frontend (feature 003), offscreen and with SDL's dummy audio: the window and its seven menus in the spec's order, the menu actions' `gui.*` commands, shortcuts and platform roles, About's versions and license texts (Qt's LGPL included), SDL starting audio and gamepads, SIGTERM still ending the process, picture sizing (aspect, overscan, integer scaling), keyboard defaults, the frame hand-off, the frame clock, audio rate control within ±0.5%, the command line, and playing a test ROM to its own "passed" in real time with the view showing the core's exact frame | every PR (not the sanitizer job) |
+| `gui` | 84 | The Qt frontend (feature 003), offscreen and with SDL's dummy audio: the window and its seven menus in the spec's order, the menu actions' `gui.*` commands, shortcuts and platform roles, About's versions and license texts (Qt's LGPL included), SDL starting audio and gamepads, SIGTERM still ending the process, picture sizing (aspect, overscan, integer scaling), keyboard defaults, the frame hand-off, the frame clock, audio rate control within ±0.5%, the command line, playing a test ROM to its own "passed" in real time with the view showing the core's exact frame, game identity and file naming, the library layout, index and browser, recent games, Settings > Library, and battery saves (written within the interval and on close, atomic, found by identity after a rename, a bad save set aside, one writer per game) | every PR (not the sanitizer job) |
 | `known-failing` | 1 | A documented hardware discrepancy (#42) | never (run with `ctest -L known-failing`) |
 
 What the numbers do not say: a golden hash records what this emulator draws,

@@ -7,7 +7,14 @@ add_library(cutenes-app-lib STATIC
     mainwindow.cpp
     about_dialog.cpp
     cli.cpp
-    host/gui_host.cpp)
+    dialogs/settings_dialog.cpp
+    host/gui_host.cpp
+    library/game_identity.cpp
+    library/library.cpp
+    library/library_browser.cpp
+    library/library_index.cpp
+    persistence/battery_saver.cpp
+    settings/app_settings.cpp)
 target_include_directories(cutenes-app-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(cutenes-app-lib PUBLIC cutenes-qt Qt6::Widgets Qt6::Concurrent)
 target_compile_definitions(cutenes-app-lib PUBLIC

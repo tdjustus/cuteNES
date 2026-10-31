@@ -153,6 +153,7 @@ Each group's keys are an enum in its schema (data-model.md "Settings").
 | `gui.close_window` | `window` (any that opened by a `gui.show_*`; `all`) |
 | `gui.list_windows` | Open windows and dialogs |
 | `gui.library_select` | `path` or `identity`: select a game in the browser |
+| `gui.add_rom_folder` / `gui.remove_rom_folder` | `path`: scan another folder of ROMs in place, or stop scanning it (FR-002). Overlapping folders and the library's own `roms/` are refused. Returns `romFolders` |
 | `gui.add_cheat` / `gui.remove_cheat` / `gui.set_cheat_enabled` / `gui.list_cheats` | Cheat list (data-model "Cheat") |
 | `gui.cheat_search_reset` / `gui.cheat_search_filter` / `gui.cheat_search_results` | `filter`: `equal`/`not_equal`/`greater`/`less`/`changed`/`unchanged`, optional `value` |
 | `gui.debug_*`, `gui.*_breakpoint`, `gui.trace_*` | Debugger, above |

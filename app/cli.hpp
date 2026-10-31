@@ -11,6 +11,8 @@ namespace cutenes::app {
 
 struct CommandLine {
     QString rom;
+    // --library DIR: the library for this run only (absolute).
+    QString library;
     bool fullscreen = false;
     // Set when the program should print `output` and exit: 0 for --help and
     // --version, 2 for a usage error.

@@ -149,12 +149,15 @@ TEST(GuiMailbox, HandsOverTheNewestFrameOnce)
     EXPECT_TRUE(out.empty());
 }
 
-// The timer runs at its rate: a 100 Hz clock's ticks are 10 ms apart. The
-// median interval ignores the odd stall of a loaded CI machine (after
-// which the clock deliberately skips instead of bursting); the upper bound
-// allows for a virtual machine's timer slack (13 ms seen on CI's macOS).
-// Pacing under load is soak-tested with a simulated clock in G9 (A15).
-TEST(GuiFrameClock, TicksAtItsRate)
+// The timer never runs ahead of its rate: a 100 Hz clock ticks at most 100
+// times a second. It keeps a fixed schedule, so a late tick (a virtual
+// machine's timer slack) is followed by a quick one, but after a stall it
+// skips ahead instead of bursting: it catches up on at most 4 periods, so
+// any 8 ticks span at least one period. A loaded machine can only make it
+// slower (CI's macOS VM measured 32 Hz under the parallel test run), so the
+// wall clock cannot show that it keeps up here; the pacing soak does (G092,
+// A15).
+TEST(GuiFrameClock, NeverRunsAheadOfItsRate)
 {
     using clock = std::chrono::steady_clock;
     std::mutex mutex;
@@ -169,16 +172,13 @@ TEST(GuiFrameClock, TicksAtItsRate)
     EXPECT_NEAR(frameClock.rate(), 100.0, 0.01);
 
     std::lock_guard lock(mutex);
-    ASSERT_GE(times.size(), 10u);
-    std::vector<double> intervals;
-    for (std::size_t i = 1; i < times.size(); ++i) {
-        intervals.push_back(std::chrono::duration<double, std::milli>(times[i] - times[i - 1]).count());
+    ASSERT_GE(times.size(), 5u);
+    const double seconds = std::chrono::duration<double>(times.back() - times.front()).count();
+    const double hz = static_cast<double>(times.size() - 1) / seconds;
+    EXPECT_LT(hz, 105.0);
+    for (std::size_t i = 8; i < times.size(); ++i) {
+        EXPECT_GE(times[i] - times[i - 8], std::chrono::milliseconds(10)) << "a burst at tick " << i;
     }
-    std::nth_element(intervals.begin(), intervals.begin() + static_cast<std::ptrdiff_t>(intervals.size() / 2),
-        intervals.end());
-    const double median = intervals[intervals.size() / 2];
-    EXPECT_GT(median, 8.0);
-    EXPECT_LT(median, 20.0);
 
     const std::size_t after = times.size();
     mutex.unlock();

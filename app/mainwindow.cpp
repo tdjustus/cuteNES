@@ -1,6 +1,9 @@
 #include "mainwindow.hpp"
 
 #include "about_dialog.hpp"
+#include "dialogs/settings_dialog.hpp"
+#include "library/library_browser.hpp"
+#include "library/library_index.hpp"
 
 #include <cutenes/qt/audio_output.hpp>
 #include <cutenes/qt/emulation_view.hpp>
@@ -9,6 +12,15 @@
 #include <QAction>
 #include <QtMath>
 #include <QApplication>
+#include <QCloseEvent>
+#include <QDesktopServices>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QPushButton>
+#include <QStackedWidget>
+#include <QTreeView>
+#include <QUrl>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -71,6 +83,7 @@ public:
     }
 
     void separator() { m_menu->addSeparator(); }
+    QMenu* menu() const { return m_menu; }
 
 private:
     QMenu* m_menu;
@@ -80,14 +93,17 @@ private:
 constexpr double kNtscFps = 60.0988;
 constexpr double kPalFps = 50.0070;
 
-// The actions G1 implements, and those of them that need a game (contract
-// "Game" column).
+// The actions implemented so far (G1, G2), and those of them that need a
+// game (contract "Game" column). Settings pages arrive with their phases.
 const QStringList kImplemented = {
     QStringLiteral("gui.open_rom"), QStringLiteral("gui.close_game"),
     QStringLiteral("gui.toggle_pause"), QStringLiteral("gui.reset"),
     QStringLiteral("gui.power_cycle"), QStringLiteral("gui.exit"),
-    QStringLiteral("gui.show_about"),
+    QStringLiteral("gui.show_about"), QStringLiteral("gui.show_library"),
+    QStringLiteral("gui.open_library_folder"), QStringLiteral("gui.clear_recent"),
+    QStringLiteral("gui.show_settings"),
 };
+const QStringList kSettingsPages = {QStringLiteral("library")};
 const QStringList kNeedGame = {
     QStringLiteral("gui.close_game"), QStringLiteral("gui.toggle_pause"),
     QStringLiteral("gui.reset"), QStringLiteral("gui.power_cycle"),
@@ -96,6 +112,23 @@ const QStringList kNeedGame = {
 api::Json toJson(const QVariantMap& map)
 {
     return api::Json::parse(QJsonDocument::fromVariant(map).toJson(QJsonDocument::Compact).toStdString());
+}
+
+bool isRom(const QUrl& url)
+{
+    return url.isLocalFile() && url.toLocalFile().endsWith(QLatin1String(".nes"), Qt::CaseInsensitive);
+}
+
+// Whether any of the library's folders holds anything worth moving.
+bool hasContents(const Library& library)
+{
+    for (const auto folder : {Library::Folder::Roms, Library::Folder::Saves, Library::Folder::States,
+             Library::Folder::Screenshots, Library::Folder::Movies, Library::Folder::Recordings,
+             Library::Folder::Cheats, Library::Folder::Debug}) {
+        const QStringList names = QDir(library.folder(folder)).entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
+        if (!(names.isEmpty() || names == QStringList{QStringLiteral("README.txt")})) return true;
+    }
+    return false;
 }
 
 QKeySequence none(const QVariant&)
@@ -125,48 +158,55 @@ auto functionKey(Qt::KeyboardModifiers modifiers)
 
 } // namespace
 
-MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
+MainWindow::MainWindow(const Options& options, QWidget* parent)
+    : QMainWindow(parent),
+      m_options(options),
+      m_settings(options.settingsFile),
+      m_library(options.libraryRoot.isEmpty() ? m_settings.libraryRoot() : options.libraryRoot),
+      m_battery(options.batteryInterval)
 {
     setWindowTitle(QStringLiteral("cuteNES"));
+    setAcceptDrops(true);
 
-    m_view = new qt::EmulationView(this);
-    setCentralWidget(m_view);
+    // The default library, or one named on the command line, is created on
+    // first use, and missing subfolders are filled in; a saved one that went
+    // missing is the user's to decide about (checkLibrary).
+    if (m_library.isUsable() || m_library.root() == Library::defaultRoot() || !options.libraryRoot.isEmpty()) {
+        m_library.ensureLayout();
+    }
+
+    m_pages = new QStackedWidget(this);
+    m_browser = new LibraryBrowser(m_pages);
+    m_browser->setLibraryRoot(m_library.root());
+    m_view = new qt::EmulationView(m_pages);
+    m_pages->addWidget(m_browser);
+    m_pages->addWidget(m_view);
+    setCentralWidget(m_pages);
     m_audio = std::make_unique<qt::AudioOutput>();
     m_audio->open(); // silent if no device (spec US7-5)
 
-    // Hooks run on the emulation thread; widget work is posted (R11).
-    GuiHost::Hooks hooks;
-    hooks.showOpenRomDialog = [this] {
-        QMetaObject::invokeMethod(this, &MainWindow::showOpenRomDialog, Qt::QueuedConnection);
-    };
-    hooks.gameLoaded = [this](const std::string& path) {
-        m_clock->setRate(m_session->machine().region() == Region::Pal ? kPalFps : kNtscFps);
-        const QString name = QFileInfo(QString::fromStdString(path)).fileName();
-        QMetaObject::invokeMethod(this, [this, name] {
-            m_romName = name;
-            setWindowTitle(tr("%1 — cuteNES").arg(name));
-        }, Qt::QueuedConnection);
-    };
-    hooks.gameClosed = [this] {
-        m_view->clearFrame();
-        QMetaObject::invokeMethod(this, [this] {
-            m_romName.clear();
-            setWindowTitle(QStringLiteral("cuteNES"));
-        }, Qt::QueuedConnection);
-    };
-    hooks.exit = [this] { QMetaObject::invokeMethod(this, &QWidget::close, Qt::QueuedConnection); };
-    hooks.showAbout = [this] {
-        QMetaObject::invokeMethod(this, &MainWindow::showAbout, Qt::QueuedConnection);
-    };
-    hooks.event = [this](const api::Event& event) { onSessionEvent(event); };
-    m_host = std::make_unique<GuiHost>(std::move(hooks));
+    m_index = new LibraryIndex(options.indexCacheFile.isEmpty() ? LibraryIndex::defaultCacheFile()
+                                                                 : options.indexCacheFile,
+        m_settings, this);
+    connect(m_index, &LibraryIndex::entriesChanged, this, [this] { m_browser->setEntries(m_index->entries()); });
+    m_index->setLibrary(m_library);
 
+    connect(m_browser, &LibraryBrowser::openRequested, this, &MainWindow::openRom);
+    connect(m_browser, &LibraryBrowser::openFileRequested, this,
+        [this] { runCommand(QStringLiteral("gui.open_rom")); });
+    connect(m_browser, &LibraryBrowser::addFolderRequested, this, &MainWindow::addRomFolder);
+    connect(m_browser, &LibraryBrowser::changeLocationRequested, this, &MainWindow::changeLibraryLocation);
+    connect(m_browser, &LibraryBrowser::backRequested, this, &MainWindow::returnToGame);
+
+    m_host = std::make_unique<GuiHost>(static_cast<GuiHost::Window&>(*this), m_settings, m_battery);
     api::SessionConfig config;
     config.host = m_host.get();
+    config.libraryRoot = m_library.folder(Library::Folder::Roms).toStdString();
     config.debugDir = QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
                           .filePath(QStringLiteral("debug"))
                           .toStdString();
     m_session = std::make_unique<api::Session>(config);
+    m_host->attach(*m_session);
     m_session->setMediaSinks(m_view, m_audio.get());
     m_session->setRealtime(true);
 
@@ -179,6 +219,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     m_commands.setMaxThreadCount(2);
     createMenus();
     wireActions();
+    rebuildRecentMenu();
     setRunState(QStringLiteral("NeedsRom"));
 
     // Rounded up, so the picture fits at exactly that scale.
@@ -192,9 +233,26 @@ MainWindow::~MainWindow()
 {
     qApp->removeEventFilter(this);
     m_clock->stop();
+    // FR-012: the battery save is on disk before the window goes (a closed
+    // window already did this; without a game the call just fails).
+    m_session->call("gui.close_game");
     m_session->setMediaSinks(nullptr, nullptr);
     m_session->shutdown(); // queued and later calls fail with ShuttingDown
     m_commands.waitForDone();
+    delete m_index; // it reads m_settings
+    m_index = nullptr;
+    m_settings.sync();
+}
+
+Library MainWindow::library() const
+{
+    std::lock_guard lock(m_libraryMutex);
+    return m_library;
+}
+
+bool MainWindow::isShowingLibrary() const
+{
+    return m_pages->currentWidget() == m_browser;
 }
 
 QMenu* MainWindow::menu(const QString& objectName) const
@@ -223,7 +281,8 @@ void MainWindow::createMenus()
 
     MenuBuilder file(menu(QStringLiteral("menuFile")));
     file.item(tr("&Open ROM…"), "gui.open_rom", QKeySequence(Qt::CTRL | Qt::Key_O));
-    file.submenu(tr("Open &Recent")).item(tr("Clear List"), "gui.clear_recent");
+    m_recentMenu = file.submenu(tr("Open &Recent")).menu();
+    m_recentMenu->setObjectName(QStringLiteral("menuRecent"));
     file.item(tr("Game &Library"), "gui.show_library", QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O));
     file.item(tr("&Close Game"), "gui.close_game", QKeySequence(Qt::CTRL | Qt::Key_W));
     file.separator();
@@ -372,6 +431,10 @@ void MainWindow::wireActions()
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
         const QString command = action->property("command").toString();
         if (!kImplemented.contains(command)) continue;
+        if (command == QLatin1String("gui.show_settings")) {
+            const QString page = action->property("commandArgs").toMap().value(QStringLiteral("page")).toString();
+            if (!page.isEmpty() && !kSettingsPages.contains(page)) continue;
+        }
         action->setToolTip({});
         action->setEnabled(true);
         connect(action, &QAction::triggered, this, [this, action, command] {
@@ -380,15 +443,48 @@ void MainWindow::wireActions()
     }
 }
 
+void MainWindow::rebuildRecentMenu()
+{
+    // File > Open Recent: the newest first, each opening by its place in
+    // the list (gui.open_recent), then Clear List.
+    m_recentMenu->clear();
+    const QStringList recent = m_settings.recent();
+    for (int i = 0; i < recent.size(); ++i) {
+        const QString text = i < 9 ? QStringLiteral("&%1 %2").arg(i + 1).arg(QFileInfo(recent[i]).fileName())
+                                   : QFileInfo(recent[i]).fileName();
+        QAction* action = m_recentMenu->addAction(text);
+        action->setObjectName(QStringLiteral("gui.open_recent"));
+        action->setProperty("command", QStringLiteral("gui.open_recent"));
+        action->setProperty("commandArgs", QVariantMap{{QStringLiteral("index"), i}});
+        action->setToolTip(recent[i]);
+        action->setMenuRole(QAction::NoRole);
+        connect(action, &QAction::triggered, this, [this, i] {
+            runCommand(QStringLiteral("gui.open_recent"), {{QStringLiteral("index"), i}});
+        });
+    }
+    if (!recent.isEmpty()) m_recentMenu->addSeparator();
+    QAction* clear = m_recentMenu->addAction(tr("Clear List"));
+    clear->setObjectName(QStringLiteral("gui.clear_recent"));
+    clear->setProperty("command", QStringLiteral("gui.clear_recent"));
+    clear->setProperty("commandArgs", QVariantMap{});
+    clear->setMenuRole(QAction::NoRole);
+    clear->setEnabled(!recent.isEmpty());
+    connect(clear, &QAction::triggered, this, [this] { runCommand(QStringLiteral("gui.clear_recent")); });
+}
+
 QFuture<api::Result> MainWindow::runCommand(const QString& name, const QVariantMap& args, bool quiet)
 {
     QFuture<api::Result> future = QtConcurrent::run(&m_commands,
-        [session = m_session.get(), name = name.toStdString(), json = toJson(args)] {
-            return session->call(name, json);
+        [session = m_session.get(), command = name.toStdString(), json = toJson(args)] {
+            return session->call(command, json);
         });
     if (!quiet) {
         future.then(this, [this, name](const api::Result& result) {
-            if (result.isError()) showError(name, *result.error);
+            if (result.isError()) {
+                showError(name, *result.error);
+            } else if (result.value.contains("warning") && result.value["warning"].is_string()) {
+                showWarning(QString::fromStdString(result.value["warning"].get<std::string>()));
+            }
         });
     }
     return future;
@@ -412,7 +508,127 @@ void MainWindow::showError(const QString& name, const api::Error& error)
     emit commandFailed(name, text);
 }
 
-void MainWindow::onSessionEvent(const api::Event& event)
+void MainWindow::showWarning(const QString& message)
+{
+    auto* box = new QMessageBox(QMessageBox::Information, QStringLiteral("cuteNES"), message, QMessageBox::Ok, this);
+    box->setObjectName(QStringLiteral("warning"));
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->open();
+    emit warningShown(message);
+}
+
+// --- GuiHost::Window (emulation thread) -------------------------------------
+
+void MainWindow::showLibrary(const QString& select, bool paused)
+{
+    QMetaObject::invokeMethod(this, [this, select, paused] {
+        if (paused) m_resumeOnReturn = true;
+        m_input.clear();
+        pushInput();
+        m_pages->setCurrentWidget(m_browser);
+        if (!select.isEmpty()) m_browser->select(select);
+        m_browser->view()->setFocus();
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::showSettings(const QString& page)
+{
+    QMetaObject::invokeMethod(this, [this, page] {
+        if (!m_settingsDialog) {
+            m_settingsDialog = new SettingsDialog(this);
+            m_settingsDialog->setAttribute(Qt::WA_DeleteOnClose);
+            connect(m_settingsDialog, &SettingsDialog::pageShown, this,
+                [this](const QString& shown) { m_settings.setLastSettingsPage(shown); });
+            connect(m_settingsDialog, &SettingsDialog::changeLibraryRequested, this,
+                &MainWindow::changeLibraryLocation);
+            connect(m_settingsDialog, &SettingsDialog::openLibraryFolderRequested, this,
+                [this] { runCommand(QStringLiteral("gui.open_library_folder")); });
+            connect(m_settingsDialog, &SettingsDialog::addRomFolderRequested, this, &MainWindow::addRomFolder);
+            connect(m_settingsDialog, &SettingsDialog::removeRomFolderRequested, this, [this](const QString& path) {
+                runCommand(QStringLiteral("gui.remove_rom_folder"), {{QStringLiteral("path"), path}});
+            });
+            updateSettingsDialog();
+        }
+        m_settingsDialog->showPage(page);
+        m_settingsDialog->show(); // non-modal (R11)
+        m_settingsDialog->raise();
+        m_settingsDialog->activateWindow();
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::openLibraryFolder()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        const QString root = library().root();
+        if (m_options.openExternally) QDesktopServices::openUrl(QUrl::fromLocalFile(root));
+        emit libraryFolderOpened(root);
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::exit()
+{
+    QMetaObject::invokeMethod(this, &QWidget::close, Qt::QueuedConnection);
+}
+
+QVector<LibraryEntry> MainWindow::libraryEntries() const
+{
+    return m_index->entries();
+}
+
+void MainWindow::gameOpened(const QString& path, const GameIdentity&, const BatterySaver::Opened&)
+{
+    m_clock->setRate(m_session->machine().region() == Region::Pal ? kPalFps : kNtscFps);
+    QMetaObject::invokeMethod(this, [this, path] {
+        m_romName = QFileInfo(path).fileName();
+        setWindowTitle(tr("%1 — cuteNES").arg(m_romName));
+        m_resumeOnReturn = false;
+        showGame();
+        rebuildRecentMenu();
+        // A ROM from outside the library joins it through the recent list.
+        bool known = false;
+        for (const auto& e : m_index->entries()) known = known || e.path == path;
+        if (known) {
+            m_index->refreshAnnotations();
+        } else {
+            m_index->rescan();
+        }
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::gameClosed()
+{
+    m_view->clearFrame();
+    QMetaObject::invokeMethod(this, [this] {
+        m_romName.clear();
+        setWindowTitle(QStringLiteral("cuteNES"));
+        m_resumeOnReturn = false;
+        if (!m_closing) m_pages->setCurrentWidget(m_browser);
+        m_index->refreshAnnotations();
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::recentChanged()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        rebuildRecentMenu();
+        m_index->refreshAnnotations();
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::libraryChanged(const Library& changed)
+{
+    QMetaObject::invokeMethod(this, [this, changed] { useLibrary(changed); }, Qt::QueuedConnection);
+}
+
+void MainWindow::romFoldersChanged()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        m_index->rescan();
+        updateSettingsDialog();
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::sessionEvent(const api::Event& event)
 {
     if (event.type != "run_state_changed") return;
     const std::string runState = event.data.value("runState", "");
@@ -423,29 +639,144 @@ void MainWindow::onSessionEvent(const api::Event& event)
     }, Qt::QueuedConnection);
 }
 
+// --- GUI thread --------------------------------------------------------------
+
+void MainWindow::useLibrary(const Library& changed)
+{
+    {
+        std::lock_guard lock(m_libraryMutex);
+        m_library = changed;
+    }
+    m_browser->setLibraryRoot(changed.root());
+    updateSettingsDialog();
+    m_index->setLibrary(changed);
+}
+
+void MainWindow::updateSettingsDialog()
+{
+    if (!m_settingsDialog) return;
+    const Library current = library();
+    m_settingsDialog->setLibraryRoot(current.root());
+    m_settingsDialog->setRomFolders(current.folder(Library::Folder::Roms), m_settings.romFolders());
+}
+
+void MainWindow::addRomFolder()
+{
+    const QString folder = QFileDialog::getExistingDirectory(this, tr("Add a ROM Folder"),
+        QStandardPaths::writableLocation(QStandardPaths::HomeLocation));
+    if (!folder.isEmpty()) runCommand(QStringLiteral("gui.add_rom_folder"), {{QStringLiteral("path"), folder}});
+}
+
 void MainWindow::setRunState(const QString& runState)
 {
-    const bool hasGame = runState != QLatin1String("NeedsRom");
+    m_runState = runState;
+    const bool game = hasGame();
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
-        if (kNeedGame.contains(action->property("command").toString())) action->setEnabled(hasGame);
+        if (kNeedGame.contains(action->property("command").toString())) action->setEnabled(game);
     }
-    if (hasGame) {
+    if (game) {
         const QString title = runState == QLatin1String("Paused") ? tr("%1 (paused) — cuteNES")
                                                                  : tr("%1 — cuteNES");
         setWindowTitle(title.arg(m_romName.isEmpty() ? tr("Game") : m_romName));
+    } else if (!m_closing) {
+        m_pages->setCurrentWidget(m_browser);
+    }
+}
+
+void MainWindow::showGame()
+{
+    m_pages->setCurrentWidget(m_view);
+    m_view->setFocus();
+}
+
+void MainWindow::returnToGame()
+{
+    if (!hasGame()) return;
+    showGame();
+    if (m_resumeOnReturn) {
+        m_resumeOnReturn = false;
+        runCommand(QStringLiteral("core.resume"), {}, true);
     }
 }
 
 void MainWindow::showOpenRomDialog()
 {
-    const QString path = QFileDialog::getOpenFileName(this, tr("Open ROM"), QString(),
-        tr("NES ROMs (*.nes)"));
-    if (!path.isEmpty()) openRom(path);
+    // Callable from any thread: gui.open_rom without a path lands here.
+    QMetaObject::invokeMethod(this, [this] {
+        const QString path = QFileDialog::getOpenFileName(this, tr("Open ROM"),
+            library().folder(Library::Folder::Roms), tr("NES ROMs (*.nes)"));
+        if (!path.isEmpty()) openRom(path);
+    }, Qt::QueuedConnection);
 }
 
 void MainWindow::openRom(const QString& path)
 {
     runCommand(QStringLiteral("gui.open_rom"), {{QStringLiteral("path"), path}});
+}
+
+void MainWindow::checkLibrary()
+{
+    const Library current = library();
+    if (current.isUsable()) return;
+    QMessageBox box(QMessageBox::Warning, QStringLiteral("cuteNES"),
+        tr("The library folder %1 is missing or cannot be written.").arg(QDir::toNativeSeparators(current.root())),
+        QMessageBox::NoButton, this);
+    box.setObjectName(QStringLiteral("libraryUnusable"));
+    box.setInformativeText(tr("Without it, battery saves are not kept."));
+    QPushButton* recreate = box.addButton(tr("Recreate"), QMessageBox::AcceptRole);
+    QPushButton* choose = box.addButton(tr("Choose Another…"), QMessageBox::ActionRole);
+    box.addButton(tr("Continue Without Saving"), QMessageBox::RejectRole);
+    box.setDefaultButton(recreate);
+    box.exec();
+    if (box.clickedButton() == recreate) {
+        QString error;
+        if (current.ensureLayout(&error)) {
+            m_index->setLibrary(current);
+        } else {
+            QMessageBox::warning(this, QStringLiteral("cuteNES"), error);
+        }
+    } else if (box.clickedButton() == choose) {
+        changeLibraryLocation();
+    }
+}
+
+void MainWindow::changeLibraryLocation()
+{
+    const Library current = library();
+    const QString root = QFileDialog::getExistingDirectory(this, tr("Choose the Library Location"),
+        QFileInfo(current.root()).absolutePath());
+    if (root.isEmpty() || QDir(root) == QDir(current.root())) return;
+    bool move = false;
+    if (current.isUsable() && hasContents(current)) {
+        const auto answer = QMessageBox::question(this, QStringLiteral("cuteNES"),
+            tr("Move your ROMs, saves and other files from %1 to %2?")
+                .arg(QDir::toNativeSeparators(current.root()), QDir::toNativeSeparators(root)),
+            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel, QMessageBox::Yes);
+        if (answer == QMessageBox::Cancel) return;
+        move = answer == QMessageBox::Yes;
+    }
+    relocateLibrary(root, move);
+}
+
+QFuture<api::Result> MainWindow::relocateLibrary(const QString& root, bool moveContents)
+{
+    const QVariantMap setRoot = {{QStringLiteral("key"), QStringLiteral("library.root")},
+        {QStringLiteral("value"), root}};
+    if (!moveContents) return runCommand(QStringLiteral("gui.set_setting"), setRoot);
+    // The open game's battery save lives in the library: close it first, so
+    // nothing writes there while the files move.
+    const Library from = library();
+    return QtConcurrent::run(&m_commands, [this, from, root, setRoot] {
+        m_session->call("gui.close_game");
+        QString error;
+        if (!from.moveContentsTo(Library(root), &error)) {
+            return api::Result::fail("IoError", "could not move the library: " + error.toStdString());
+        }
+        return m_session->call("gui.set_setting", toJson(setRoot));
+    }).then(this, [this](const api::Result& result) {
+        if (result.isError()) showError(QStringLiteral("gui.set_setting"), *result.error);
+        return result;
+    });
 }
 
 void MainWindow::pushInput()
@@ -465,11 +796,11 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
         break;
     case QEvent::KeyPress:
     case QEvent::KeyRelease: {
-        // Game keys while this window is active and no menu or dialog has
-        // the keyboard. Auto-repeats change nothing.
+        // Game keys while the game shows in this window and no menu or
+        // dialog has the keyboard. Auto-repeats change nothing.
         auto* key = static_cast<QKeyEvent*>(event);
         if (QApplication::activeWindow() != this || QApplication::activePopupWidget()
-            || QApplication::activeModalWidget()) {
+            || QApplication::activeModalWidget() || m_pages->currentWidget() != m_view) {
             break;
         }
         if (key->isAutoRepeat()) {
@@ -497,11 +828,37 @@ void MainWindow::changeEvent(QEvent* event)
     QMainWindow::changeEvent(event);
 }
 
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    // FR-012: write the battery save before quitting. The handler never
+    // waits for the GUI, so waiting for it here is safe.
+    m_closing = true;
+    m_session->call("gui.close_game");
+    m_settings.sync();
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent* event)
+{
+    const QList<QUrl> urls = event->mimeData()->urls();
+    if (!urls.isEmpty() && isRom(urls.first())) event->acceptProposedAction();
+}
+
+void MainWindow::dropEvent(QDropEvent* event)
+{
+    const QList<QUrl> urls = event->mimeData()->urls();
+    if (urls.isEmpty() || !isRom(urls.first())) return;
+    event->acceptProposedAction();
+    openRom(urls.first().toLocalFile());
+}
+
 void MainWindow::showAbout()
 {
-    auto* dialog = new AboutDialog(this);
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->show(); // non-modal: a command that opens a window returns at once (R11)
+    QMetaObject::invokeMethod(this, [this] {
+        auto* dialog = new AboutDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->show(); // non-modal: a command that opens a window returns at once (R11)
+    }, Qt::QueuedConnection);
 }
 
 } // namespace cutenes::app
