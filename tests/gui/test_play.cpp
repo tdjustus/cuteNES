@@ -138,9 +138,14 @@ TEST(GuiPlay, PauseResetAndPowerCycle)
 {
     MainWindow w(windowOptions());
     openGame(w);
+    QAction* pause = action(w, "gui.toggle_pause");
+    ASSERT_TRUE(waitUntil([&] { return pause->text() == QStringLiteral("&Pause"); }));
     EXPECT_EQ(call(w, "gui.toggle_pause")["runState"], "Paused");
     EXPECT_EQ(runState(w), "Paused");
+    EXPECT_TRUE(waitUntil([&] { return pause->text() == QStringLiteral("&Resume"); }))
+        << "the menu offers what the next press does";
     EXPECT_EQ(call(w, "gui.toggle_pause")["runState"], "Running");
+    EXPECT_TRUE(waitUntil([&] { return pause->text() == QStringLiteral("&Pause"); }));
 
     call(w, "gui.reset");
     EXPECT_EQ(runState(w), "Running");

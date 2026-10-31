@@ -311,8 +311,8 @@ void MainWindow::createMenus()
     exitAction->setMenuRole(QAction::QuitRole); // the application menu on macOS
 
     MenuBuilder emulation(menu(QStringLiteral("menuEmulation")));
-    QAction* pause = emulation.item(tr("&Pause"), "gui.toggle_pause", QKeySequence(Qt::Key_P));
-    pause->setShortcuts({QKeySequence(Qt::Key_P), QKeySequence(Qt::Key_Pause)});
+    m_pauseAction = emulation.item(tr("&Pause"), "gui.toggle_pause", QKeySequence(Qt::Key_P));
+    m_pauseAction->setShortcuts({QKeySequence(Qt::Key_P), QKeySequence(Qt::Key_Pause)});
     emulation.item(tr("&Reset"), "gui.reset", QKeySequence(Qt::CTRL | Qt::Key_R));
     emulation.item(tr("Power &Cycle"), "gui.power_cycle", QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R));
     emulation.separator();
@@ -674,6 +674,8 @@ void MainWindow::setRunState(const QString& runState)
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
         if (kNeedGame.contains(action->property("command").toString())) action->setEnabled(game);
     }
+    // The menu offers what the next press does.
+    m_pauseAction->setText(runState == QLatin1String("Paused") ? tr("&Resume") : tr("&Pause"));
     if (game) {
         const QString title = runState == QLatin1String("Paused") ? tr("%1 (paused) — cuteNES")
                                                                  : tr("%1 — cuteNES");

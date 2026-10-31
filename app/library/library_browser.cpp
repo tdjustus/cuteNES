@@ -17,7 +17,6 @@
 #include <QPainterPath>
 #include <QPushButton>
 #include <QResizeEvent>
-#include <QRegularExpression>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
 #include <QToolButton>
@@ -166,19 +165,32 @@ QString playedText(const QDateTime& when)
     return translate("Played %1").arg(QLocale().toString(when.toLocalTime().date(), QLocale::ShortFormat));
 }
 
-// One or two letters for the cover: the initials of the first two words
-// that count ("The Legend of Zelda" is "LZ").
-QString monogram(const QString& name)
+// The title on a cover without art, as large as fits `area` on at most
+// three lines; shortened with an ellipsis only when even the smallest size
+// is too big, so "Mega Man" and "Mega Man 2" never look alike.
+void drawCoverTitle(QPainter* p, const QRectF& area, const QString& title, QFont font)
 {
-    static const QStringList skip = {QStringLiteral("the"), QStringLiteral("a"), QStringLiteral("an"),
-        QStringLiteral("of"), QStringLiteral("and")};
-    QString letters;
-    for (const QString& word : name.split(QRegularExpression(QStringLiteral("[^\\w]+")), Qt::SkipEmptyParts)) {
-        if (skip.contains(word.toLower()) && name.split(QLatin1Char(' ')).size() > 1) continue;
-        letters += word.at(0).toUpper();
-        if (letters.size() == 2) break;
+    constexpr int kFlags = Qt::AlignCenter | Qt::TextWordWrap;
+    const auto fits = [&](const QString& text) {
+        const QFontMetricsF metrics(font);
+        const QRectF needed = metrics.boundingRect(area, kFlags, text);
+        return needed.width() <= area.width() && needed.height() <= area.height()
+            && needed.height() <= metrics.lineSpacing() * 3 + 1;
+    };
+    const int smallest = 11;
+    int size = std::max(smallest, int(area.height() * 0.3));
+    font.setPixelSize(size);
+    while (size > smallest && !fits(title)) font.setPixelSize(--size);
+
+    QString text = title;
+    QStringList words = title.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    while (!fits(text) && words.size() > 1) {
+        words.removeLast();
+        text = words.join(QLatin1Char(' ')) + QStringLiteral("…");
     }
-    return letters.isEmpty() ? QStringLiteral("?") : letters;
+    if (!fits(text)) text = QFontMetricsF(font).elidedText(title, Qt::ElideRight, area.width());
+    p->setFont(font);
+    p->drawText(area, kFlags, text);
 }
 
 // A small pill of text, anchored at a corner of `area`.
@@ -305,7 +317,7 @@ private:
 };
 
 // Paints a game as a card: a cover in the game's own colours with its
-// initials, region and save badges, then the title and when it was played.
+// title, region and save badges, then the title and when it was played.
 class CardDelegate final : public QStyledItemDelegate {
 public:
     CardDelegate(const LibraryFilter* proxy, const LibraryModel* model, QListView* view)
@@ -362,12 +374,11 @@ public:
                 p->drawRect(QRectF(cover.right() - pixel * (4 - step), cover.bottom() - pixel * (i + 1), pixel, pixel));
             }
         }
-        QFont initials = option.font;
-        initials.setPixelSize(int(cover.height() * 0.36));
-        initials.setWeight(QFont::Black);
-        p->setFont(initials);
+        // Clear of the chips at the top and bottom.
+        QFont titleFont = option.font;
+        titleFont.setWeight(QFont::Black);
         p->setPen(QColor(255, 255, 255, 235));
-        p->drawText(cover, Qt::AlignCenter, monogram(e.name));
+        drawCoverTitle(p, cover.adjusted(14, 30, -14, -30), e.name.isEmpty() ? QStringLiteral("?") : e.name, titleFont);
         p->restore();
 
         const QColor chipBack(0, 0, 0, 110);
