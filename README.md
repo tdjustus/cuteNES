@@ -167,7 +167,7 @@ Tests are labelled in CTest. Counts are from the current tree.
 
 | Label | Tests | What it proves | Runs in CI |
 |---|---|---|---|
-| `unit` | 185 | Component behavior written from hardware docs: CPU, PPU, APU, bus, scheduler, iNES parsing, each mapper's banking/mirroring/IRQ | every PR |
+| `unit` | 187 | Component behavior written from hardware docs: CPU, PPU, APU, bus, scheduler, iNES parsing, each mapper's banking/mirroring/IRQ | every PR |
 | `tier1` | 50 | The gate ROMs (nestest, instr_test-v5, instr_timing, ppu_vbl_nmi, apu_test, apu_reset, cpu_interrupts_v2, mmc3_irq_tests, ...) plus 13 golden frame hashes | every PR |
 | `tier2` | 28 | Broader ROM suites incl. 22 Holy Mapperel board tests | every PR (Release builds) |
 | `behavior` | 18 | Determinism (run twice, byte-identical), save-state round trip, instruction-step equivalence | every PR |
