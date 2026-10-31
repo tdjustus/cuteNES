@@ -34,8 +34,8 @@
 - Qt 6, `gui.*` commands and the `cutenes-api` host extension point are named
   because the constitution (Principles IV and V) and feature 002 fix them. They
   are constraints, not design choices made here.
-- There are no [NEEDS CLARIFICATION] markers. These decisions have defaults
-  in Assumptions, and `/speckit-clarify` should confirm them:
+- The defaults below were confirmed in the 2026-10-30 clarification session:
+
   - the default library location;
   - `.nes` only, with no archives;
   - Game Genie, region override and palettes counted as in-scope core

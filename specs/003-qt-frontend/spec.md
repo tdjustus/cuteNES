@@ -14,6 +14,22 @@ location can be used. there should be a menu system to select a rom from quick
 discovery if a rom file is not passed to the program via cli." Also issue #32:
 the GUI-mode requirements that feature 002 handed over.
 
+## Clarifications
+
+### Session 2026-10-30
+
+- Q: Where is the library folder created by default? → A: `cuteNES` in the
+  user's Documents folder. Settings stay in the platform's per-user settings
+  location (FR-010, FR-014).
+- Q: Region override, palette selection and Game Genie need the core. Are
+  they in 1.0? → A: Yes. Each is a feature-001 core amendment, done
+  test-first, and then exposed in the menus and as `core.*` commands.
+- Q: Which ROM files are accepted? → A: `.nes` only (iNES 1.0 and NES 2.0).
+  Archives are out of scope.
+- Q: Are video recording, NTSC composite filters, shader packs and portable
+  mode out of 1.0? → A: Yes. 1.0 has PNG screenshots, WAV audio recording,
+  and nearest, smooth and scanline filters.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Pick a game and play it (Priority: P1)
