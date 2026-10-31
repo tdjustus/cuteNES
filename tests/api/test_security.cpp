@@ -114,14 +114,15 @@ TEST(ApiSecurity, TokenFileIsOwnerOnly)
     const auto path = tempFile("owner.token");
     std::string error;
     ASSERT_TRUE(token::writeFile(path, "http://127.0.0.1:1/api/v1", "abc", error)) << error;
-    EXPECT_TRUE(token::isOwnerOnly(path));
+    std::string why;
+    EXPECT_TRUE(token::isOwnerOnly(path, &why)) << why;
     std::ifstream in(path);
     const Json j = Json::parse(in);
     EXPECT_EQ(j["token"], "abc");
     EXPECT_EQ(j["url"], "http://127.0.0.1:1/api/v1");
     // Rewriting replaces the file and keeps it owner-only.
     ASSERT_TRUE(token::writeFile(path, "u", "def", error)) << error;
-    EXPECT_TRUE(token::isOwnerOnly(path));
+    EXPECT_TRUE(token::isOwnerOnly(path, &why)) << why;
 #if !defined(_WIN32)
     std::filesystem::permissions(path, std::filesystem::perms::group_read,
         std::filesystem::perm_options::add);
@@ -153,11 +154,22 @@ TEST(ApiSecurity, ServerWritesTheTokenFileAndNeverPrintsTheToken)
                                         "--library", romDir()},
             err, stop);
     });
+    // Stop and join on every exit from the test, failed assertions included.
+    struct Joiner {
+        std::atomic<bool>& stop;
+        std::thread& thread;
+        ~Joiner()
+        {
+            stop = true;
+            if (thread.joinable()) thread.join();
+        }
+    } joiner{stop, server};
     for (int i = 0; i < 200 && !std::filesystem::exists(path); ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(25));
     }
-    ASSERT_TRUE(std::filesystem::exists(path));
-    EXPECT_TRUE(token::isOwnerOnly(path));
+    ASSERT_TRUE(std::filesystem::exists(path)) << err.str();
+    std::string why;
+    EXPECT_TRUE(token::isOwnerOnly(path, &why)) << why;
     Json file;
     for (int i = 0; i < 40 && file.is_null(); ++i) { // the writer may still be mid-write
         std::ifstream in(path);
@@ -181,7 +193,7 @@ TEST(ApiSecurity, ServerWritesTheTokenFileAndNeverPrintsTheToken)
 
     stop = true;
     server.join();
-    EXPECT_EQ(code, cutenes::server::kExitOk);
+    EXPECT_EQ(code, cutenes::server::kExitOk) << err.str();
     EXPECT_FALSE(std::filesystem::exists(path)); // removed on clean exit
     EXPECT_EQ(err.str().find(tok), std::string::npos) << "the token reached stderr";
     EXPECT_NE(err.str().find(path.string()), std::string::npos);

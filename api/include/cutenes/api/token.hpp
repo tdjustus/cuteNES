@@ -26,7 +26,7 @@ bool writeFile(const std::filesystem::path& path, const std::string& url,
     const std::string& token, std::string& error);
 
 // True if only the current user can access `path` (the check the security
-// tests make).
-bool isOwnerOnly(const std::filesystem::path& path);
+// tests make). On false, `reason` (if given) says why.
+bool isOwnerOnly(const std::filesystem::path& path, std::string* reason = nullptr);
 
 } // namespace cutenes::api::token

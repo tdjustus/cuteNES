@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <string>
 #include <system_error>
 
 #if defined(_WIN32)
@@ -154,28 +155,27 @@ bool writeFile(const std::filesystem::path& path, const std::string& url,
         error = "cannot read the current user's SID";
         return false;
     }
-    EXPLICIT_ACCESSW access{};
-    access.grfAccessPermissions = GENERIC_ALL;
-    access.grfAccessMode = SET_ACCESS;
-    access.grfInheritance = NO_INHERITANCE;
-    access.Trustee.TrusteeForm = TRUSTEE_IS_SID;
-    access.Trustee.TrusteeType = TRUSTEE_IS_USER;
-    access.Trustee.ptstrName = reinterpret_cast<LPWSTR>(sidOf(user));
-    PACL acl = nullptr;
-    if (SetEntriesInAclW(1, &access, nullptr, &acl) != ERROR_SUCCESS) {
-        error = "cannot build the token file ACL";
+    // A protected DACL with one ACE: full access for the current user, and
+    // nothing inherited from the directory.
+    const PSID sid = sidOf(user);
+    const DWORD aclSize = static_cast<DWORD>(sizeof(ACL) + sizeof(ACCESS_ALLOWED_ACE)
+        - sizeof(DWORD) + GetLengthSid(sid));
+    std::vector<std::uint8_t> aclBuffer(aclSize);
+    const auto acl = reinterpret_cast<PACL>(aclBuffer.data());
+    SECURITY_DESCRIPTOR descriptor;
+    if (!InitializeAcl(acl, aclSize, ACL_REVISION)
+        || !AddAccessAllowedAce(acl, ACL_REVISION, FILE_ALL_ACCESS, sid)
+        || !InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION)
+        || !SetSecurityDescriptorDacl(&descriptor, TRUE, acl, FALSE)
+        || !SetSecurityDescriptorControl(&descriptor, SE_DACL_PROTECTED, SE_DACL_PROTECTED)) {
+        error = "cannot build the token file ACL (error " + std::to_string(GetLastError()) + ")";
         return false;
     }
-    SECURITY_DESCRIPTOR descriptor;
-    InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION);
-    SetSecurityDescriptorDacl(&descriptor, TRUE, acl, FALSE);
-    SetSecurityDescriptorControl(&descriptor, SE_DACL_PROTECTED, SE_DACL_PROTECTED);
     SECURITY_ATTRIBUTES attributes{sizeof attributes, &descriptor, FALSE};
     const HANDLE file = CreateFileW(path.wstring().c_str(), GENERIC_WRITE, 0, &attributes,
         CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-    LocalFree(acl);
     if (file == INVALID_HANDLE_VALUE) {
-        error = "cannot create " + path.string();
+        error = "cannot create " + path.string() + " (error " + std::to_string(GetLastError()) + ")";
         return false;
     }
     DWORD written = 0;
@@ -209,47 +209,59 @@ bool writeFile(const std::filesystem::path& path, const std::string& url,
 #endif
 }
 
-bool isOwnerOnly(const std::filesystem::path& path)
+bool isOwnerOnly(const std::filesystem::path& path, std::string* reason)
 {
+    const auto no = [reason](std::string why) {
+        if (reason != nullptr) *reason = std::move(why);
+        return false;
+    };
 #if defined(_WIN32)
     auto user = currentUser();
     if (user.empty()) {
-        return false;
+        return no("cannot read the current user's SID");
     }
     PACL dacl = nullptr;
     PSECURITY_DESCRIPTOR descriptor = nullptr;
-    if (GetNamedSecurityInfoW(path.wstring().c_str(), SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION, nullptr, nullptr, &dacl, nullptr, &descriptor)
-        != ERROR_SUCCESS) {
-        return false;
+    const DWORD status = GetNamedSecurityInfoW(path.wstring().c_str(), SE_FILE_OBJECT,
+        DACL_SECURITY_INFORMATION, nullptr, nullptr, &dacl, nullptr, &descriptor);
+    if (status != ERROR_SUCCESS) {
+        return no("GetNamedSecurityInfo failed (error " + std::to_string(status) + ")");
     }
-    bool ownerOnly = dacl != nullptr;
+    std::string why;
     SECURITY_DESCRIPTOR_CONTROL control = 0;
     DWORD revision = 0;
     GetSecurityDescriptorControl(descriptor, &control, &revision);
-    ownerOnly = ownerOnly && (control & SE_DACL_PROTECTED) != 0;
-    for (DWORD i = 0; ownerOnly && i < dacl->AceCount; ++i) {
-        void* ace = nullptr;
-        if (!GetAce(dacl, i, &ace)) {
-            ownerOnly = false;
-            break;
+    if (dacl == nullptr) {
+        why = "no DACL (everyone has access)";
+    } else if ((control & SE_DACL_PROTECTED) == 0) {
+        why = "the DACL is not protected from inheritance";
+    } else {
+        for (DWORD i = 0; why.empty() && i < dacl->AceCount; ++i) {
+            void* ace = nullptr;
+            if (!GetAce(dacl, i, &ace)) {
+                why = "cannot read ACE " + std::to_string(i);
+            } else if (static_cast<ACE_HEADER*>(ace)->AceType != ACCESS_ALLOWED_ACE_TYPE) {
+                why = "ACE " + std::to_string(i) + " has type "
+                    + std::to_string(static_cast<ACE_HEADER*>(ace)->AceType);
+            } else if (!EqualSid(&static_cast<ACCESS_ALLOWED_ACE*>(ace)->SidStart, sidOf(user))) {
+                why = "ACE " + std::to_string(i) + " grants another account";
+            }
         }
-        const auto* header = static_cast<ACE_HEADER*>(ace);
-        if (header->AceType != ACCESS_ALLOWED_ACE_TYPE) {
-            ownerOnly = false;
-            break;
-        }
-        auto* allowed = static_cast<ACCESS_ALLOWED_ACE*>(ace);
-        ownerOnly = EqualSid(&allowed->SidStart, sidOf(user)) != 0;
     }
     LocalFree(descriptor);
-    return ownerOnly;
+    return why.empty() ? true : no(why);
 #else
     struct stat info {};
     if (::stat(path.c_str(), &info) != 0) {
-        return false;
+        return no("cannot stat the file");
     }
-    return info.st_uid == ::getuid() && (info.st_mode & 077) == 0;
+    if (info.st_uid != ::getuid()) {
+        return no("owned by another user");
+    }
+    if ((info.st_mode & 077) != 0) {
+        return no("group or other permission bits are set");
+    }
+    return true;
 #endif
 }
 
