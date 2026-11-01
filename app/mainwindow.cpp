@@ -5,6 +5,7 @@
 #include "dialogs/debugger_window.hpp"
 #include "dialogs/memory_viewer.hpp"
 #include "dialogs/ppu_viewer.hpp"
+#include "dialogs/trace_logger.hpp"
 #include "dialogs/key_bindings_page.hpp"
 #include "dialogs/settings_dialog.hpp"
 #include "library/library_browser.hpp"
@@ -144,7 +145,8 @@ const QStringList kImplemented = {
     QStringLiteral("gui.set_filter"), QStringLiteral("gui.toggle_always_on_top"),
     QStringLiteral("gui.toggle_audio_recording"), QStringLiteral("gui.record_movie"), QStringLiteral("gui.play_movie"),
     QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only"), QStringLiteral("gui.show_debugger"),
-    QStringLiteral("gui.show_memory_viewer"), QStringLiteral("gui.show_ppu_viewer"),
+    QStringLiteral("gui.show_memory_viewer"), QStringLiteral("gui.show_ppu_viewer"), QStringLiteral("gui.show_trace_logger"),
+    QStringLiteral("gui.write_memory_dump"),
 };
 // Settings > Hotkeys opens the Key Bindings page (#108).
 const QStringList kSettingsPages = {QStringLiteral("video"), QStringLiteral("audio"), QStringLiteral("emulation"),
@@ -161,6 +163,7 @@ const QStringList kNeedGame = {
     QStringLiteral("gui.export_battery_save"), QStringLiteral("gui.take_screenshot"),
     QStringLiteral("gui.toggle_audio_recording"), QStringLiteral("gui.record_movie"), QStringLiteral("gui.play_movie"),
     QStringLiteral("gui.show_debugger"), QStringLiteral("gui.show_memory_viewer"), QStringLiteral("gui.show_ppu_viewer"),
+    QStringLiteral("gui.show_trace_logger"), QStringLiteral("gui.write_memory_dump"),
 };
 // Movie > Stop and Read-Only: only while a movie records or plays.
 const QStringList kNeedMovie = {QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only")};
@@ -1696,7 +1699,8 @@ CommandRunner MainWindow::toolRunner()
         QStringLiteral("core.run_state"), QStringLiteral("gui.list_breakpoints"), QStringLiteral("gui.list_cheats"),
         QStringLiteral("gui.cheat_search_results"), QStringLiteral("gui.list_watches"), QStringLiteral("core.peek"),
         QStringLiteral("core.read_vram"), QStringLiteral("core.read_oam"), QStringLiteral("core.read_palette"),
-        QStringLiteral("core.read_ppu_registers"), QStringLiteral("core.read_ppu_scroll")};
+        QStringLiteral("core.read_ppu_registers"), QStringLiteral("core.read_ppu_scroll"),
+        QStringLiteral("gui.trace_status")};
     return [this](const QString& name, const QVariantMap& args) { return runCommand(name, args, reads.contains(name)); };
 }
 
@@ -1741,6 +1745,15 @@ void MainWindow::showPpuViewer(const QString& view)
         m_ppuViewer->showView(view);
         m_ppuViewer->show();
         m_ppuViewer->raise();
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::showTraceLogger()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        if (!m_traceLogger) m_traceLogger = new TraceLoggerWindow(toolRunner(), this);
+        m_traceLogger->show();
+        m_traceLogger->raise();
     }, Qt::QueuedConnection);
 }
 

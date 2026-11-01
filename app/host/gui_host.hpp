@@ -21,12 +21,14 @@
 #include <cutenes/api/registry.hpp>
 #include <cutenes/api/session.hpp>
 
+#include <QFile>
 #include <QString>
 #include <QVector>
 
 #include <atomic>
 #include <bitset>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -118,6 +120,7 @@ public:
         virtual void showDebugger() = 0;
         virtual void showMemoryViewer() = 0;
         virtual void showPpuViewer(const QString& view) = 0;
+        virtual void showTraceLogger() = 0;
         virtual void debuggerStopped() = 0;
         virtual void showAbout() = 0;
         virtual void openLibraryFolder() = 0;
@@ -170,6 +173,12 @@ private:
     api::Result openRom(api::CallContext& ctx, const QString& path, std::optional<bool> resume = std::nullopt);
     QString autoStatePath() const; // the open game's, or empty
     api::Result stopRecording();
+    api::Result startTrace(Machine& machine, QString path);
+    api::Result stopTrace(Machine& machine);
+    // Points the core's instruction trace at the trace file again: another
+    // user of the one trace callback (core.trace) turns it off when done.
+    void keepTracing(Machine& machine);
+    void flushTrace();
     api::Result closeGame(api::CallContext& ctx);
     api::Result setLibraryRoot(api::CallContext& ctx, const QString& root);
     api::Result addRomFolder(const QString& path);
@@ -243,6 +252,16 @@ private:
     std::bitset<0x10000> m_breakpoints;
     std::optional<std::uint16_t> m_skipBreakpoint;
     bool m_midFrame = false;
+
+    // Emulation thread: the trace logger (FR-063). While m_trace is open
+    // each instruction's trace line goes into m_traceBuffer, written out a
+    // megabyte at a time: a running game makes about 600,000 lines (some
+    // 55 MB) a second, so a write per line would slow it.
+    std::unique_ptr<QFile> m_trace;
+    QString m_tracePath;
+    std::string m_traceBuffer;
+    std::uint64_t m_traceLines = 0;
+    bool m_traceFailed = false;
 
     // Emulation thread: the movie (FR-052), with a copy for the window.
     MovieStatus::Mode m_movieMode = MovieStatus::Mode::None;

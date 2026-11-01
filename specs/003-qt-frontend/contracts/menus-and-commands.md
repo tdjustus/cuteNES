@@ -181,7 +181,7 @@ They are listed under "Window commands".
 The debugger's own controls:
 - `gui.debug_step_instruction`, `gui.debug_step_frame`, `gui.debug_run`;
 - `gui.add_breakpoint`, `gui.remove_breakpoint`, `gui.list_breakpoints`;
-- `gui.trace_start` (`path`) and `gui.trace_stop`.
+- `gui.trace_start` (`path`), `gui.trace_stop` and `gui.trace_status`.
 
 Register and memory edits use the existing `core.set_cpu` and
 `core.write_memory`.
@@ -251,6 +251,35 @@ tab:
   `core.read_ppu_scroll`, and only what the tab shown needs. Colours are
   those of View > Palette. It refreshes up to 30 times a second while
   shown, and a refresh waits for the one before to finish.
+
+The trace logger (G084, FR-063):
+- `gui.trace_start` logs every instruction the CPU runs until
+  `gui.trace_stop` or the game closes, one line each in the project's trace
+  format: nestest.log's, the line `core.disassemble` gives, with the
+  registers, PPU position and cycle count before the instruction. From
+  nestest's log entry the file equals nestest.log line for line.
+- Without `path` the file is `trace-<YYYYMMDD-HHMMSS>.log` in the library's
+  debug folder (a `-2`, `-3`… is added rather than overwrite one). One
+  trace at a time: a second start is refused (`Tracing`), as is a stop with
+  none (`NotTracing`). The stop returns the file and its line count, and
+  `WriteError` if the file could not be written in full.
+- It logs whatever runs the CPU: play, Step Instruction, Step Frame,
+  breakpoint stepping. `core.trace` uses the core's one trace callback for
+  its own capture; those instructions are in its result, not the file, and
+  logging goes on after it.
+- A running game logs about 600,000 instructions (some 55 MB) a second;
+  lines are written a megabyte at a time so play keeps its speed.
+- Debug > Trace Logger is a small window: Start/Stop Logging, the file and
+  the count so far, asked of `gui.trace_status` four times a second, so it
+  shows a trace started through automation too.
+
+Write Memory Dump (G084, FR-064): `gui.write_memory_dump` writes the core's
+memory dump (001 core-api.md "Memory dump": header, CPU bus, PPU registers,
+OAM, palette, PRG-RAM, PPU bus) to `<YYYYMMDDHHMMSS>.dmp` in the library's
+debug folder, the name `Machine::dumpMemory` gives, and shows the name. The
+GUI writes `Machine::memoryDump`'s bytes itself rather than calling
+`dumpMemory`, whose `std::string` path Windows reads in the ANSI code page,
+so a library under any name works.
 
 ## Settings
 

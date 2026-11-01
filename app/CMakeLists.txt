@@ -13,6 +13,7 @@ add_library(cutenes-app-lib STATIC
     dialogs/debugger_window.cpp
     dialogs/memory_viewer.cpp
     dialogs/ppu_viewer.cpp
+    dialogs/trace_logger.cpp
     debug/ppu_render.cpp
     host/gui_host.cpp
     host/servers.cpp

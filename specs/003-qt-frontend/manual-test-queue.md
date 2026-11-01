@@ -315,3 +315,24 @@ variant with the two bit planes swapped failed them, as it should.
 5. View > Palette, choose another palette: the viewer's colours follow.
 6. With the viewer open the game runs at full speed and plays as before.
 
+### Trace logger and memory dump (G084, #100)
+
+Checked through MCP on Super Mario Bros.: a trace of about six seconds of
+play held 3,573,361 lines, as many as reported, with 370 entries to the NMI
+handler at $8082 in 370 frames; the dump file began `CUNEDMP1`. That the
+trace equals nestest.log line for line, the file names, and the dump's
+layout are covered by the `GuiTraceLogger` tests.
+
+1. Super Mario Bros.: Debug > Trace Logger. Press Start Logging: the
+   window shows the file (in the library's `debug` folder) and a count that
+   climbs fast. The game keeps its speed.
+2. After a few seconds press Stop Logging: "Saved …" with the count. Open
+   the file in a text editor (it is large, ~55 MB a second): each line is
+   like `8057  4C 57 80  JMP $8057 … A:90 X:00 Y:00 P:A5 SP:FF PPU:…
+   CYC:…`.
+3. Start logging again and close the game (File > Close Game): logging
+   stops, and the file is complete.
+4. Debug > Write Memory Dump: the status bar names a `.dmp` file, and it
+   is in the `debug` folder (about 90 KB for Super Mario Bros.).
+5. Delete the trace files when done; they are big.
+
