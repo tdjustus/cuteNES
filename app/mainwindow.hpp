@@ -50,6 +50,8 @@ class FrameClock;
 
 namespace cutenes::app {
 
+class CheatSearchWindow;
+class CheatsWindow;
 class KeyBindings;
 class KeyBindingsPage;
 class LibraryBrowser;
@@ -153,6 +155,8 @@ private:
     void showMessage(const QString& text) override;
     void playbackChanged(const Playback& playback) override;
     PacingNow pacingNow() const override;
+    void showCheats(bool search) override;
+    void cheatsChanged() override;
     void showLibrary(const QString& select, bool paused) override;
     void showSettings(const QString& page) override;
     void showKeyBindings(const QString& section, bool paused) override;
@@ -238,6 +242,8 @@ private:
     PacingNow m_pacing;                         // under m_playbackMutex
     QMetaObject::Connection m_refreshConnection; // the screen's refresh-rate signal
     bool m_screenWatched = false;
+    QPointer<CheatsWindow> m_cheatsWindow;           // Tools > Cheats…
+    QPointer<CheatSearchWindow> m_cheatSearchWindow; // Tools > Cheat Search…
     QTimer* m_osdTimer = nullptr;
     std::unique_ptr<Servers> m_servers; // the API and MCP listeners (Settings > Servers)
     QPushButton* m_automation = nullptr; // bottom right while a client is there; opens Settings > Servers

@@ -138,6 +138,9 @@ The cheat and movie windows' contents have their own commands:
   `gui.list_cheats`;
 - `gui.cheat_search_reset`, `gui.cheat_search_filter`,
   `gui.cheat_search_results`;
+- `gui.add_watch`, `gui.remove_watch`, `gui.list_watches` (the per-game
+  watch list, with live values); a value is edited with `core.write_memory`,
+  which runs at the next frame boundary;
 - `gui.add_watch`, `gui.remove_watch`, `gui.list_watches`.
 
 They are listed under "Window commands".

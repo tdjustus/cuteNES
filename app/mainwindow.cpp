@@ -1,6 +1,7 @@
 #include "mainwindow.hpp"
 
 #include "about_dialog.hpp"
+#include "dialogs/cheats_window.hpp"
 #include "dialogs/key_bindings_page.hpp"
 #include "dialogs/settings_dialog.hpp"
 #include "library/library_browser.hpp"
@@ -120,7 +121,7 @@ constexpr double kPalFps = 50.0070;
 // The actions implemented so far (G1, G2), and those of them that need a
 // game (contract "Game" column). Settings pages arrive with their phases.
 const QStringList kImplemented = {
-    QStringLiteral("gui.open_rom"), QStringLiteral("gui.set_region"), QStringLiteral("gui.set_palette"), QStringLiteral("gui.close_game"),
+    QStringLiteral("gui.open_rom"), QStringLiteral("gui.show_cheats"), QStringLiteral("gui.show_cheat_search"), QStringLiteral("gui.set_region"), QStringLiteral("gui.set_palette"), QStringLiteral("gui.close_game"),
     QStringLiteral("gui.toggle_pause"), QStringLiteral("gui.reset"),
     QStringLiteral("gui.power_cycle"), QStringLiteral("gui.exit"),
     QStringLiteral("gui.show_about"), QStringLiteral("gui.show_library"),
@@ -143,7 +144,7 @@ const QStringList kImplemented = {
 const QStringList kSettingsPages = {QStringLiteral("video"), QStringLiteral("audio"), QStringLiteral("emulation"),
     QStringLiteral("library"), QStringLiteral("servers"), QStringLiteral("input"), QStringLiteral("hotkeys")};
 const QStringList kNeedGame = {
-    QStringLiteral("gui.close_game"), QStringLiteral("gui.toggle_pause"),
+    QStringLiteral("gui.close_game"), QStringLiteral("gui.show_cheats"), QStringLiteral("gui.show_cheat_search"), QStringLiteral("gui.toggle_pause"),
     QStringLiteral("gui.reset"), QStringLiteral("gui.power_cycle"),
     QStringLiteral("gui.save_state"), QStringLiteral("gui.load_state"),
     QStringLiteral("gui.quick_save"), QStringLiteral("gui.quick_load"),
@@ -1606,6 +1607,34 @@ void MainWindow::playbackChanged(const Playback& playback)
     m_audio->setSpeed(playback.speed > 0 ? playback.speed : 1.0);
     m_audio->setMuted(playback.muted);
     QMetaObject::invokeMethod(this, [this] { updateOverlays(); }, Qt::QueuedConnection);
+}
+
+void MainWindow::showCheats(bool search)
+{
+    QMetaObject::invokeMethod(this, [this, search] {
+        const CommandRunner run = [this](const QString& name, const QVariantMap& args) {
+            return runCommand(name, args);
+        };
+        QDialog* window = nullptr;
+        if (search) {
+            if (!m_cheatSearchWindow) m_cheatSearchWindow = new CheatSearchWindow(run, this);
+            window = m_cheatSearchWindow;
+        } else {
+            if (!m_cheatsWindow) m_cheatsWindow = new CheatsWindow(run, this);
+            m_cheatsWindow->refresh();
+            window = m_cheatsWindow;
+        }
+        window->show();
+        window->raise();
+        window->activateWindow();
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::cheatsChanged()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        if (m_cheatsWindow) m_cheatsWindow->refresh();
+    }, Qt::QueuedConnection);
 }
 
 QString MainWindow::pacingText() const
