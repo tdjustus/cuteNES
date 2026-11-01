@@ -20,7 +20,6 @@
 #include <QFuture>
 #include <QMainWindow>
 #include <QPointer>
-#include <QElapsedTimer>
 #include <QSet>
 #include <QThreadPool>
 #include <QVariantMap>
@@ -187,8 +186,12 @@ private:
     QTimer* m_osdTimer = nullptr;
     QLabel* m_fps = nullptr; // "60 FPS", top left, like the speed indicator (Show FPS)
     QTimer* m_fpsTimer = nullptr;
-    std::uint64_t m_fpsFrame = 0; // the view's frame index at the last count
-    QElapsedTimer m_fpsClock;
+    struct FrameSample {
+        std::uint64_t frame = 0; // the core's frame counter
+        std::chrono::steady_clock::time_point at{};
+    };
+    FrameSample m_lastFrameEvent; // under m_playbackMutex; from the emulation thread
+    FrameSample m_fpsSample;      // GUI thread: at the last count
     QMenu* m_saveStateMenu = nullptr;
     QMenu* m_loadStateMenu = nullptr;
     QMenu* m_selectSlotMenu = nullptr;

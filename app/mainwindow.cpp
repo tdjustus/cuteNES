@@ -726,6 +726,12 @@ void MainWindow::romFoldersChanged()
 
 void MainWindow::sessionEvent(const api::Event& event)
 {
+    if (event.type == "frame") {
+        // Show FPS counts the game's frames, not the window's paints.
+        std::lock_guard lock(m_playbackMutex);
+        m_lastFrameEvent = {event.frame, std::chrono::steady_clock::now()};
+        return;
+    }
     if (event.type != "run_state_changed") return;
     const std::string runState = event.data.value("runState", "");
     // Stale sound never plays after a pause or a closed game (R4).
@@ -932,8 +938,10 @@ void MainWindow::updateOverlays()
     const bool fps = game && m_settings.showFps();
     if (fps && !m_fps->isVisible()) {
         m_fps->setText(tr("— FPS"));
-        m_fpsFrame = m_view->shownFrameIndex();
-        m_fpsClock.start();
+        {
+            std::lock_guard lock(m_playbackMutex);
+            m_fpsSample = m_lastFrameEvent;
+        }
         m_fpsTimer->start();
     } else if (!fps) {
         m_fpsTimer->stop();
@@ -946,10 +954,20 @@ void MainWindow::updateOverlays()
 
 void MainWindow::updateFps()
 {
-    const std::uint64_t shown = m_view->shownFrameIndex();
-    const qint64 ms = m_fpsClock.restart();
-    if (ms > 0) m_fps->setText(tr("%1 FPS").arg(qRound(static_cast<double>(shown - m_fpsFrame) * 1000.0 / static_cast<double>(ms))));
-    m_fpsFrame = shown;
+    // The frames between the last two frame events the session sent (at
+    // most 10 a second, each stamped with the core's frame counter).
+    FrameSample now;
+    {
+        std::lock_guard lock(m_playbackMutex);
+        now = m_lastFrameEvent;
+    }
+    if (now.frame == m_fpsSample.frame || now.at <= m_fpsSample.at) {
+        m_fps->setText(tr("0 FPS")); // no frame since the last count
+    } else {
+        const double seconds = std::chrono::duration<double>(now.at - m_fpsSample.at).count();
+        m_fps->setText(tr("%1 FPS").arg(qRound(static_cast<double>(now.frame - m_fpsSample.frame) / seconds)));
+    }
+    m_fpsSample = now;
     m_fps->adjustSize();
 }
 

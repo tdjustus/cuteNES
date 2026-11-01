@@ -10,6 +10,7 @@
 
 #include <QAction>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QImage>
 #include <QLabel>
@@ -17,6 +18,8 @@
 #include <QRegularExpression>
 
 #include <gtest/gtest.h>
+
+#include <cmath>
 
 using cutenes::api::Json;
 using cutenes::api::Result;
@@ -143,12 +146,22 @@ TEST(GuiTools, ShowFpsShowsTheRateTheGameRunsAt)
         EXPECT_EQ(call(w, "gui.toggle_fps")["showFps"], true);
         EXPECT_TRUE(waitUntil([&] { return action(w, "gui.toggle_fps")->isChecked(); }));
         const QRegularExpression rate(QStringLiteral("^(\\d+) FPS$"));
-        // NTSC is 60.0988 fps; the number is the frames shown in the last
-        // second, so it settles near 60.
+        // It shows the rate the game runs at (NTSC: 60.0988 on a fast
+        // machine), measured here from the core's own frame counter, not
+        // how often the window happens to draw.
+        QElapsedTimer clock;
+        clock.start();
+        const std::uint64_t first = frame(w);
+        ASSERT_TRUE(waitUntil([&] { return clock.elapsed() >= 3000; }, 5000));
+        const double measured = static_cast<double>(frame(w) - first) * 1000.0 / static_cast<double>(clock.elapsed());
+        ASSERT_GT(measured, 10.0) << "the game runs";
         EXPECT_TRUE(waitUntil([&] {
             const auto m = rate.match(fps->text());
-            return fps->isVisible() && m.hasMatch() && m.captured(1).toInt() >= 50 && m.captured(1).toInt() <= 70;
-        }, 5000)) << fps->text().toStdString();
+            return fps->isVisible() && m.hasMatch() && std::abs(m.captured(1).toInt() - measured) <= 0.2 * measured;
+        }, 5000)) << fps->text().toStdString() << " vs " << measured;
+        call(w, "core.pause");
+        EXPECT_TRUE(waitUntil([&] { return fps->text() == QStringLiteral("0 FPS"); }, 5000)) << "a paused game runs no frames";
+        call(w, "core.resume");
         EXPECT_EQ(fps->parentWidget(), w.view());
         EXPECT_LT(fps->geometry().left(), w.view()->width() / 10) << "top left";
         EXPECT_LT(fps->geometry().top(), w.view()->height() / 4);
