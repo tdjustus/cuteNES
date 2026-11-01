@@ -297,3 +297,38 @@ TEST(McpAttach, TheBridgeFollowsTheInstanceToANewTokenAndPort)
     EXPECT_EQ(b.notifications[0]["method"], "notifications/tools/list_changed");
     again.stop();
 }
+
+// The application quit and opened again: its MCP server is back on the same
+// port with a new token, so the old token gets HTTP 401 with a plain-text
+// body. A 2026-07-28 client (Claude Code) keeps its bridge, so the bridge
+// follows the token file to the new token for a call and for the client's
+// own subscription, instead of taking the refusal for an empty stream.
+TEST(McpAttach, TheBridgeFollowsTheInstanceToANewTokenOnTheSamePort)
+{
+    InstanceA instance;
+    ASSERT_TRUE(instance.a.started);
+    StdioServer b({"--attach", "--mcp-token-file", instance.tokenFile.string()});
+    ASSERT_TRUE(b.started);
+    EXPECT_TRUE(b.request(toolCall("session.status", {}, 1)).contains("result"));
+
+    const int port = instance.a.http.port();
+    instance.a.http.stop();
+    McpHttpConfig config;
+    config.port = port;
+    config.token = cutenes::api::token::generate();
+    McpHttpServer again(instance.a.mcp, config);
+    std::string error;
+    ASSERT_TRUE(again.start(error)) << error;
+    ASSERT_EQ(again.url(), instance.a.http.url());
+    ASSERT_TRUE(cutenes::api::token::writeFile(instance.tokenFile, again.url(), config.token, error)) << error;
+
+    Json status = b.request(toolCall("session.status", {}, 2), 10s);
+    EXPECT_TRUE(status.contains("result")) << status.dump();
+
+    b.send(modern("subscriptions/listen", {{"notifications", {{"toolsListChanged", true}}}}, "s3"));
+    auto ack = b.next(10s);
+    ASSERT_TRUE(ack) << "the subscription was not acknowledged";
+    EXPECT_EQ((*ack)["method"], "notifications/subscriptions/acknowledged");
+    EXPECT_EQ((*ack)["params"]["_meta"][kMetaSubscription], "s3");
+    again.stop();
+}

@@ -282,26 +282,33 @@ private:
     Outcome exchange(const std::string& raw, const Json& message, InFlight& flight,
         const std::function<void(const Json&)>& on)
     {
+        // Decided by the response's status and Content-Type: a refusal
+        // (HTTP 401, text/plain) is a body to read, not an empty stream.
         enum class Mode { Unknown, Json, Sse } mode = Mode::Unknown;
         std::string body;
         SseReader sse;
         const Target target = *parseUrl(flight.endpoint.url);
-        const auto res = flight.client->Post(target.path, headersFor(message, m_legacyVersion), raw,
-            "application/json", [&](const char* data, std::size_t n) {
-                if (mode == Mode::Unknown) {
-                    const std::string_view chunk(data, n);
-                    const auto first = chunk.find_first_not_of(" \t\r\n");
-                    if (first != std::string_view::npos) {
-                        mode = chunk[first] == '{' || chunk[first] == '[' ? Mode::Json : Mode::Sse;
-                    }
-                }
-                if (mode == Mode::Sse) {
-                    sse.feed(data, n, on);
-                } else {
-                    body.append(data, n);
-                }
-                return true;
-            });
+        httplib::Request req;
+        req.method = "POST";
+        req.path = target.path;
+        req.headers = headersFor(message, m_legacyVersion);
+        req.set_header("Content-Type", "application/json");
+        req.body = raw;
+        req.response_handler = [&](const httplib::Response& response) {
+            const std::string type = response.get_header_value("Content-Type");
+            mode = response.status / 100 == 2 && type.rfind("text/event-stream", 0) == 0 ? Mode::Sse
+                                                                                       : Mode::Json;
+            return true;
+        };
+        req.content_receiver = [&](const char* data, std::size_t n, std::uint64_t, std::uint64_t) {
+            if (mode == Mode::Sse) {
+                sse.feed(data, n, on);
+            } else {
+                body.append(data, n);
+            }
+            return true;
+        };
+        const auto res = flight.client->send(req);
         if (flight.cancelled) return {}; // no response to a cancelled request
         if (!res) {
             // A stream that had started was delivered; one that never got
