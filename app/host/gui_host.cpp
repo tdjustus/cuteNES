@@ -1749,7 +1749,13 @@ void GuiHost::registerCommands(api::Registry& registry)
         });
     add(registry, "gui.list_breakpoints", "The execution breakpoints", none, breakpointsSchema, false, false,
         [breakpointList](CallContext&, const Json&) { return Result::ok({{"breakpoints", breakpointList()}}); });
-    later("gui.show_memory_viewer", "Open the memory viewer", none, true, "G8");
+    add(registry, "gui.show_memory_viewer",
+        "Open the memory viewer: CPU memory, PPU memory, OAM and palette RAM in hex, editable; viewing has no side "
+        "effects",
+        none, s::object({}), false, true, [this](CallContext&, const Json&) {
+            m_window.showMemoryViewer();
+            return Result::ok();
+        });
     later("gui.show_ppu_viewer", "Open the PPU viewer",
         s::object({{"view", s::stringEnum({"patterns", "nametables", "sprites", "palette"})}}), true, "G8");
     later("gui.show_trace_logger", "Open the trace logger", none, true, "G8");

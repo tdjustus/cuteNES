@@ -271,3 +271,23 @@ the window are covered by the `GuiDebugger` tests.
    field keeps it and the next Step uses it. Untick or tick Z: P changes.
    Typing over a field while the game runs is not overwritten until you
    press Enter.
+
+### Memory viewer (G082, #100)
+
+Checked through MCP: the viewer opened on Super Mario Bros. while it ran.
+That viewing changes no state (over the PPU registers too), the hex layout,
+and edits in all four spaces are covered by the `GuiMemoryViewer` tests; a
+test variant that read with side effects failed, as it should.
+
+1. Super Mario Bros.: Debug > Memory Viewer (Ctrl+M). CPU memory shows
+   from $0000, 16 bytes a row, and the values change while the game runs.
+2. Type 075A in Go To and press Enter: the row $0750 comes first. The
+   byte at column A is your lives less one (2 on a new game). Double-click
+   it, type 05, Enter: the next "WORLD 1-1" screen shows 6 lives.
+3. Choose PPU memory and go to 2000: the nametable bytes of the screen.
+   Choose OAM: the sprites' bytes, Mario's among them, moving as he moves.
+   Choose Palette RAM: two rows; change $3F00 (the first byte) to 0F and
+   the sky turns black.
+4. Type 1FF or ZZ into a cell: it is refused and shows the memory again.
+5. Scroll through CPU memory with the scroll bar while the game runs: the
+   game never stutters or changes.

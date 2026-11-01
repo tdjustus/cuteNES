@@ -43,6 +43,20 @@ QTableWidget* table(QWidget* parent, const char* name, const QStringList& header
 
 } // namespace
 
+std::optional<unsigned> parseHex(const QString& text, unsigned max)
+{
+    QString t = text.trimmed();
+    if (t.startsWith(QLatin1Char('$'))) {
+        t = t.mid(1);
+    } else if (t.startsWith(QLatin1String("0x"), Qt::CaseInsensitive)) {
+        t = t.mid(2);
+    }
+    bool ok = false;
+    const unsigned value = t.toUInt(&ok, 16);
+    if (!ok || t.isEmpty() || value > max) return std::nullopt;
+    return value;
+}
+
 std::optional<unsigned> parseNumber(const QString& text, unsigned max)
 {
     QString t = text.trimmed();

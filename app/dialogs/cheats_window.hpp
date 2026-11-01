@@ -27,6 +27,8 @@ using CommandRunner = std::function<QFuture<api::Result>(const QString& name, co
 
 // "$1F", "0x1F" or "31"; nullopt for anything else or above `max`.
 std::optional<unsigned> parseNumber(const QString& text, unsigned max);
+// Hexadecimal, as the debug windows show it: "5A", "$5A" and "0x5A" alike.
+std::optional<unsigned> parseHex(const QString& text, unsigned max);
 
 class CheatsWindow final : public QDialog {
     Q_OBJECT

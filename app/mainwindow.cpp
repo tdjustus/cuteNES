@@ -3,6 +3,7 @@
 #include "about_dialog.hpp"
 #include "dialogs/cheats_window.hpp"
 #include "dialogs/debugger_window.hpp"
+#include "dialogs/memory_viewer.hpp"
 #include "dialogs/key_bindings_page.hpp"
 #include "dialogs/settings_dialog.hpp"
 #include "library/library_browser.hpp"
@@ -142,6 +143,7 @@ const QStringList kImplemented = {
     QStringLiteral("gui.set_filter"), QStringLiteral("gui.toggle_always_on_top"),
     QStringLiteral("gui.toggle_audio_recording"), QStringLiteral("gui.record_movie"), QStringLiteral("gui.play_movie"),
     QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only"), QStringLiteral("gui.show_debugger"),
+    QStringLiteral("gui.show_memory_viewer"),
 };
 // Settings > Hotkeys opens the Key Bindings page (#108).
 const QStringList kSettingsPages = {QStringLiteral("video"), QStringLiteral("audio"), QStringLiteral("emulation"),
@@ -157,7 +159,7 @@ const QStringList kNeedGame = {
     QStringLiteral("gui.frame_advance"), QStringLiteral("gui.import_battery_save"),
     QStringLiteral("gui.export_battery_save"), QStringLiteral("gui.take_screenshot"),
     QStringLiteral("gui.toggle_audio_recording"), QStringLiteral("gui.record_movie"), QStringLiteral("gui.play_movie"),
-    QStringLiteral("gui.show_debugger"),
+    QStringLiteral("gui.show_debugger"), QStringLiteral("gui.show_memory_viewer"),
 };
 // Movie > Stop and Read-Only: only while a movie records or plays.
 const QStringList kNeedMovie = {QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only")};
@@ -1691,7 +1693,8 @@ CommandRunner MainWindow::toolRunner()
     // just closed, say): only what the user did reports an error.
     static const QStringList reads = {QStringLiteral("core.get_cpu"), QStringLiteral("core.disassemble"),
         QStringLiteral("core.run_state"), QStringLiteral("gui.list_breakpoints"), QStringLiteral("gui.list_cheats"),
-        QStringLiteral("gui.cheat_search_results"), QStringLiteral("gui.list_watches")};
+        QStringLiteral("gui.cheat_search_results"), QStringLiteral("gui.list_watches"), QStringLiteral("core.peek"),
+        QStringLiteral("core.read_vram"), QStringLiteral("core.read_oam"), QStringLiteral("core.read_palette")};
     return [this](const QString& name, const QVariantMap& args) { return runCommand(name, args, reads.contains(name)); };
 }
 
@@ -1704,6 +1707,15 @@ void MainWindow::showDebugger()
         m_debuggerWindow->show();
         m_debuggerWindow->raise();
         m_debuggerWindow->refresh();
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::showMemoryViewer()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        if (!m_memoryViewer) m_memoryViewer = new MemoryViewerWindow(toolRunner(), this);
+        m_memoryViewer->show();
+        m_memoryViewer->raise();
     }, Qt::QueuedConnection);
 }
 
