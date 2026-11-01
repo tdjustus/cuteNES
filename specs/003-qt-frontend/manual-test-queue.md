@@ -243,3 +243,31 @@ takeover, the refused commands and the file format are covered by the
    the recording began and replays.
 7. Open another game and Play… the Super Mario Bros. movie: refused (it was
    recorded on another game); the game keeps running.
+
+### Debugger (G081, #100)
+
+Checked through MCP: on Super Mario Bros. a breakpoint at the NMI handler
+($8082, from the vector at $FFFA) stopped the game there on frame 305 and,
+after Run, again on frame 306 (one frame of master cycles later); three
+steps ran LDA $0778 / AND #$7F / STA $0778 as the ROM has them; removing it
+let the game run at full speed. Stopping at nestest's breakpoints with the
+log's registers, stepping against the log, Step Frame and register edits in
+the window are covered by the `GuiDebugger` tests.
+
+1. Super Mario Bros.: Debug > Debugger (Ctrl+D). The window shows PC, A, X,
+   Y, S, P, the flag boxes and a listing from PC, all changing while the
+   game runs.
+2. Pause. Press Step Instruction a few times: PC moves to the next line of
+   the listing each time (the first line, in bold with ▶). Step Frame: the
+   picture moves on one frame.
+3. Type 8082 in the breakpoint field and press Add (or double-click a line
+   of the listing): it is listed, and marked ● in the listing. Press Run:
+   the game stops at once at $8082 with "Breakpoint at $8082", the window
+   in front. Run again: it stops again a frame later, not straight away.
+4. Press Run, then close the debugger window while the breakpoint is set:
+   at the next stop the window comes back by itself.
+5. Remove the breakpoint and Run: the game plays at full speed.
+6. Paused, type a new value into A (for example 42) and press Enter: the
+   field keeps it and the next Step uses it. Untick or tick Z: P changes.
+   Typing over a field while the game runs is not overwritten until you
+   press Enter.

@@ -25,6 +25,8 @@
 #include <QVector>
 
 #include <atomic>
+#include <bitset>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -111,6 +113,10 @@ public:
         virtual void showMovieDialog(bool record, const QString& from, const QString& folder) = 0;
         // A movie started, stopped or changed mode; movieStatus() has it.
         virtual void movieChanged() = 0;
+        // Debug > Debugger, and a breakpoint stop, which shows it too. The
+        // debugger reads the machine itself.
+        virtual void showDebugger() = 0;
+        virtual void debuggerStopped() = 0;
         virtual void showAbout() = 0;
         virtual void openLibraryFolder() = 0;
         virtual void exit() = 0;
@@ -172,6 +178,16 @@ private:
     api::Result loadStateBytes(api::CallContext& ctx, const QByteArray& state, bool keepUndo = true);
     api::Result selectSlot(int slot);
     void runFrame(Machine& machine); // each real-time frame, emulation thread
+    // A frame's bookkeeping, around its instructions: the rewind history,
+    // the movie's input and cheat freezes at its start (false: the movie
+    // ended, so no frame runs), the movie's count at its end.
+    bool beginFrame(Machine& machine);
+    void endFrame();
+    // Runs to the end of the frame, stepping when there are breakpoints.
+    // false: one stopped it (the game is paused there, mid-frame).
+    bool runToFrameEnd(Machine& machine);
+    void stopAtBreakpoint(std::uint16_t pc);
+    api::Result stepInstructions(api::CallContext& ctx, int count);
     api::Result setRewind(api::CallContext& ctx, bool on);
     api::Result setSpeed(int percent); // 0: Unlimited
     void updatePlayback();
@@ -217,6 +233,14 @@ private:
     StateSlots m_slots; // under m_slotsMutex
     std::atomic<int> m_selectedSlot{1};
     std::optional<QByteArray> m_undoState; // emulation thread; one level (data-model "StateSlot")
+
+    // Emulation thread: the debugger's breakpoints (FR-060). A breakpoint
+    // stops before the instruction at its address; Run goes on from one
+    // without stopping there again (m_skipBreakpoint). m_midFrame: the
+    // frame on screen has begun (a stop or a step part way through it).
+    std::bitset<0x10000> m_breakpoints;
+    std::optional<std::uint16_t> m_skipBreakpoint;
+    bool m_midFrame = false;
 
     // Emulation thread: the movie (FR-052), with a copy for the window.
     MovieStatus::Mode m_movieMode = MovieStatus::Mode::None;
