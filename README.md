@@ -13,9 +13,10 @@ connect to and drive the emulator.
   default, or Streamable HTTP), and a local JSON-RPC API for scripts
   ([`specs/002-ai-mcp-server`](specs/002-ai-mcp-server)). See "Using the
   server".
-- **Frontend** (`cutenes`, in progress): a Qt 6 desktop app
-  ([`specs/003-qt-frontend`](specs/003-qt-frontend)). So far it is a window
-  with its menus; play arrives in the next phase.
+- **Frontend** (`cutenes`): a Qt 6 desktop app for playing, with save
+  states, rewind, cheats, movies and debugging tools, and the MCP server
+  built in ([`specs/003-qt-frontend`](specs/003-qt-frontend)). See "Using
+  the GUI".
 - **Normative hardware reference**: the
   [NESdev NES Reference Guide](https://www.nesdev.org/wiki/NES_reference_guide).
 
@@ -66,6 +67,28 @@ the ALSA, PulseAudio and udev development headers first
 (`libasound2-dev libpulse-dev libudev-dev` on Debian and Ubuntu), so SDL3
 builds with real audio and gamepad support. Clone with `--recurse-submodules` to get the test-ROM archive
 (`tests/roms`); GoogleTest is fetched at configure time.
+
+## Using the GUI
+
+Start `cutenes` (`cutenes.app` on macOS). It opens your game library, a
+folder at `Documents/cuteNES`: put `.nes` files in its `roms/` folder, or
+click **Add Folder…** to use a folder of your own. Pick a game and play
+with the keyboard or a gamepad:
+
+| | Keyboard | Gamepad |
+|---|---|---|
+| D-pad | Arrow keys | D-pad or left stick |
+| A / B | X / Z | South / West (Xbox A / X) |
+| Select / Start | Right Shift / Enter | Back / Start |
+| Pause | P | |
+| Save / load state | Shift+F1-F10 / F1-F10 | |
+| Fast forward / rewind | Tab / Backspace (held) | |
+
+Every key can be changed in Help > Keyboard Shortcuts. The
+[user guide](docs/user-guide.md), also under **Help > User Guide**, covers
+the rest: saving, the picture and sound settings, cheats, movies, the
+debugging tools, every keyboard shortcut, and connecting an AI agent
+through Settings > Servers.
 
 ## Using the core
 

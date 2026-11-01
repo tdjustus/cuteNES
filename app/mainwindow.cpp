@@ -6,6 +6,7 @@
 #include "dialogs/memory_viewer.hpp"
 #include "dialogs/ppu_viewer.hpp"
 #include "dialogs/trace_logger.hpp"
+#include "dialogs/user_guide.hpp"
 #include "dialogs/key_bindings_page.hpp"
 #include "dialogs/settings_dialog.hpp"
 #include "library/library_browser.hpp"
@@ -129,7 +130,7 @@ const QStringList kImplemented = {
     QStringLiteral("gui.open_rom"), QStringLiteral("gui.show_cheats"), QStringLiteral("gui.show_cheat_search"), QStringLiteral("gui.set_region"), QStringLiteral("gui.set_palette"), QStringLiteral("gui.close_game"),
     QStringLiteral("gui.toggle_pause"), QStringLiteral("gui.reset"),
     QStringLiteral("gui.power_cycle"), QStringLiteral("gui.exit"),
-    QStringLiteral("gui.show_about"), QStringLiteral("gui.show_library"),
+    QStringLiteral("gui.show_about"), QStringLiteral("gui.show_user_guide"), QStringLiteral("gui.show_library"),
     QStringLiteral("gui.open_library_folder"), QStringLiteral("gui.clear_recent"),
     QStringLiteral("gui.show_settings"), QStringLiteral("gui.save_state"),
     QStringLiteral("gui.load_state"), QStringLiteral("gui.quick_save"),
@@ -1758,6 +1759,15 @@ void MainWindow::showTraceLogger()
     }, Qt::QueuedConnection);
 }
 
+void MainWindow::showUserGuide()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        if (!m_userGuide) m_userGuide = new UserGuideWindow(this);
+        m_userGuide->show();
+        m_userGuide->raise();
+    }, Qt::QueuedConnection);
+}
+
 namespace {
 
 // The windows gui.show_* opens, by object name: their names in
@@ -1765,7 +1775,7 @@ namespace {
 const std::pair<const char*, const char*> kWindowNames[] = {
     {"aboutDialog", "about"}, {"settingsDialog", "settings"}, {"cheatsWindow", "cheats"},
     {"cheatSearchWindow", "cheat_search"}, {"debuggerWindow", "debugger"}, {"memoryViewer", "memory_viewer"},
-    {"ppuViewer", "ppu_viewer"}, {"traceLogger", "trace_logger"},
+    {"ppuViewer", "ppu_viewer"}, {"traceLogger", "trace_logger"}, {"userGuide", "user_guide"},
 };
 
 QString windowName(const QObject* dialog)

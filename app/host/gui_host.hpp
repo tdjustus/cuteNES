@@ -122,9 +122,10 @@ public:
         virtual void showMemoryViewer() = 0;
         virtual void showPpuViewer(const QString& view) = 0;
         virtual void showTraceLogger() = 0;
+        virtual void showUserGuide() = 0;
         // The windows a gui.show_* opened that are shown now, by name
         // (thread-safe): about, settings, cheats, cheat_search, debugger,
-        // memory_viewer, ppu_viewer, trace_logger. closeWindows posts their
+        // memory_viewer, ppu_viewer, trace_logger, user_guide. closeWindows posts their
         // closing; the list follows once they have closed.
         virtual QStringList openWindows() const = 0;
         virtual void closeWindows(const QStringList& names) = 0;

@@ -412,3 +412,23 @@ and ran from its own bundled frameworks. What only a person can judge:
    macOS, beside the app elsewhere; on Linux it cannot yet be started
    from the AppImage (#134), so attach from a build for now). Note anything missing (a plugin, a
    codec, a font).
+
+### User guide (G094)
+
+Automated by `GuiUserGuide`: the guide's shortcut table is exactly the
+contract's shortcuts, and its controls table is the contract's defaults.
+Help > User Guide shows the built-in copy of `docs/user-guide.md`, and
+`gui.list_windows` and `gui.close_window` treat it as `user_guide`.
+Checked through the MCP: the live app opens it and lists it. A screenshot
+could not be taken (no screen-recording permission), so how it looks is
+unchecked:
+
+1. Help > User Guide. The guide opens in its own window, with headings,
+   lists and tables laid out (not raw `|` and `#` characters), and the
+   tree in "The library folder" in a fixed-width font.
+2. Click the Model Context Protocol link: it opens in your browser.
+3. Read it as a new player would. Note anything wrong, unclear, or
+   missing; it is written from the contracts, so a difference from what
+   the app does is a bug in one of them.
+4. README "Using the GUI" reads well on GitHub, and its link to the guide
+   works.

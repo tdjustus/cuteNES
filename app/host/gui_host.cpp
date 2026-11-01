@@ -1888,7 +1888,7 @@ void GuiHost::registerCommands(api::Registry& registry)
             return Result::ok({{"path", str(path)}});
         });
     const Json windowNames = s::stringEnum({"about", "settings", "cheats", "cheat_search", "debugger", "memory_viewer",
-        "ppu_viewer", "trace_logger"});
+        "ppu_viewer", "trace_logger", "user_guide"});
     const Json windowList = s::array(windowNames, 16, "in name order");
     add(registry, "gui.list_windows", "The windows a gui.show_* opened that are open now", none,
         s::object({{"windows", windowList}}, {"windows"}), false, false, [this](CallContext&, const Json&) {
@@ -1932,7 +1932,11 @@ void GuiHost::registerCommands(api::Registry& registry)
                 {"scale", video.scale}, {"speed", m_speed}, {"fastForward", m_fastForward}, {"rewinding", m_rewinding},
                 {"movie", movie}, {"selectedSlot", m_selectedSlot.load()}, {"windows", windows}});
         });
-    later("gui.show_user_guide", "Open the user guide", none, false, "G9");
+    add(registry, "gui.show_user_guide", "Show the user guide (docs/user-guide.md, built in)", none,
+        s::object({}), false, false, [this](CallContext&, const Json&) {
+            m_window.showUserGuide();
+            return Result::ok();
+        });
     later("gui.open_log_folder", "Show the log folder in the file manager", none, false, "G9");
 
     add(registry, "gui.open_library_folder", "Show the library folder in the file manager",
