@@ -159,6 +159,9 @@ Every setting can be read and changed without the dialog:
 - `gui.get_settings` (optional `group`) returns every value with its schema.
 - `gui.set_setting` (`key`, `value`) validates and applies a value.
 
+Update checks (US10, #105) are the setting `updates.check` (off until the
+user says yes). No command installs an update.
+
 Each group's keys are an enum in its schema (data-model.md "Settings").
 
 ## Help

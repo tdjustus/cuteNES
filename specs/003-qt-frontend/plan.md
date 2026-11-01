@@ -89,6 +89,7 @@ Decisions and sources: [research.md](research.md).
 - The GUI thread never blocks on emulation for longer than one command.
 - Determinism holds: movies and states replay identically.
 - Off by default: no network port opens unless the user turns a server on.
+- No outbound request except the opt-in update check (US10, R16).
 
 **Scale/scope**:
 - About 120 `gui.*` commands (one per menu action and setting).

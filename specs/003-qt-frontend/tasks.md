@@ -265,7 +265,17 @@ documented ROM behavior. `contracts/core-additions.md`.
   `.desktop`/MIME), with license files, on tags and weekly.
 - [ ] G094 Docs: README "Using the GUI", a user guide reachable from Help, and
   a keyboard shortcut list from the contract.
-- [ ] G095 Manual checklist **M9**. If every FR and SC is met, the PR uses
+- [ ] G096 [US10] Spec R16 settled: feed, asset names, checksums and the
+  per-platform swap (#105). Release assets get the naming scheme (G093).
+- [ ] G097 [US10] Tests first: a fake release feed for version comparison
+  and asset choice, skip and later remembered, no prompt while a game runs,
+  no request with checks off, a bad checksum replacing nothing, and the
+  arguments carried to the relaunch.
+- [ ] G098 [US10] The first-launch question, the setting, the background
+  check and the prompt (FR-090 to FR-093, FR-096, FR-097).
+- [ ] G099 [US10] Download, verify, replace and relaunch per platform
+  (FR-094, FR-095), with a manual check on all three OSes.
+- [ ] G095 Manual checklist **M9** (after G096-G099). If every FR and SC is met, the PR uses
   `Fixes #32`; otherwise it uses `Refs #32`, and issues are filed for the
   remainder.
 
