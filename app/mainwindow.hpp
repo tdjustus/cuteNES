@@ -170,6 +170,9 @@ private:
     void showMemoryViewer() override;
     void showPpuViewer(const QString& view) override;
     void showTraceLogger() override;
+    QStringList openWindows() const override;
+    void closeWindows(const QStringList& names) override;
+    QString currentPage() const override;
     void debuggerStopped() override;
     void showLibrary(const QString& select, bool paused) override;
     void showSettings(const QString& page) override;
@@ -262,6 +265,12 @@ private:
     QPointer<MemoryViewerWindow> m_memoryViewer;
     QPointer<PpuViewerWindow> m_ppuViewer;
     QPointer<TraceLoggerWindow> m_traceLogger;
+    // What openWindows() and currentPage() report, kept by the GUI thread
+    // as windows show and hide and pages change (updateWindowList).
+    void updateWindowList();
+    mutable std::mutex m_windowListMutex;
+    QStringList m_openWindows;
+    QString m_currentPage;
     QTimer* m_osdTimer = nullptr;
     std::unique_ptr<Servers> m_servers; // the API and MCP listeners (Settings > Servers)
     QPushButton* m_automation = nullptr; // bottom right while a client is there; opens Settings > Servers

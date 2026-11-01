@@ -254,6 +254,7 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_pages->addWidget(m_browser);
     m_pages->addWidget(m_view);
     m_pages->addWidget(m_bindingsPage);
+    connect(m_pages, &QStackedWidget::currentChanged, this, &MainWindow::updateWindowList);
     m_bindings = std::make_unique<KeyBindings>(m_settings);
     setCentralWidget(m_pages);
     m_osd = new QLabel(m_pages);
@@ -1757,6 +1758,64 @@ void MainWindow::showTraceLogger()
     }, Qt::QueuedConnection);
 }
 
+namespace {
+
+// The windows gui.show_* opens, by object name: their names in
+// gui.list_windows and gui.close_window.
+const std::pair<const char*, const char*> kWindowNames[] = {
+    {"aboutDialog", "about"}, {"settingsDialog", "settings"}, {"cheatsWindow", "cheats"},
+    {"cheatSearchWindow", "cheat_search"}, {"debuggerWindow", "debugger"}, {"memoryViewer", "memory_viewer"},
+    {"ppuViewer", "ppu_viewer"}, {"traceLogger", "trace_logger"},
+};
+
+QString windowName(const QObject* dialog)
+{
+    for (const auto& [object, name] : kWindowNames) {
+        if (dialog->objectName() == QLatin1String(object)) return QLatin1String(name);
+    }
+    return {};
+}
+
+} // namespace
+
+void MainWindow::updateWindowList()
+{
+    QStringList open;
+    for (QDialog* dialog : findChildren<QDialog*>(Qt::FindDirectChildrenOnly)) {
+        const QString name = windowName(dialog);
+        if (!name.isEmpty() && dialog->isVisible() && !open.contains(name)) open << name;
+    }
+    open.sort();
+    const QWidget* page = m_pages->currentWidget();
+    const QString current = page == m_view ? QStringLiteral("game")
+        : page == m_bindingsPage            ? QStringLiteral("key_bindings")
+                                            : QStringLiteral("library");
+    std::lock_guard lock(m_windowListMutex);
+    m_openWindows = open;
+    m_currentPage = current;
+}
+
+QStringList MainWindow::openWindows() const
+{
+    std::lock_guard lock(m_windowListMutex);
+    return m_openWindows;
+}
+
+QString MainWindow::currentPage() const
+{
+    std::lock_guard lock(m_windowListMutex);
+    return m_currentPage.isEmpty() ? QStringLiteral("library") : m_currentPage;
+}
+
+void MainWindow::closeWindows(const QStringList& names)
+{
+    QMetaObject::invokeMethod(this, [this, names] {
+        for (QDialog* dialog : findChildren<QDialog*>(Qt::FindDirectChildrenOnly)) {
+            if (names.contains(windowName(dialog)) && dialog->isVisible()) dialog->close();
+        }
+    }, Qt::QueuedConnection);
+}
+
 void MainWindow::debuggerStopped()
 {
     showDebugger(); // a breakpoint shows where it stopped (spec US9-2)
@@ -2034,6 +2093,12 @@ void MainWindow::pushInput()
 bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 {
     switch (event->type()) {
+    case QEvent::Show:
+    case QEvent::Hide: // one of this window's dialogs, for gui.list_windows
+        if (auto* dialog = qobject_cast<QDialog*>(watched); dialog && dialog->parentWidget() == this) {
+            QMetaObject::invokeMethod(this, &MainWindow::updateWindowList, Qt::QueuedConnection);
+        }
+        break;
     case QEvent::Resize: // the application's filter sees every widget's
         if (watched == m_pages) placeOsd();
         if (watched == m_view) updateOverlays();

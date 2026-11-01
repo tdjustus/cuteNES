@@ -27,10 +27,13 @@ add_executable(cutenes-gui-tests
     test_debugger.cpp
     test_memory_viewer.cpp
     test_ppu_viewer.cpp
-    test_trace_logger.cpp)
+    test_trace_logger.cpp
+    test_audit.cpp
+    test_window_commands.cpp)
 target_link_libraries(cutenes-gui-tests PRIVATE cutenes-app-lib cutenes-httplib gtest)
 target_compile_definitions(cutenes-gui-tests PRIVATE
-    CUTENES_TEST_ROMS="${PROJECT_SOURCE_DIR}/tests/roms")
+    CUTENES_TEST_ROMS="${PROJECT_SOURCE_DIR}/tests/roms"
+    CUTENES_CONTRACTS="${PROJECT_SOURCE_DIR}/specs/003-qt-frontend/contracts")
 
 gtest_discover_tests(cutenes-gui-tests
     DISCOVERY_MODE PRE_TEST

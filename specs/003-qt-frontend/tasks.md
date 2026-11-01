@@ -268,7 +268,7 @@ logger and memory dump (G084).
 
 ## Phase G9: Parity, acceptance, packaging (branch `feature/gui-release`)
 
-- [ ] G090 [US6] The `gui-audit` test (A8): the menu actions, the contract
+- [x] G090 [US6] The `gui-audit` test (A8): the menu actions, the contract
   table and the `gui.*` catalog are equal, and every action is wired.
 - [ ] G091 [US6] `gui-coexistence` (A10, 002 SC-006) and the GUI-mode
   `--attach` test against the real application. This closes 002's GUI-mode

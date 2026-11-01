@@ -3,10 +3,24 @@
 **Feature**: 003 | **Authority**: spec FR-020-FR-024, FR-070-FR-074; research R11
 
 This is the **menu inventory**. Every row is one `QAction`, and its `gui.*`
-command performs it. The `gui-audit` test (SC-003) checks that:
-- the set of menu actions equals this table;
-- each action's `command` property is its row's command;
-- the `gui.*` catalog has every command in this file and no others.
+command performs it. The `gui-audit` test (SC-003, `tests/gui/test_audit.cpp`)
+reads this file and checks that:
+- the menu actions' commands are the commands of the tables from File to
+  Help, and each row has an action;
+- each action's shortcuts are the ones its rows give (ranges such as
+  `Ctrl+1 … Ctrl+0` are read out; Enter is the main keyboard's Return);
+- the Game column is the catalog's `needsRom`, and without a game exactly
+  the game-only actions are disabled;
+- every action is wired (its arguments are valid input for its command), or
+  is a later phase's item (below);
+- the `gui.*` catalog has every command in this file and no others. A name
+  with `*`, such as `gui.trace_*`, stands for a family and must match at
+  least one command.
+
+So a change to the menus, the catalog or this file that leaves the others
+behind fails the build. The approach is general: the contract is written
+for people, in a shape regular enough (one table row per action, commands in
+backticks) for a test to read.
 
 Conventions:
 - Every command returns `frame` and `masterCycle`, as all commands do (002).
@@ -325,8 +339,8 @@ Settings pages that do not exist yet do the same through
 
 | Command | Purpose |
 |---|---|
-| `gui.close_window` | `window` (any that opened by a `gui.show_*`; `all`) |
-| `gui.list_windows` | Open windows and dialogs |
+| `gui.close_window` | `window`: `about`, `settings`, `cheats`, `cheat_search`, `debugger`, `memory_viewer`, `ppu_viewer`, `trace_logger`, or `all`. Returns `closed`, the windows it closes; one not open is refused (`InvalidArguments`). The windows close on the GUI thread, so `gui.list_windows` drops them a moment later |
+| `gui.list_windows` | `windows`: the windows above that are shown now, in name order. A window a `gui.show_*` just opened is listed a moment later: the window opens on the GUI thread after the command returns (R11). The library and Key Bindings are pages of the main window, not windows (`gui.state` `page`) |
 | `gui.library_select` | `path` or `identity`: select a game in the browser |
 | `gui.add_rom_folder` / `gui.remove_rom_folder` | `path`: scan another folder of ROMs in place, or stop scanning it (FR-002). Overlapping folders and the library's own `roms/` are refused. Returns `romFolders` |
 | `gui.add_cheat` / `gui.remove_cheat` / `gui.set_cheat_enabled` / `gui.list_cheats` | Cheat list (data-model "Cheat") |
@@ -339,7 +353,7 @@ Settings pages that do not exist yet do the same through
 
 | Command | Returns |
 |---|---|
-| `gui.state` | Window state: library or game, fullscreen, scale, speed, fast-forward, rewind, movie status, selected slot, open windows |
+| `gui.state` | `page` (`library`, `game` or `key_bindings`), `game` (one is open), `fullscreen`, `scale`, `speed` (percent; 0 is Unlimited), `fastForward`, `rewinding`, `movie` (as `gui.movie_status`), `selectedSlot`, `windows` (as `gui.list_windows`) |
 | `gui.list_slots` | For each slot 1-10: `empty`, or `name`, `savedAt` (ISO 8601, UTC), `size`, and the `state` and `thumbnail` file paths; and the game's `selectedSlot` |
 | `gui.list_recent` | Recent games with path, identity and whether the file exists |
 | `gui.library_list` | The browser's entries (data-model "LibraryEntry"). In GUI mode `session.library_list` returns the same (FR-074) |
