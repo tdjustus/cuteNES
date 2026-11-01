@@ -118,11 +118,13 @@ void Session::setMediaSinks(IVideoSink*, IAudioSink*);    // host's sinks
   the target latency (default 64 ms, adjustable from 32 to 200). The stream's
   frequency ratio is nudged by at most ±0.5% (`SDL_SetAudioStreamFrequencyRatio`).
 - **Pacing.** G1 ships the timer mode. The display-synced mode arrives with
-  the video settings in G5. `FrameClock` chooses between two modes:
+  the video settings in G5. `choosePacing` picks between two modes, and the
+  `video.pacing` setting (`auto`, `display`, `audio`) can force one:
   - **Sync to display** (the default when the display's refresh rate is
-    within 1% of the console rate, or of an integer multiple of it): a frame
-    is due on each vsync, or on every Nth at 120/144 Hz. Dynamic rate control
-    absorbs the 0.16% difference, so no frames are dropped or repeated.
+    within 1% of the console rate, or of a whole multiple of it, up to 4x):
+    a frame is due on each vsync, or on every Nth at 120 Hz. Dynamic rate
+    control absorbs the 0.16% difference, so no frames are dropped or
+    repeated. 144 Hz is not a whole multiple of 60, so it syncs to audio.
   - **Sync to audio** (other refresh rates, or VRR off): a high-resolution
     timer runs at the console rate, and video shows the newest frame at each
     vsync.
@@ -138,6 +140,22 @@ void Session::setMediaSinks(IVideoSink*, IAudioSink*);    // host's sinks
 **Why.** This is the established pairing of vsync with dynamic rate control:
 it gives smooth video and gap-free audio together (SC-004). SDL3's stream
 supplies the resampler.
+
+**As built (G051).** The display-synced mode runs the same high-resolution
+`FrameClock` at the screen's refresh rate (`QScreen::refreshRate`, divided
+by N), not on vsync callbacks. The window re-chooses when it moves to another
+screen or the rate changes, and `gui.get_settings` reports the choice as
+`video.pacingNow`.
+- Why a timer and not vsync callbacks: `QRhiWidget` composites through the
+  window's backing store, which gives no portable per-vsync signal. Swap
+  timing differs across Metal, Direct3D and OpenGL, and is absent on the
+  raster fallback. A clock at the display's rate gives the same frame
+  count per second, and works in every renderer and in tests.
+- What it gives up: the clock's phase is not locked to vsync, so a nominal
+  rate slightly off the true one (a display reporting 60 that runs at
+  59.95) makes a frame repeat or drop every few hundred seconds instead of
+  never. Phase-locking to presentation timestamps is a later refinement if
+  the manual pass shows judder.
 
 **Rejected.**
 - Audio-master pacing alone: it drops or repeats a video frame about every 10

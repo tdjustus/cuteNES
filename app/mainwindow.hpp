@@ -139,6 +139,7 @@ signals:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void changeEvent(QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dropEvent(QDropEvent* event) override;
@@ -151,6 +152,7 @@ private:
     void serversChanged() override;
     void showMessage(const QString& text) override;
     void playbackChanged(const Playback& playback) override;
+    PacingNow pacingNow() const override;
     void showLibrary(const QString& select, bool paused) override;
     void showSettings(const QString& page) override;
     void showKeyBindings(const QString& section, bool paused) override;
@@ -194,6 +196,8 @@ private:
     void resizeToScale();
     void applyInputSettings(); // GUI thread: the turbo rate and opposite directions
     void applyAudioSettings(); // GUI thread: the device, volume, mute and latency
+    void followScreen();       // GUI thread: the display's refresh rate (R4)
+    QString pacingText() const; // the pacing in use, for Settings > Video
     void followFocus();        // GUI thread: pause when inactive (FR-036)
     // Gamepads (GUI thread): the backend's events, one control of the pad
     // that drives `port`, and that pad going away.
@@ -229,7 +233,11 @@ private:
     QSet<int> m_keysDown; // keys held now, for the hold actions
     mutable std::mutex m_playbackMutex;
     Playback m_playback; // under m_playbackMutex
-    double m_baseRate = 60.0988; // the console's frame rate
+    std::atomic<double> m_consoleRate{60.0988}; // the game's region's frame rate
+    std::atomic<double> m_displayHz{0};         // the window's screen; 0 when unknown
+    PacingNow m_pacing;                         // under m_playbackMutex
+    QMetaObject::Connection m_refreshConnection; // the screen's refresh-rate signal
+    bool m_screenWatched = false;
     QTimer* m_osdTimer = nullptr;
     std::unique_ptr<Servers> m_servers; // the API and MCP listeners (Settings > Servers)
     QPushButton* m_automation = nullptr; // bottom right while a client is there; opens Settings > Servers

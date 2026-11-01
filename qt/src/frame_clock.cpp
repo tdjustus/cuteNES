@@ -1,6 +1,7 @@
 #include <cutenes/qt/frame_clock.hpp>
 
 #include <chrono>
+#include <cmath>
 
 #if defined(_WIN32)
 // Windows sleeps in ~15.6 ms steps unless the timer resolution is raised.
@@ -18,6 +19,18 @@ std::int64_t periodFor(double framesPerSecond)
 }
 
 } // namespace
+
+Pacing choosePacing(PacingMode mode, double displayHz, double consoleHz)
+{
+    if (mode != PacingMode::Audio && displayHz > 0) {
+        constexpr int kMaxDivisor = 4;
+        for (int n = 1; n <= kMaxDivisor; ++n) {
+            const double rate = displayHz / n;
+            if (std::abs(rate - consoleHz) <= consoleHz * 0.01) return {true, n, rate};
+        }
+    }
+    return {false, 1, consoleHz};
+}
 
 FrameClock::FrameClock(std::function<void(std::uint32_t)> tick) : m_tick(std::move(tick)) {}
 

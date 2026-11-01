@@ -5,6 +5,9 @@
 // - Fullscreen and Always on Top change the window, and toggle back.
 // - Nearest keeps each NES pixel one flat color, Smooth blends neighbors,
 //   and Scanlines darkens part of every NES line.
+// - Frame pacing follows the display when its refresh rate is within 1%
+//   of the console's (or a whole multiple), else the console's own rate
+//   (R4); "audio" always keeps the console's rate.
 // - Every video setting persists, is in gui.get_settings, and is on the
 //   Settings > Video page.
 
@@ -18,6 +21,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QImage>
+#include <QLabel>
 #include <QMenuBar>
 #include <QSpinBox>
 
@@ -196,10 +200,12 @@ TEST(GuiVideo, TheSettingsPersistAndTheVideoPageShowsThem)
     MainWindow::Options options = windowOptions(&folder);
     {
         MainWindow w(options);
-        const Json defaults = call(w, "gui.get_settings", {{"group", "video"}})["values"]["video"];
+        Json defaults = call(w, "gui.get_settings", {{"group", "video"}})["values"]["video"];
+        defaults.erase("pacingNow"); // what the pacing does, not a setting
         EXPECT_EQ(defaults, Json({{"scale", 3}, {"fullscreen", false}, {"integerScaling", true}, {"aspect", "8:7"},
                                 {"overscan", {{"top", 8}, {"bottom", 8}, {"left", 0}, {"right", 0}}},
-                                {"filter", "nearest"}, {"alwaysOnTop", false}, {"showFps", false}, {"showOsd", true}}))
+                                {"filter", "nearest"}, {"alwaysOnTop", false}, {"pacing", "auto"},
+                                {"showFps", false}, {"showOsd", true}}))
             << defaults.dump();
         call(w, "gui.set_setting", {{"key", "video.scale"}, {"value", 4}});
         call(w, "gui.set_setting", {{"key", "video.integerScaling"}, {"value", false}});
@@ -209,7 +215,7 @@ TEST(GuiVideo, TheSettingsPersistAndTheVideoPageShowsThem)
             {{"key", "video.overscan"}, {"value", {{"top", 0}, {"bottom", 4}, {"left", 8}, {"right", 2}}}});
         for (const auto& [key, value] : std::vector<std::pair<const char*, Json>>{{"video.scale", 7},
                  {"video.aspect", "16:9"}, {"video.filter", "blur"}, {"video.overscan", {{"top", 17}}},
-                 {"video.integerScaling", 1}}) {
+                 {"video.integerScaling", 1}, {"video.pacing", "vsync"}}) {
             const Result bad = w.session().call("gui.set_setting", {{"key", key}, {"value", value}});
             ASSERT_TRUE(bad.isError()) << key;
             EXPECT_EQ(bad.error->data["path"].get<std::string>().rfind("/value", 0), 0u) << key;
@@ -278,4 +284,41 @@ TEST(GuiVideo, CustomOverscanFromTheMenuOpensTheVideoPage)
         auto* top = dialog->findChild<QSpinBox*>(QStringLiteral("overscanTop"));
         return top && top->isVisible();
     })) << "the dialog is at Video, by the edges";
+}
+
+// R4: the pacing in use follows the window's display, and the setting
+// chooses it.
+TEST(GuiVideo, FramePacingFollowsTheDisplayOrTheSetting)
+{
+    MainWindow w(windowOptions());
+    w.show();
+    const auto now = [&] { return call(w, "gui.get_settings", {{"group", "video"}})["values"]["video"]["pacingNow"]; };
+    ASSERT_TRUE(waitUntil([&] { return now()["displayHz"].get<double>() > 0; })) << now().dump();
+    const double hz = now()["displayHz"].get<double>();
+    const bool near60 = std::abs(hz - 60.0988) <= 0.600988 || std::abs(hz / 2 - 60.0988) <= 0.600988;
+    EXPECT_EQ(now()["mode"], near60 ? "display" : "audio") << hz << " Hz";
+    if (near60) {
+        EXPECT_NEAR(now()["framesPerSecond"].get<double>() * now()["divisor"].get<int>(), hz, 1e-6);
+        EXPECT_NEAR(w.frameRate(), now()["framesPerSecond"].get<double>(), 1e-4) << "the clock runs at it";
+    }
+
+    call(w, "gui.set_setting", {{"key", "video.pacing"}, {"value", "audio"}});
+    EXPECT_TRUE(waitUntil([&] { return now()["mode"] == "audio"; }));
+    EXPECT_DOUBLE_EQ(now()["framesPerSecond"].get<double>(), 60.0988);
+    EXPECT_NEAR(w.frameRate(), 60.0988, 1e-4); // the clock's period is whole nanoseconds
+
+    // Settings > Video shows it, in words too.
+    call(w, "gui.show_settings", {{"page", "video"}});
+    QWidget* dialog = nullptr;
+    ASSERT_TRUE(waitUntil([&] {
+        return (dialog = w.findChild<QWidget*>(QStringLiteral("settingsDialog"))) && dialog->isVisible();
+    }));
+    auto* pacing = dialog->findChild<QComboBox*>(QStringLiteral("pacing"));
+    auto* words = dialog->findChild<QLabel*>(QStringLiteral("pacingNow"));
+    ASSERT_TRUE(pacing && words);
+    EXPECT_EQ(pacing->currentData().toString(), QStringLiteral("audio"));
+    EXPECT_TRUE(words->text().contains(QStringLiteral("console's own rate"))) << words->text().toStdString();
+    pacing->setCurrentIndex(pacing->findData(QStringLiteral("auto")));
+    EXPECT_TRUE(waitUntil([&] { return now()["mode"] == (near60 ? "display" : "audio"); }));
+    EXPECT_EQ(call(w, "gui.get_settings", {{"group", "video"}})["values"]["video"]["pacing"], "auto");
 }

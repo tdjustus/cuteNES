@@ -12,6 +12,23 @@
 
 namespace cutenes::qt {
 
+// How frames are paced (R4). Sync to display runs the clock at the
+// display's refresh rate (or a whole fraction of it) when that is within 1%
+// of the console's, so every frame is shown exactly once; audio dynamic rate
+// control absorbs the difference. Otherwise the clock keeps the console's
+// rate (sync to audio) and each vsync shows the newest frame.
+enum class PacingMode { Auto, Display, Audio };
+
+struct Pacing {
+    bool display = false;       // synced to the display
+    int divisor = 1;            // a frame every Nth vsync
+    double framesPerSecond = 0; // the clock's rate at 100% speed
+};
+
+// `displayHz` is 0 when the refresh rate is unknown. Display asks for sync
+// to display but falls back to the console's rate when no multiple is close.
+Pacing choosePacing(PacingMode mode, double displayHz, double consoleHz);
+
 class FrameClock {
 public:
     // `tick` runs on the clock's thread with the number of frames due

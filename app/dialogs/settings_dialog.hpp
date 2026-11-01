@@ -64,6 +64,8 @@ public:
         bool alwaysOnTop = false;
         bool showFps = false;
         bool showOsd = true;
+        QString pacing;
+        QString pacingNow; // what the pacing is doing, in words
     };
     void setVideo(const Video& video);
 
@@ -131,6 +133,8 @@ private:
         QComboBox* aspect = nullptr;
         QSpinBox* overscan[4] = {};
         QComboBox* filter = nullptr;
+        QComboBox* pacing = nullptr;
+        QLabel* pacingNow = nullptr;
         QCheckBox* alwaysOnTop = nullptr;
         QCheckBox* showFps = nullptr;
         QCheckBox* showOsd = nullptr;
