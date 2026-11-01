@@ -2,6 +2,8 @@
 
 #include <QCheckBox>
 #include <QClipboard>
+#include <QComboBox>
+#include <QFormLayout>
 #include <QDialogButtonBox>
 #include <QGridLayout>
 #include <QGuiApplication>
@@ -14,6 +16,8 @@
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QVBoxLayout>
+
+#include <vector>
 
 namespace cutenes::app {
 
@@ -113,6 +117,8 @@ SettingsDialog::SettingsDialog(QWidget* parent)
             layout->addLayout(folderButtons);
         } else if (QLatin1String(key) == QLatin1String("servers")) {
             page = buildServersPage(m_stack);
+        } else if (QLatin1String(key) == QLatin1String("video")) {
+            page = buildVideoPage(m_stack);
         } else if (QLatin1String(key) == QLatin1String("input")) {
             page = buildInputPage(m_stack);
         } else {
@@ -245,6 +251,110 @@ void SettingsDialog::setServers(const Server& api, const Server& mcp)
     show(m_api, api);
     show(m_mcp, mcp);
     m_mcpTokenFile->setText(mcp.running ? tr("Token file: %1").arg(mcp.tokenFile) : QString());
+}
+
+QWidget* SettingsDialog::buildVideoPage(QWidget* parent)
+{
+    auto* page = new QWidget(parent);
+    VideoControls& c = m_video;
+    const auto check = [&](QCheckBox*& box, const QString& text, const char* name, const char* key) {
+        box = new QCheckBox(text, page);
+        box->setObjectName(QString::fromLatin1(name));
+        connect(box, &QCheckBox::toggled, this,
+            [this, key](bool on) { emit settingRequested(QString::fromLatin1(key), on); });
+    };
+    const auto combo = [&](QComboBox*& box, const char* name, const char* key,
+                           std::initializer_list<std::pair<QString, const char*>> items) {
+        box = new QComboBox(page);
+        box->setObjectName(QString::fromLatin1(name));
+        for (const auto& [text, value] : items) box->addItem(text, QString::fromLatin1(value));
+        connect(box, &QComboBox::currentIndexChanged, this, [this, box, key] {
+            emit settingRequested(QString::fromLatin1(key), box->currentData().toString());
+        });
+    };
+
+    c.scale = new QSpinBox(page);
+    c.scale->setObjectName(QStringLiteral("videoScale"));
+    c.scale->setRange(1, 6);
+    c.scale->setSuffix(QStringLiteral("x"));
+    c.scale->setAccessibleName(tr("Window scale"));
+    connect(c.scale, &QSpinBox::valueChanged, this,
+        [this](int scale) { emit settingRequested(QStringLiteral("video.scale"), scale); });
+    check(c.fullscreen, tr("Fullscreen"), "fullscreen", "video.fullscreen");
+    check(c.integerScaling, tr("Integer scaling (whole multiples only)"), "integerScaling", "video.integerScaling");
+    combo(c.aspect, "aspect", "video.aspect",
+        {{tr("Square pixels"), "square"}, {tr("8:7 (NTSC hardware)"), "8:7"}, {tr("4:3 stretch"), "4:3"}});
+    combo(c.filter, "filter", "video.filter",
+        {{tr("Nearest (sharp)"), "nearest"}, {tr("Smooth"), "smooth"}, {tr("Scanlines"), "scanlines"}});
+    check(c.alwaysOnTop, tr("Always on top"), "alwaysOnTop", "video.alwaysOnTop");
+    check(c.showFps, tr("Show FPS"), "showFps", "video.showFps");
+    check(c.showOsd, tr("Show on-screen messages"), "showOsd", "video.showOsd");
+
+    // The crop: each edge in NES pixels.
+    auto* crop = new QGridLayout;
+    const char* edges[4] = {"top", "bottom", "left", "right"};
+    const QString names[4] = {tr("Top"), tr("Bottom"), tr("Left"), tr("Right")};
+    for (int i = 0; i < 4; ++i) {
+        QSpinBox*& box = c.overscan[i];
+        box = new QSpinBox(page);
+        QString name = QString::fromLatin1(edges[i]);
+        name[0] = name[0].toUpper();
+        box->setObjectName(QStringLiteral("overscan") + name);
+        box->setRange(0, 16);
+        box->setSuffix(tr(" px"));
+        box->setAccessibleName(tr("Overscan %1").arg(names[i]));
+        const char* edge = edges[i];
+        connect(box, &QSpinBox::valueChanged, this, [this, edge](int value) {
+            emit settingRequested(QStringLiteral("video.overscan"), QVariantMap{{QString::fromLatin1(edge), value}});
+        });
+        crop->addWidget(new QLabel(names[i], page), i / 2, (i % 2) * 2, Qt::AlignRight);
+        crop->addWidget(box, i / 2, (i % 2) * 2 + 1);
+    }
+    crop->setColumnStretch(4, 1);
+
+    auto* form = new QFormLayout;
+    form->setLabelAlignment(Qt::AlignRight);
+    form->addRow(tr("Window scale"), c.scale);
+    form->addRow(tr("Aspect ratio"), c.aspect);
+    form->addRow(tr("Filter"), c.filter);
+    form->addRow(tr("Overscan"), crop);
+    auto* note = new QLabel(tr("Overscan hides the picture's edges, as TVs did: 8 lines at the top and bottom by "
+                               "default. Most games put nothing there."),
+        page);
+    note->setWordWrap(true);
+    note->setForegroundRole(QPalette::PlaceholderText);
+
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(16, 4, 4, 4);
+    layout->setSpacing(8);
+    layout->addLayout(form);
+    layout->addWidget(note);
+    for (QCheckBox* box : {c.integerScaling, c.fullscreen, c.alwaysOnTop, c.showFps, c.showOsd}) layout->addWidget(box);
+    layout->addStretch();
+    setVideo({});
+    return page;
+}
+
+void SettingsDialog::setVideo(const Video& v)
+{
+    VideoControls& c = m_video;
+    std::vector<QSignalBlocker> blockers;
+    blockers.reserve(12);
+    for (QWidget* w : std::initializer_list<QWidget*>{c.scale, c.fullscreen, c.integerScaling, c.aspect, c.filter,
+             c.alwaysOnTop, c.showFps, c.showOsd, c.overscan[0], c.overscan[1], c.overscan[2], c.overscan[3]}) {
+        blockers.emplace_back(w);
+    }
+    if (!c.scale->hasFocus()) c.scale->setValue(v.scale);
+    c.fullscreen->setChecked(v.fullscreen);
+    c.integerScaling->setChecked(v.integerScaling);
+    c.aspect->setCurrentIndex(qMax(0, c.aspect->findData(v.aspect)));
+    c.filter->setCurrentIndex(qMax(0, c.filter->findData(v.filter)));
+    for (int i = 0; i < 4; ++i) {
+        if (!c.overscan[i]->hasFocus()) c.overscan[i]->setValue(v.overscan[i]);
+    }
+    c.alwaysOnTop->setChecked(v.alwaysOnTop);
+    c.showFps->setChecked(v.showFps);
+    c.showOsd->setChecked(v.showOsd);
 }
 
 QWidget* SettingsDialog::buildInputPage(QWidget* parent)

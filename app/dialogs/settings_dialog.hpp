@@ -1,13 +1,14 @@
 #pragma once
 
 // Settings (contracts/menus-and-commands.md "Settings"): one page per
-// group. G2 fills the Library page, G3 the Servers page and G4 the Input
-// page; the others arrive with their phases. Hotkeys are on the Key
+// group. G2 fills the Library page, G3 the Servers page, G4 the Input page
+// and G5 the Video page; the others arrive with their phases. Hotkeys are on the Key
 // Bindings page, which Input links to.
 
 #include <QDialog>
 
 class QCheckBox;
+class QComboBox;
 class QLabel;
 class QListWidget;
 class QSpinBox;
@@ -51,6 +52,20 @@ public:
     };
     void setInput(const Input& input);
 
+    // Settings > Video (data-model "Settings" video.*).
+    struct Video {
+        int scale = 3;
+        bool fullscreen = false;
+        bool integerScaling = true;
+        QString aspect;
+        int overscan[4] = {8, 8, 0, 0}; // top, bottom, left, right
+        QString filter;
+        bool alwaysOnTop = false;
+        bool showFps = false;
+        bool showOsd = true;
+    };
+    void setVideo(const Video& video);
+
 signals:
     void pageShown(const QString& page);
     void changeLibraryRequested();
@@ -80,6 +95,19 @@ private:
     QLabel* m_mcpTokenFile = nullptr;
     QWidget* buildServersPage(QWidget* parent);
     QWidget* buildInputPage(QWidget* parent);
+    QWidget* buildVideoPage(QWidget* parent);
+    struct VideoControls {
+        QSpinBox* scale = nullptr;
+        QCheckBox* fullscreen = nullptr;
+        QCheckBox* integerScaling = nullptr;
+        QComboBox* aspect = nullptr;
+        QSpinBox* overscan[4] = {};
+        QComboBox* filter = nullptr;
+        QCheckBox* alwaysOnTop = nullptr;
+        QCheckBox* showFps = nullptr;
+        QCheckBox* showOsd = nullptr;
+    };
+    VideoControls m_video;
     QSpinBox* m_turboRate = nullptr;
     QCheckBox* m_opposite = nullptr;
     QCheckBox* m_pauseOnDisconnect = nullptr;

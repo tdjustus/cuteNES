@@ -32,7 +32,9 @@ const std::vector<std::string> kSettingsPages = {
     "video", "audio", "input", "hotkeys", "emulation", "library", "servers"};
 // The settings groups and keys implemented so far (data-model "Settings
 // keys"); later phases add theirs.
-const std::vector<std::string> kSettingKeys = {"library.root", "servers.apiEnabled", "servers.apiPort",
+const std::vector<std::string> kSettingKeys = {"video.scale", "video.fullscreen", "video.integerScaling",
+    "video.aspect", "video.overscan", "video.filter", "video.alwaysOnTop", "video.showFps", "video.showOsd",
+    "library.root", "servers.apiEnabled", "servers.apiPort",
     "servers.mcpEnabled", "servers.mcpPort", "input.turboRate", "input.allowOppositeDirections",
     "input.pauseOnGamepadDisconnect"};
 
@@ -557,6 +559,76 @@ Result GuiHost::selectSlot(int slot)
     return Result::ok({{"slot", slot}});
 }
 
+namespace {
+
+Json overscanJson(const AppSettings::VideoSettings& v)
+{
+    return {{"top", v.overscanTop}, {"bottom", v.overscanBottom}, {"left", v.overscanLeft}, {"right", v.overscanRight}};
+}
+
+Json videoJson(const AppSettings::VideoSettings& v, const AppSettings& settings)
+{
+    return {{"scale", v.scale}, {"fullscreen", v.fullscreen}, {"integerScaling", v.integerScaling},
+        {"aspect", str(v.aspect)}, {"overscan", overscanJson(v)}, {"filter", str(v.filter)},
+        {"alwaysOnTop", v.alwaysOnTop}, {"showFps", settings.showFps()}, {"showOsd", settings.showOsd()}};
+}
+
+} // namespace
+
+Result GuiHost::setVideo(const std::string& key, const Json& value, bool showPage)
+{
+    AppSettings::VideoSettings v = m_settings.video();
+    const auto oneOf = [&](std::initializer_list<const char*> names) {
+        if (!value.is_string()) return false;
+        for (const char* n : names) {
+            if (value.get<std::string>() == n) return true;
+        }
+        return false;
+    };
+    if (key == "video.scale") {
+        if (!value.is_number_integer() || value.get<long long>() < 1 || value.get<long long>() > 6) {
+            return invalid("/value", "must be a scale from 1 to 6");
+        }
+        v.scale = value.get<int>();
+    } else if (key == "video.aspect") {
+        if (!oneOf({"square", "8:7", "4:3"})) return invalid("/value", "must be square, 8:7 or 4:3");
+        v.aspect = QString::fromStdString(value.get<std::string>());
+    } else if (key == "video.filter") {
+        if (!oneOf({"nearest", "smooth", "scanlines"})) return invalid("/value", "must be nearest, smooth or scanlines");
+        v.filter = QString::fromStdString(value.get<std::string>());
+    } else if (key == "video.overscan") {
+        // Any of the edges; the others keep their value.
+        if (!value.is_object()) return invalid("/value", "must be an object of top, bottom, left and right");
+        for (const auto& [edge, crop] : value.items()) {
+            int* field = edge == "top" ? &v.overscanTop
+                : edge == "bottom"     ? &v.overscanBottom
+                : edge == "left"       ? &v.overscanLeft
+                : edge == "right"      ? &v.overscanRight
+                                       : nullptr;
+            if (!field) return invalid("/value/" + edge, "must be top, bottom, left or right");
+            if (!crop.is_number_integer() || crop.get<long long>() < 0 || crop.get<long long>() > 16) {
+                return invalid("/value/" + edge, "must be 0 to 16 pixels");
+            }
+            *field = crop.get<int>();
+        }
+    } else {
+        if (!value.is_boolean()) return invalid("/value", "must be true or false");
+        const bool on = value.get<bool>();
+        if (key == "video.showFps" || key == "video.showOsd") {
+            key == "video.showFps" ? m_settings.setShowFps(on) : m_settings.setShowOsd(on);
+            m_window.displayChanged();
+            return Result::ok({{"key", key}, {"value", value}});
+        }
+        (key == "video.fullscreen"       ? v.fullscreen
+            : key == "video.integerScaling" ? v.integerScaling
+                                            : v.alwaysOnTop) = on;
+    }
+    m_settings.setVideo(v);
+    m_window.videoChanged(showPage);
+    const Json saved = videoJson(v, m_settings);
+    return Result::ok({{"key", key}, {"value", saved[key.substr(6)]}});
+}
+
 void GuiHost::registerCommands(api::Registry& registry)
 {
     add(registry, "gui.open_rom",
@@ -891,21 +963,8 @@ void GuiHost::registerCommands(api::Registry& registry)
     const Json fileArgs = s::object({{"path", s::string("a file path; without it, a file dialog")}});
     later("gui.set_region", "Force NTSC or PAL, or follow the header",
         s::object({{"region", s::stringEnum({"auto", "ntsc", "pal"})}}, {"region"}), false, "G6");
-    later("gui.set_scale", "Scale the window to a whole multiple of the picture",
-        s::object({{"scale", s::integer(1, 6)}}, {"scale"}), false, "G5");
-    later("gui.toggle_fullscreen", "Enter or leave fullscreen", none, false, "G5");
-    later("gui.toggle_integer_scaling", "Scale by whole multiples only", none, false, "G5");
-    later("gui.set_aspect", "The pixel aspect ratio",
-        s::object({{"aspect", s::stringEnum({"square", "8:7", "4:3"})}}, {"aspect"}), false, "G5");
-    later("gui.set_overscan", "Hide the picture's edges: a preset, or each edge in lines or pixels",
-        s::object({{"preset", s::stringEnum({"none", "tv", "custom"})}, {"top", s::integer(0, 16)},
-            {"bottom", s::integer(0, 16)}, {"left", s::integer(0, 16)}, {"right", s::integer(0, 16)}}),
-        false, "G5");
-    later("gui.set_filter", "The picture filter",
-        s::object({{"filter", s::stringEnum({"nearest", "smooth", "scanlines"})}}, {"filter"}), false, "G5");
     later("gui.set_palette", "A built-in palette by name, or a .pal file",
         s::object({{"name", s::string()}, {"path", s::string()}}), false, "G6");
-    later("gui.toggle_always_on_top", "Keep the window above others", none, false, "G5");
     later("gui.show_cheats", "Open the cheats window", none, true, "G7");
     later("gui.show_cheat_search", "Open the cheat search", none, true, "G7");
     later("gui.record_movie", "Record a movie from power-on or the current state",
@@ -979,6 +1038,57 @@ void GuiHost::registerCommands(api::Registry& registry)
         });
 
     // --- Settings ---------------------------------------------------------------
+
+    // View (contract "View"): each changes a video.* setting.
+    const auto valueAs = [](const char* name, Result r) {
+        if (r.isError()) return r;
+        return Result::ok({{name, r.value["value"]}});
+    };
+    add(registry, "gui.set_scale", "Size the game area to a whole multiple of the picture (after aspect and crop)",
+        s::object({{"scale", s::integer(1, 6)}}, {"scale"}), s::object({{"scale", s::integer(1, 6)}}, {"scale"}), true,
+        false, [this, valueAs](CallContext&, const Json& args) { return valueAs("scale", setVideo("video.scale", args["scale"])); });
+    add(registry, "gui.toggle_fullscreen", "Enter or leave fullscreen (borderless, on the window's screen)",
+        s::object({}), s::object({{"fullscreen", s::boolean()}}, {"fullscreen"}), true, false,
+        [this, valueAs](CallContext&, const Json&) {
+            return valueAs("fullscreen", setVideo("video.fullscreen", !m_settings.video().fullscreen));
+        });
+    add(registry, "gui.toggle_integer_scaling", "Scale the picture by whole multiples only", s::object({}),
+        s::object({{"integerScaling", s::boolean()}}, {"integerScaling"}), true, false,
+        [this, valueAs](CallContext&, const Json&) {
+            return valueAs("integerScaling", setVideo("video.integerScaling", !m_settings.video().integerScaling));
+        });
+    add(registry, "gui.set_aspect", "The pixel aspect ratio: square, 8:7 (NTSC hardware) or a 4:3 stretch",
+        s::object({{"aspect", s::stringEnum({"square", "8:7", "4:3"})}}, {"aspect"}),
+        s::object({{"aspect", s::string()}}, {"aspect"}), true, false,
+        [this, valueAs](CallContext&, const Json& args) { return valueAs("aspect", setVideo("video.aspect", args["aspect"])); });
+    const Json edge = s::integer(0, 16, "pixels hidden at this edge");
+    add(registry, "gui.set_overscan",
+        "Hide the picture's edges: a preset (none, or tv: 8 lines top and bottom), or any of the edges; custom "
+        "without edges opens Settings > Video",
+        s::object({{"preset", s::stringEnum({"none", "tv", "custom"})}, {"top", edge}, {"bottom", edge},
+            {"left", edge}, {"right", edge}}),
+        s::object({{"overscan", s::object({{"top", edge}, {"bottom", edge}, {"left", edge}, {"right", edge}})}},
+            {"overscan"}),
+        true, false, [this, valueAs](CallContext&, const Json& args) {
+            Json edges = Json::object();
+            const std::string preset = args.value("preset", "custom");
+            if (preset == "none") edges = {{"top", 0}, {"bottom", 0}, {"left", 0}, {"right", 0}};
+            if (preset == "tv") edges = {{"top", 8}, {"bottom", 8}, {"left", 0}, {"right", 0}};
+            for (const char* e : {"top", "bottom", "left", "right"}) {
+                if (args.contains(e)) edges[e] = args[e];
+            }
+            const bool ask = preset == "custom" && edges.empty();
+            return valueAs("overscan", setVideo("video.overscan", edges, ask));
+        });
+    add(registry, "gui.set_filter", "The picture filter: nearest, smooth or scanlines",
+        s::object({{"filter", s::stringEnum({"nearest", "smooth", "scanlines"})}}, {"filter"}),
+        s::object({{"filter", s::string()}}, {"filter"}), true, false,
+        [this, valueAs](CallContext&, const Json& args) { return valueAs("filter", setVideo("video.filter", args["filter"])); });
+    add(registry, "gui.toggle_always_on_top", "Keep the window above others", s::object({}),
+        s::object({{"alwaysOnTop", s::boolean()}}, {"alwaysOnTop"}), true, false,
+        [this, valueAs](CallContext&, const Json&) {
+            return valueAs("alwaysOnTop", setVideo("video.alwaysOnTop", !m_settings.video().alwaysOnTop));
+        });
 
     // --- Key Bindings (#108, contract "Key Bindings page") ----------------------
 
@@ -1059,9 +1169,10 @@ void GuiHost::registerCommands(api::Registry& registry)
                 m_window.showKeyBindings(page, paused);
                 return Result::ok({{"page", str(page)}});
             }
-            // Library, Servers and Input are the other pages so far (G034:
-            // the others are in the menus, disabled, until their phase).
-            if (page != QLatin1String("library") && page != QLatin1String("servers") && page != QLatin1String("input")) {
+            // Library, Servers, Input and Video are the other pages so far
+            // (G034: the others are in the menus, disabled, until their phase).
+            if (page != QLatin1String("library") && page != QLatin1String("servers") && page != QLatin1String("input")
+                && page != QLatin1String("video")) {
                 return Result::fail("NotImplemented", "the " + str(page) + " page is coming in a later update",
                     {{"page", str(page)}});
             }
@@ -1070,13 +1181,14 @@ void GuiHost::registerCommands(api::Registry& registry)
         });
 
     add(registry, "gui.get_settings", "Every setting's value and schema, or one group's",
-        s::object({{"group", s::stringEnum({"library", "servers", "hotkeys", "input"})}}),
+        s::object({{"group", s::stringEnum({"video", "library", "servers", "hotkeys", "input"})}}),
         s::object({{"values", Json{{"type", "object"}}}, {"schema", Json{{"type", "object"}}}}, {"values", "schema"}),
-        false, false, [this](CallContext&, const Json&) {
+        false, false, [this, edge](CallContext&, const Json&) {
             const Library library = m_window.library();
             const AppSettings::ServerSettings servers = m_settings.servers();
             const AppSettings::InputSettings input = m_settings.input();
-            const Json values = {{"library", {{"root", str(library.root())},
+            const Json values = {{"video", videoJson(m_settings.video(), m_settings)},
+                {"library", {{"root", str(library.root())},
                                      {"roms", str(library.folder(Library::Folder::Roms))},
                                      {"romFolders", romFoldersValue(m_settings)}}},
                 {"servers", {{"apiEnabled", servers.apiEnabled}, {"apiPort", servers.apiPort},
@@ -1085,7 +1197,16 @@ void GuiHost::registerCommands(api::Registry& registry)
                 {"input", {{"turboRate", input.turboRate}, {"allowOppositeDirections", input.allowOppositeDirections},
                               {"pauseOnGamepadDisconnect", input.pauseOnGamepadDisconnect},
                               {"bindings", storedBindings(m_window.keyBindings(), true)}}}};
-            const Json schema = {{"library.root", s::string("absolute path of the library folder")},
+            const Json schema = {{"video.scale", s::integer(1, 6, "the window scale (3)")},
+                {"video.fullscreen", s::boolean("fullscreen, borderless on the window's screen")},
+                {"video.integerScaling", s::boolean("whole multiples only (on)")},
+                {"video.aspect", s::stringEnum({"square", "8:7", "4:3"})},
+                {"video.overscan", s::object({{"top", edge}, {"bottom", edge}, {"left", edge}, {"right", edge}})},
+                {"video.filter", s::stringEnum({"nearest", "smooth", "scanlines"})},
+                {"video.alwaysOnTop", s::boolean("keep the window above others")},
+                {"video.showFps", s::boolean("the frame rate over the game (off)")},
+                {"video.showOsd", s::boolean("short on-screen messages (on)")},
+                {"library.root", s::string("absolute path of the library folder")},
                 {"library.roms", s::string("the library's own roms folder (always scanned)")},
                 {"library.romFolders", s::array(s::string("added with gui.add_rom_folder"), 1000)},
                 {"servers.apiEnabled", s::boolean("the API listener (off by default; off turns MCP off)")},
@@ -1105,6 +1226,7 @@ void GuiHost::registerCommands(api::Registry& registry)
         s::object({{"key", s::string()}, {"value", Json::object()}}, {"key", "value"}), true, false,
         [this](CallContext& ctx, const Json& args) {
             const std::string key = args["key"];
+            if (key.rfind("video.", 0) == 0) return setVideo(key, args["value"]);
             if (key == "library.root") {
                 if (!args["value"].is_string()) return invalid("/value", "must be a string");
                 return setLibraryRoot(ctx, QString::fromStdString(args["value"].get<std::string>()));

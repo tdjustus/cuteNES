@@ -9,6 +9,7 @@
 #include <rhi/qrhi.h>
 
 #include <array>
+#include <cmath>
 #include <memory>
 
 namespace cutenes::qt {
@@ -17,6 +18,9 @@ namespace {
 
 constexpr int kWidth = 256;
 constexpr int kHeight = 240;
+// The share of a NES line darkened by Scanlines, and how dark (as the shader).
+constexpr double kScanlineFrom = 0.6;
+constexpr int kScanlineShade = 115; // of 255: leaves 0.55 of the colour
 
 // The quad's corners for a viewport in an area of `size` device pixels:
 // x, y in NDC (y up), then u, v (v down, row 0 at the top).
@@ -59,7 +63,24 @@ protected:
             const double dpr = devicePixelRatioF();
             const Viewport vp = computeViewport(QSizeF(size()) * dpr, m_view->displayOptions());
             const QRectF target(vp.target.topLeft() / dpr, vp.target.size() / dpr);
+            const Filter filter = m_view->displayOptions().filter;
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, filter == Filter::Smooth);
             painter.drawImage(target, image, vp.source);
+            if (filter == Filter::Scanlines) {
+                // In device pixels, so each line's dark part is whole rows.
+                painter.save();
+                painter.scale(1.0 / dpr, 1.0 / dpr);
+                const double line = vp.target.height() / vp.source.height();
+                const QColor shade(0, 0, 0, kScanlineShade);
+                for (int y = 0; y < vp.source.height(); ++y) {
+                    const double top = std::round(vp.target.top() + (y + kScanlineFrom) * line);
+                    const double bottom = std::round(vp.target.top() + (y + 1) * line);
+                    if (bottom > top) {
+                        painter.fillRect(QRectF(vp.target.left(), top, vp.target.width(), bottom - top), shade);
+                    }
+                }
+                painter.restore();
+            }
         }
         if (fresh) {
             emit m_view->frameShown(m_view->shownFrameIndex());
@@ -86,19 +107,21 @@ protected:
         }
         m_texture.reset(m_rhi->newTexture(QRhiTexture::RGBA8, QSize(kWidth, kHeight)));
         m_texture->create();
-        m_sampler.reset(m_rhi->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest,
-            QRhiSampler::None, QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
+        m_smooth = m_view->displayOptions().filter == Filter::Smooth;
+        const auto sampling = m_smooth ? QRhiSampler::Linear : QRhiSampler::Nearest;
+        m_sampler.reset(m_rhi->newSampler(sampling, sampling, QRhiSampler::None, QRhiSampler::ClampToEdge,
+            QRhiSampler::ClampToEdge));
         m_sampler->create();
         m_vertices.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
             sizeof(float) * 16));
         m_vertices->create();
-        m_uniforms.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 64));
+        m_uniforms.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 80));
         m_uniforms->create();
 
         m_bindings.reset(m_rhi->newShaderResourceBindings());
         m_bindings->setBindings({
-            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage,
-                m_uniforms.get()),
+            QRhiShaderResourceBinding::uniformBuffer(0,
+                QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage, m_uniforms.get()),
             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage,
                 m_texture.get(), m_sampler.get()),
         });
@@ -124,6 +147,11 @@ protected:
 
     void render(QRhiCommandBuffer* cb) override
     {
+        if ((m_view->displayOptions().filter == Filter::Smooth) != m_smooth) {
+            // The sampler is fixed in the pipeline's bindings: build anew.
+            m_pipeline.reset();
+            initialize(cb);
+        }
         QRhiResourceUpdateBatch* updates = m_rhi->nextResourceUpdateBatch();
         const bool fresh = m_view->takeFrame();
         const auto& pixels = m_view->shownPixels();
@@ -138,6 +166,8 @@ protected:
         updates->updateDynamicBuffer(m_vertices.get(), 0, sizeof(quad), quad.data());
         const QMatrix4x4 corr = m_rhi->clipSpaceCorrMatrix();
         updates->updateDynamicBuffer(m_uniforms.get(), 0, 64, corr.constData());
+        const float params[4] = {m_view->displayOptions().filter == Filter::Scanlines ? 1.0f : 0.0f, 0, 0, 0};
+        updates->updateDynamicBuffer(m_uniforms.get(), 64, sizeof(params), params);
 
         cb->beginPass(renderTarget(), Qt::black, {1.0f, 0}, updates);
         if (!pixels.empty() && m_uploaded) {
@@ -182,6 +212,7 @@ private:
     std::unique_ptr<QRhiShaderResourceBindings> m_bindings;
     std::unique_ptr<QRhiGraphicsPipeline> m_pipeline;
     bool m_uploaded = false;
+    bool m_smooth = false; // the sampler is linear
 };
 
 bool rasterRequested()

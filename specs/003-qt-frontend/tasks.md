@@ -191,7 +191,8 @@ Real-time mode in `cutenes-api` (R3), test-first:
   - fullscreen state;
   - settings that persist across restarts;
   - WAV header and length (A-series).
-- [ ] G051 [US7] Video settings: display-synced pacing (R4, moved from G1),
+- [ ] G051 [US7] Video settings (all but the pacing are in `feature/gui-video`;
+  display-synced pacing goes with the audio work in `feature/gui-audio`): display-synced pacing (R4, moved from G1),
   scale, fullscreen with the menu reachable through Alt or the top edge, integer scaling, aspect, overscan, the smooth
   and scanline shaders, high DPI and Always on Top.
 - [ ] G052 [US7] Audio settings: the device list, volume, mute, latency and

@@ -95,3 +95,29 @@ steps need a real one.
 9. Settings > Input lists the pads plugged in, and Key Bindings… opens the
    page at the game controls. The Settings list has no Hotkeys entry; the
    Settings > Hotkeys… menu item still opens the page.
+
+### Video settings (G050-G051, #97)
+
+Checked through MCP: `gui.set_scale`, `gui.set_filter`, `gui.set_overscan`,
+`gui.toggle_fullscreen` (in and out) and `gui.get_settings` video, during a
+game. Window sizes and each filter's pixels are covered by `GuiVideo` tests
+on the raster renderer; the GPU renderer (Metal here) needs your eyes.
+
+1. View > Scale > 1x … 6x: the window resizes each time, the picture fills
+   it with no border, and the checked item follows.
+2. View > Aspect Ratio: Square Pixels is narrower than 8:7; 4:3 is wider.
+   Overscan > None shows 8 more lines at the top and bottom than TV.
+3. View > Filter > Smooth blurs the pixel edges; Scanlines darkens the
+   lower part of every line (look closely at 3x or more); Nearest is sharp.
+   Try each in a moving game: no flicker or tearing.
+4. View > Overscan > Custom… opens Settings > Video. Change each edge: the
+   picture crops at once and the window resizes.
+5. F11 (or View > Fullscreen): the picture fills the screen. On macOS the
+   menu bar appears at the top edge. F11 again returns to the window at its
+   scale. Uncheck Integer Scaling in fullscreen: the picture grows to fill
+   the height.
+6. View > Always on Top: the window stays above another app's window.
+7. Quit and reopen: every video setting is as you left it, fullscreen
+   included.
+8. On a Retina screen at 2x, the pixels are sharp and even (no uneven
+   rows), with Nearest and integer scaling on.

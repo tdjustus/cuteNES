@@ -33,6 +33,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 
 class QLabel;
@@ -146,6 +147,7 @@ private:
     // GuiHost::Window, called on the emulation thread.
     void showFileDialog(FileDialog dialog) override;
     void displayChanged() override;
+    void videoChanged(bool showPage) override;
     void serversChanged() override;
     void showMessage(const QString& text) override;
     void playbackChanged(const Playback& playback) override;
@@ -185,6 +187,8 @@ private:
     void showGame();
     void returnToGame();
     void pushInput();
+    void applyVideo(); // GUI thread: the video settings to the view, the window and the menus
+    void resizeToScale();
     void applyInputSettings(); // GUI thread: the turbo rate and opposite directions
     // Gamepads (GUI thread): the backend's events, one control of the pad
     // that drives `port`, and that pad going away.
@@ -242,6 +246,8 @@ private:
     std::unique_ptr<qt::FrameClock> m_clock;
     qt::InputMapper m_input;
     int m_turboRate = 15;
+    std::optional<AppSettings::VideoSettings> m_video; // as applied last
+    QTimer* m_menuEdgeTimer = nullptr; // fullscreen without a native menu bar
     std::shared_ptr<qt::GamepadBackend> m_padBackend;
     qt::GamepadPorts m_padPorts;
     QTimer* m_padTimer = nullptr;

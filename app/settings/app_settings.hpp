@@ -59,6 +59,25 @@ public:
     ServerSettings servers() const;
     void setServers(const ServerSettings& servers);
 
+    // video.* (data-model "Settings"): the window scale 1-6, the aspect
+    // ("square", "8:7", "4:3"), each edge's crop 0-16, the filter
+    // ("nearest", "smooth", "scanlines").
+    struct VideoSettings {
+        int scale = 3;
+        bool fullscreen = false;
+        bool integerScaling = true;
+        QString aspect = QStringLiteral("8:7");
+        int overscanTop = 8;
+        int overscanBottom = 8;
+        int overscanLeft = 0;
+        int overscanRight = 0;
+        QString filter = QStringLiteral("nearest");
+        bool alwaysOnTop = false;
+        bool operator==(const VideoSettings&) const = default;
+    };
+    VideoSettings video() const;
+    void setVideo(const VideoSettings& video);
+
     // video.showFps (off) and video.showOsd (on), data-model "Settings".
     bool showFps() const;
     void setShowFps(bool on);
