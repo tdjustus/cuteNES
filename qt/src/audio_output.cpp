@@ -10,23 +10,105 @@ AudioOutput::AudioOutput(int sampleRate) : m_sampleRate(sampleRate) {}
 
 AudioOutput::~AudioOutput() { close(); }
 
-bool AudioOutput::open()
+std::vector<std::string> AudioOutput::devices()
+{
+    std::vector<std::string> names;
+    if (!SDL_WasInit(SDL_INIT_AUDIO)) return names;
+    int count = 0;
+    SDL_AudioDeviceID* ids = SDL_GetAudioPlaybackDevices(&count);
+    for (int i = 0; ids && i < count; ++i) {
+        if (const char* name = SDL_GetAudioDeviceName(ids[i])) names.emplace_back(name);
+    }
+    SDL_free(ids);
+    return names;
+}
+
+bool AudioOutput::open(const std::string& device)
 {
     std::lock_guard lock(m_mutex);
-    if (m_stream) {
+    if (m_stream && device == m_device) {
         return true;
     }
+    return openLocked(device);
+}
+
+bool AudioOutput::openLocked(const std::string& device)
+{
+    if (m_stream) {
+        SDL_DestroyAudioStream(m_stream);
+        m_stream = nullptr;
+    }
+    SDL_AudioDeviceID id = SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
+    m_device.clear();
+    if (!device.empty() && SDL_WasInit(SDL_INIT_AUDIO)) {
+        int count = 0;
+        SDL_AudioDeviceID* ids = SDL_GetAudioPlaybackDevices(&count);
+        for (int i = 0; ids && i < count; ++i) {
+            const char* name = SDL_GetAudioDeviceName(ids[i]);
+            if (name && device == name) {
+                id = ids[i];
+                m_device = device;
+            }
+        }
+        SDL_free(ids);
+    }
     const SDL_AudioSpec spec{SDL_AUDIO_S16, 1, m_sampleRate};
-    m_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+    m_stream = SDL_OpenAudioDeviceStream(id, &spec, nullptr, nullptr);
     if (!m_stream) {
         m_error = SDL_GetError();
+        m_device.clear();
         return false;
     }
     // The device starts paused; onSamples starts it once a buffer is queued.
     m_error.clear();
     m_playing = false;
     m_rate = 1.0;
+    applyGain();
     return true;
+}
+
+std::string AudioOutput::device() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_device;
+}
+
+void AudioOutput::applyGain()
+{
+    if (m_stream) SDL_SetAudioStreamGain(m_stream, m_userMuted.load() ? 0.0f : static_cast<float>(m_volume.load()) / 100.0f);
+}
+
+void AudioOutput::setVolume(int percent)
+{
+    m_volume.store(std::clamp(percent, 0, 100));
+    std::lock_guard lock(m_mutex);
+    applyGain();
+}
+
+void AudioOutput::setUserMuted(bool muted)
+{
+    m_userMuted.store(muted);
+    std::lock_guard lock(m_mutex);
+    applyGain();
+}
+
+AudioOutput::DeviceChange AudioOutput::poll()
+{
+    DeviceChange change = DeviceChange::None;
+    if (!SDL_WasInit(SDL_INIT_AUDIO)) return change;
+    SDL_Event e;
+    while (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_EVENT_AUDIO_DEVICE_ADDED, SDL_EVENT_AUDIO_DEVICE_FORMAT_CHANGED) > 0) {
+        if (e.type != SDL_EVENT_AUDIO_DEVICE_REMOVED || e.adevice.recording) continue;
+        std::lock_guard lock(m_mutex);
+        if (!m_stream || SDL_GetAudioStreamDevice(m_stream) != e.adevice.which) continue;
+        // Our device went: the default, or silence (US7-5).
+        change = openLocked({}) ? DeviceChange::MovedToDefault : DeviceChange::Lost;
+        if (change == DeviceChange::Lost && m_stream) {
+            SDL_DestroyAudioStream(m_stream);
+            m_stream = nullptr;
+        }
+    }
+    return change;
 }
 
 void AudioOutput::close()

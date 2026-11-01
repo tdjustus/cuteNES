@@ -9,6 +9,7 @@
 
 #include "library/library.hpp"
 #include "library/library_index.hpp"
+#include "media/wav_writer.hpp"
 #include "persistence/battery_saver.hpp"
 #include "persistence/rewind_buffer.hpp"
 #include "persistence/state_slots.hpp"
@@ -82,6 +83,13 @@ public:
         virtual QVector<Gamepad> gamepads() const = 0;
         // input.* changed: the window applies the turbo rate and the options.
         virtual void inputSettingsChanged() = 0;
+        // audio.* or emulation.* changed: the window applies them.
+        virtual void audioSettingsChanged() = 0;
+        // The game just opened has an automatic state (emulation.resumeOnOpen):
+        // the window asks whether to resume it. The game waits, paused.
+        virtual void offerResume(const QString& autoState) = 0;
+        // Record Audio started (`path`) or stopped (empty).
+        virtual void recordingChanged(const QString& path) = 0;
         virtual void showAbout() = 0;
         virtual void openLibraryFolder() = 0;
         virtual void exit() = 0;
@@ -109,12 +117,19 @@ public:
     StateSlots stateSlots() const;
     int selectedSlot() const { return m_selectedSlot.load(); }
 
+    // The session's sound passes through here (emulation thread), so Record
+    // Audio hears exactly what plays; it goes on to `output`.
+    IAudioSink* audioTap(IAudioSink* output);
+
     std::string mode() const override { return "gui"; }
     void registerCommands(api::Registry& registry) override;
     void onSessionEvent(const api::Event& event) override;
 
 private:
-    api::Result openRom(api::CallContext& ctx, const QString& path);
+    // `resume`: load the automatic state (true), ignore it (false), or ask.
+    api::Result openRom(api::CallContext& ctx, const QString& path, std::optional<bool> resume = std::nullopt);
+    QString autoStatePath() const; // the open game's, or empty
+    api::Result stopRecording();
     api::Result closeGame(api::CallContext& ctx);
     api::Result setLibraryRoot(api::CallContext& ctx, const QString& root);
     api::Result addRomFolder(const QString& path);
@@ -152,6 +167,18 @@ private:
     int m_speed = 100;                    // percent; 0 is Unlimited
     bool m_fastForward = false;
     int m_fastForwardSpeed = 300;         // data-model "emulation.fastForwardSpeed"
+
+    // Record Audio (emulation thread, like the samples).
+    struct Tap final : IAudioSink {
+        void onSamples(const std::int16_t* pcm, std::size_t count, std::uint64_t start) override
+        {
+            if (wav.isOpen()) wav.write(pcm, count);
+            if (output) output->onSamples(pcm, count, start);
+        }
+        IAudioSink* output = nullptr;
+        WavWriter wav;
+    };
+    Tap m_tap;
 };
 
 } // namespace cutenes::app

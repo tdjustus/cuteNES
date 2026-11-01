@@ -78,6 +78,30 @@ public:
     VideoSettings video() const;
     void setVideo(const VideoSettings& video);
 
+    // audio.* (data-model "Settings"): the device by name ("default" for
+    // the system's), the volume 0-100, mute, the latency 32-200 ms, and
+    // fast-forward's sound ("stretch" up to 2x, or "mute").
+    struct AudioSettings {
+        QString device = QStringLiteral("default");
+        int volume = 100;
+        bool muted = false;
+        int latencyMs = 64;
+        QString fastForwardAudio = QStringLiteral("stretch");
+    };
+    AudioSettings audio() const;
+    void setAudio(const AudioSettings& audio);
+
+    // emulation.* (data-model "Settings"): pause when the window loses
+    // focus, the automatic state on close (FR-037), and the fast-forward
+    // speed in percent (150-400).
+    struct EmulationSettings {
+        bool pauseWhenInactive = true;
+        bool resumeOnOpen = false;
+        int fastForwardSpeed = 300;
+    };
+    EmulationSettings emulation() const;
+    void setEmulation(const EmulationSettings& emulation);
+
     // video.showFps (off) and video.showOsd (on), data-model "Settings".
     bool showFps() const;
     void setShowFps(bool on);

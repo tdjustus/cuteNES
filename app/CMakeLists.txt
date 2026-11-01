@@ -15,6 +15,7 @@ add_library(cutenes-app-lib STATIC
     library/library.cpp
     library/library_browser.cpp
     library/library_index.cpp
+    media/wav_writer.cpp
     persistence/battery_saver.cpp
     persistence/rewind_buffer.cpp
     persistence/state_slots.cpp

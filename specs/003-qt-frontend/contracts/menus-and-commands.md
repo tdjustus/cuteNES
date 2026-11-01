@@ -326,6 +326,33 @@ current binding, never the default (US3-3).
 `gui.get_settings` returns the stored bindings as `hotkeys`, and as
 `input.bindings` beside the input options.
 
+## Sound, focus and resuming (FR-036, FR-037, FR-042, FR-044, US7)
+
+- **Settings > Audio**: `audio.device` (a name from `gui.list_audio_devices`,
+  or `default`), `audio.volume` (0-100), `audio.muted`, `audio.latencyMs`
+  (32-200) and `audio.fastForwardAudio` (`stretch`: sped up to 2x and muted
+  above; `mute`). A saved device that is missing at start, or one unplugged
+  during play, gives way to the default device with an on-screen message;
+  with no device left the game plays on silently.
+- **Settings > Emulation**: `emulation.pauseWhenInactive` (on): the game
+  pauses while another application has the focus, and resumes when the
+  window gets it back, unless the player paused it; cuteNES's own dialogs
+  keep it going. `emulation.fastForwardSpeed` (150-400, 300).
+  `emulation.resumeOnOpen` (off): closing a game keeps an automatic state
+  (`auto.state` in the game's states folder). Opening the game again
+  answers `autoState` (its path) and asks "Resume where you left off?",
+  with the game paused until the answer; `gui.open_rom` with `resume` true
+  loads it (`resumed`), and `resume` false starts afresh without asking.
+- **Record Audio** (`gui.toggle_audio_recording`): starts a WAV (16-bit PCM,
+  mono, 48 kHz) at `path`, or in the game's folder under the library's
+  `recordings`, and returns `recording` and `path`; the next call stops it,
+  returning `seconds` too. Closing the game stops it. The menu item reads
+  Stop Recording meanwhile.
+
+| Command | Purpose |
+|---|---|
+| `gui.list_audio_devices` | `devices`: the playback devices' names |
+
 ## Gamepads and Settings > Input (FR-032, US5)
 
 The first gamepad plugged in drives player 1 and the second player 2. A

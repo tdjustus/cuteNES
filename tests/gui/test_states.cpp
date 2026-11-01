@@ -357,6 +357,9 @@ TEST(GuiStates, SavingFromTheMenuAsksForANameAndWarnsBeforeReplacing)
 {
     MainWindow w(windowOptions());
     w.show();
+    // Offscreen and CI desktops may never give the window focus back after
+    // the dialog closes; losing focus pausing play is tested in test_audio.
+    call(w, "gui.set_setting", {{"key", "emulation.pauseWhenInactive"}, {"value", false}});
     call(w, "gui.open_rom", {{"path", kRom.toStdString()}});
     ASSERT_TRUE(waitUntil([&] { return slotAction(w, "gui.save_state", 4)->isEnabled(); }));
 
