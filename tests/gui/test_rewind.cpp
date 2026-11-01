@@ -55,6 +55,10 @@ QByteArray stateOf(cutenes::api::Session& s)
     return bytes;
 }
 
+// Real-time waits allow 30 s: CI runners play slowly while other tests
+// run beside them.
+constexpr int kSlow = 30000;
+
 // A window playing 01-basics in real time.
 void play(MainWindow& w)
 {
@@ -77,10 +81,10 @@ TEST(GuiRewind, RewindingLandsOnTheStateAFreshRunReaches)
 {
     MainWindow w(windowOptions());
     play(w);
-    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 300; }, 15000));
+    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 300; }, kSlow));
     EXPECT_FALSE(call(w, "gui.set_rewind", {{"on", true}})["rewinding"] != true);
     const std::uint64_t from = frame(w);
-    ASSERT_TRUE(waitUntil([&] { return frame(w) + 120 <= from; }, 15000)) << "play runs backwards";
+    ASSERT_TRUE(waitUntil([&] { return frame(w) + 120 <= from; }, kSlow)) << "play runs backwards";
     call(w, "gui.set_rewind", {{"on", false}});
     call(w, "core.pause");
     const std::uint64_t at = frame(w);
@@ -99,17 +103,17 @@ TEST(GuiRewind, ReleasingRewindPlaysOnFromThere)
 {
     MainWindow w(windowOptions());
     play(w);
-    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 120; }, 15000));
+    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 120; }, kSlow));
     call(w, "gui.set_rewind", {{"on", true}});
     const std::uint64_t from = frame(w);
-    ASSERT_TRUE(waitUntil([&] { return frame(w) + 30 <= from; }, 15000));
+    ASSERT_TRUE(waitUntil([&] { return frame(w) + 30 <= from; }, kSlow));
     call(w, "gui.set_rewind", {{"on", false}});
     const std::uint64_t released = frame(w);
     EXPECT_TRUE(waitUntil([&] { return frame(w) > released + 30; })) << "forwards again";
     // The history before the release is still there.
     call(w, "gui.set_rewind", {{"on", true}});
     const std::uint64_t again = frame(w);
-    EXPECT_TRUE(waitUntil([&] { return frame(w) + 40 <= again; }, 15000));
+    EXPECT_TRUE(waitUntil([&] { return frame(w) + 40 <= again; }, kSlow));
     call(w, "gui.set_rewind", {{"on", false}});
 }
 
@@ -117,11 +121,11 @@ TEST(GuiRewind, RewindFromAPausedGamePausesAgainAfter)
 {
     MainWindow w(windowOptions());
     play(w);
-    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 90; }, 15000));
+    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 90; }, kSlow));
     call(w, "core.pause");
     const std::uint64_t from = frame(w);
     call(w, "gui.set_rewind", {{"on", true}});
-    ASSERT_TRUE(waitUntil([&] { return frame(w) + 20 <= from; }, 15000));
+    ASSERT_TRUE(waitUntil([&] { return frame(w) + 20 <= from; }, kSlow));
     call(w, "gui.set_rewind", {{"on", false}});
     EXPECT_EQ(call(w, "core.run_state")["runState"], "Paused");
 }
@@ -130,7 +134,7 @@ TEST(GuiRewind, ANewTimelineHasNothingToRewind)
 {
     MainWindow w(windowOptions());
     play(w);
-    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 30; }, 15000));
+    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 30; }, kSlow));
     call(w, "gui.save_state", {{"slot", 1}});
     call(w, "gui.load_state", {{"slot", 1}}); // a load starts a new timeline
     EXPECT_EQ(call(w, "gui.set_rewind", {{"on", true}})["rewinding"], false);
@@ -142,7 +146,7 @@ TEST(GuiRewind, RewindMutesTheSoundAndSaysRewind)
 {
     MainWindow w(windowOptions());
     play(w);
-    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 60; }, 15000));
+    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 60; }, kSlow));
     call(w, "gui.set_rewind", {{"on", true}});
     EXPECT_TRUE(w.audio()->muted());
     auto* status = w.findChild<QLabel*>(QStringLiteral("speedOverlay"));
@@ -159,7 +163,7 @@ TEST(GuiRewind, RewindWithFastForwardShowsFastRewind)
 {
     MainWindow w(windowOptions());
     play(w);
-    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 120; }, 15000));
+    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 120; }, kSlow));
     call(w, "gui.set_rewind", {{"on", true}});
     call(w, "gui.set_fast_forward", {{"on", true}});
     EXPECT_NEAR(w.frameRate(), 3 * kNtsc, 0.05);

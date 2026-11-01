@@ -833,7 +833,7 @@ void GuiHost::registerCommands(api::Registry& registry)
             });
     };
     const Json none = s::object({});
-    const Json path = s::object({{"path", s::string("a file path; without it, a file dialog")}});
+    const Json fileArgs = s::object({{"path", s::string("a file path; without it, a file dialog")}});
     later("gui.set_region", "Force NTSC or PAL, or follow the header",
         s::object({{"region", s::stringEnum({"auto", "ntsc", "pal"})}}, {"region"}), false, "G6");
     later("gui.set_scale", "Scale the window to a whole multiple of the picture",
@@ -855,10 +855,10 @@ void GuiHost::registerCommands(api::Registry& registry)
     later("gui.show_cheat_search", "Open the cheat search", none, true, "G7");
     later("gui.record_movie", "Record a movie from power-on or the current state",
         s::object({{"path", s::string()}, {"from", s::stringEnum({"power_on", "state"})}}), true, "G7");
-    later("gui.play_movie", "Play a movie", path, true, "G7");
+    later("gui.play_movie", "Play a movie", fileArgs, true, "G7");
     later("gui.stop_movie", "Stop recording or playing the movie", none, true, "G7");
     later("gui.toggle_movie_read_only", "Play the movie without recording over it", none, true, "G7");
-    later("gui.toggle_audio_recording", "Start or stop recording the sound to a WAV file", path, true, "G5");
+    later("gui.toggle_audio_recording", "Start or stop recording the sound to a WAV file", fileArgs, true, "G5");
     later("gui.show_debugger", "Open the debugger", none, true, "G8");
     later("gui.show_memory_viewer", "Open the memory viewer", none, true, "G8");
     later("gui.show_ppu_viewer", "Open the PPU viewer",
