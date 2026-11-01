@@ -274,7 +274,7 @@ logger and memory dump (G084).
   `--attach` test against the real application. This closes 002's GUI-mode
   items recorded in #32.
 - [x] G092 Pacing soak `gui-pacing` (A15) in Release.
-- [ ] G093 Packaging per R13 (windeployqt, macdeployqt, AppImage with
+- [x] G093 Packaging per R13 (windeployqt, macdeployqt, AppImage with
   `.desktop`/MIME), with license files, on tags and weekly.
 - [ ] G094 Docs: README "Using the GUI", a user guide reachable from Help, and
   a keyboard shortcut list from the contract.

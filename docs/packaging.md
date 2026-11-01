@@ -38,6 +38,31 @@ steps:
 Every package carries `cutenes-server` (for MCP clients,
 `cutenes-server --attach`) and the license texts that About shows: cuteNES's
 own, Qt's LGPL-3.0 and GPL-3.0, SDL3's, nlohmann/json's and cpp-httplib's.
+An AppImage starts only its main program, so on Linux `cutenes-server` is
+inside the image but cannot yet be started from it (#134).
+
+### What each platform needed, and why
+
+These are the problems the first packaging runs hit. They are general to
+packaging a CMake and Qt program, not to this emulator:
+
+- **macOS rpath.** Qt from Qt's own installer (as CI installs it) names its
+  frameworks `@rpath/QtWidgets.framework/...`. Installing drops the build
+  tree's rpath, so the installed app could find no Qt at all
+  (`no LC_RPATH's found`). The app gets `@executable_path/../Frameworks` as
+  its install rpath, where macdeployqt copies the frameworks, and macdeployqt
+  gets Qt's library folder with `-libpath`. Homebrew's Qt names its
+  frameworks by absolute path, which is why a local Homebrew build did not
+  show the problem; test packaging with the Qt the CI uses.
+- **Absolute install prefix.** Qt's deploy script refuses a relative
+  `--prefix` on Windows (`Given qt.conf path is not an absolute path`).
+  The CI passes an absolute one, converted with `cygpath -m` because the
+  step runs in Git Bash and CMake on Windows wants `D:/...`, not `/d/...`.
+- **The supported compiler on an old base system.** The AppImage is built
+  on Ubuntu 22.04 for glibc reach, but 22.04's default GCC 11 is older than
+  the supported GCC 12 and its `-Wstringop-overflow` false positives break
+  the `-Werror` build. The job installs `g++-12`, which still links the
+  system's own libstdc++, so the result runs where 22.04 runs.
 
 ## When it runs
 
@@ -54,7 +79,7 @@ release steps (`docs/source-control.md`), which the maintainer approves.
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target cutenes cutenes-server
-cmake --install build --component app --prefix stage
+cmake --install build --component app --prefix "$PWD/stage"  # absolute
 # macOS: stage/cutenes.app; Windows: stage\cutenes.exe and its DLLs.
 ```
 
