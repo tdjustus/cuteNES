@@ -79,12 +79,23 @@ unsigned peek(MainWindow& w, int address, int size = 1)
 // Waits for the counter at `address` to step, so the next 16 frames
 // (about 0.27 s) hold its value: the moment a player reads it off the
 // screen and types it in.
+// Waits for the value at `address` to change while the game runs, then
+// pauses and returns the value as of the paused frame, so a filter made
+// before resume() sees that same frame. Without the pause, a stall between
+// the read and the filter on a slow (Debug) runner let the counter move on
+// and the filter drop the address (#149).
 unsigned justChanged(MainWindow& w, int address, int size = 1)
 {
     const unsigned before = peek(w, address, size);
     unsigned now = before;
     EXPECT_TRUE(waitUntil([&] { return (now = peek(w, address, size)) != before; }));
-    return now;
+    call(w, "core.pause");
+    return peek(w, address, size);
+}
+
+void resume(MainWindow& w)
+{
+    call(w, "core.resume");
 }
 
 struct Game {
@@ -123,6 +134,7 @@ TEST(GuiCheatSearch, NarrowsToTheCounterByValueWhileTheGameRuns)
     for (int round = 0; round < 3; ++round) {
         const unsigned seen = justChanged(w, 0x10);
         call(w, "gui.cheat_search_filter", {{"filter", "equal"}, {"value", seen}});
+        resume(w);
     }
     const Json results = call(w, "gui.cheat_search_results");
     ASSERT_EQ(results["candidates"], 1) << results.dump();
@@ -141,6 +153,7 @@ TEST(GuiCheatSearch, FindsATwoByteValueAndFiltersAgainstThePreviousSnapshot)
         const unsigned seen = justChanged(w, 0x14, 2);
         ASSERT_EQ(seen >> 8, 0x12u) << "the 16-bit counter starts at $1280";
         call(w, "gui.cheat_search_filter", {{"filter", "equal"}, {"value", seen}});
+        resume(w);
     }
     Json results = call(w, "gui.cheat_search_results");
     ASSERT_EQ(results["candidates"], 1) << results.dump();
@@ -151,8 +164,10 @@ TEST(GuiCheatSearch, FindsATwoByteValueAndFiltersAgainstThePreviousSnapshot)
     call(w, "gui.cheat_search_reset", {{"size", 1}});
     justChanged(w, 0x10);
     call(w, "gui.cheat_search_filter", {{"filter", "greater"}});
+    resume(w);
     justChanged(w, 0x10);
     call(w, "gui.cheat_search_filter", {{"filter", "changed"}});
+    resume(w);
     results = call(w, "gui.cheat_search_results", {{"max", 1000}});
     std::vector<int> addresses;
     for (const Json& r : results["results"]) addresses.push_back(r["address"].get<int>());
