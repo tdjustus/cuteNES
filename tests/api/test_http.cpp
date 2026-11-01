@@ -199,3 +199,42 @@ TEST(ApiHttp, StoppingTheListenerKeepsTheSession)
     EXPECT_LT(counters["frame"].get<std::uint64_t>(), 216000u);
     ok(f.session, "core.frame_advance");
 }
+
+// The GUI's automation indicator (003 FR-073) asks each listener whether a
+// client is there: an open event stream, a call running, or when the last
+// call came.
+TEST(ApiHttp, ActivityReportsStreamsAndTheLastCall)
+{
+    HttpFixture f;
+    const ListenerActivity idle = f.server.activity();
+    EXPECT_EQ(idle.streams, 0);
+    EXPECT_EQ(idle.calls, 0);
+    EXPECT_EQ(idle.lastCall, std::chrono::steady_clock::time_point{}) << "no call yet";
+
+    const auto before = std::chrono::steady_clock::now();
+    f.ok("core.counters");
+    EXPECT_GE(f.server.activity().lastCall, before);
+    EXPECT_EQ(f.server.activity().calls, 0) << "the call has finished";
+
+    httplib::Client events("127.0.0.1", f.server.port());
+    events.set_bearer_token_auth(f.token);
+    std::atomic<bool> close{false};
+    std::thread reader([&] {
+        events.Get("/api/v1/events", [&](const char*, std::size_t) { return !close.load(); });
+    });
+    auto waitFor = [&](auto done) {
+        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (!done() && std::chrono::steady_clock::now() < end) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        return done();
+    };
+    EXPECT_TRUE(waitFor([&] { return f.server.activity().streams == 1; }));
+    close = true;
+    f.ok("core.load_rom", {{"path", kBasics}}); // an event, so the reader returns and closes
+    reader.join();
+    EXPECT_TRUE(waitFor([&] {
+        f.ok("core.reset"); // the next event finds the stream gone
+        return f.server.activity().streams == 0;
+    }));
+}

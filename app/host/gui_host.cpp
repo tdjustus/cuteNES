@@ -31,7 +31,8 @@ const std::vector<std::string> kSettingsPages = {
     "video", "audio", "input", "hotkeys", "emulation", "library", "servers"};
 // The settings groups and keys implemented so far (data-model "Settings
 // keys"); later phases add theirs.
-const std::vector<std::string> kSettingKeys = {"library.root"};
+const std::vector<std::string> kSettingKeys = {"library.root", "servers.apiEnabled", "servers.apiPort",
+    "servers.mcpEnabled", "servers.mcpPort"};
 
 void add(api::Registry& registry, const char* name, std::string description, Json input,
     Json output, bool mutating, bool needsRom, std::function<Result(CallContext&, const Json&)> handler)
@@ -931,9 +932,9 @@ void GuiHost::registerCommands(api::Registry& registry)
         false, false, [this](CallContext&, const Json& args) {
             const QString page = args.contains("page") ? QString::fromStdString(args["page"].get<std::string>())
                                                        : m_settings.lastSettingsPage();
-            // Only the Library page exists so far (G034: the others are
-            // in the menus, disabled, until their phase).
-            if (page != QLatin1String("library")) {
+            // Only the Library and Servers pages exist so far (G034: the
+            // others are in the menus, disabled, until their phase).
+            if (page != QLatin1String("library") && page != QLatin1String("servers")) {
                 return Result::fail("NotImplemented", "the " + str(page) + " page is coming in a later update",
                     {{"page", str(page)}});
             }
@@ -942,16 +943,23 @@ void GuiHost::registerCommands(api::Registry& registry)
         });
 
     add(registry, "gui.get_settings", "Every setting's value and schema, or one group's",
-        s::object({{"group", s::stringEnum({"library"})}}),
+        s::object({{"group", s::stringEnum({"library", "servers"})}}),
         s::object({{"values", Json{{"type", "object"}}}, {"schema", Json{{"type", "object"}}}}, {"values", "schema"}),
         false, false, [this](CallContext&, const Json&) {
             const Library library = m_window.library();
+            const AppSettings::ServerSettings servers = m_settings.servers();
             const Json values = {{"library", {{"root", str(library.root())},
                                      {"roms", str(library.folder(Library::Folder::Roms))},
-                                     {"romFolders", romFoldersValue(m_settings)}}}};
+                                     {"romFolders", romFoldersValue(m_settings)}}},
+                {"servers", {{"apiEnabled", servers.apiEnabled}, {"apiPort", servers.apiPort},
+                                {"mcpEnabled", servers.mcpEnabled}, {"mcpPort", servers.mcpPort}}}};
             const Json schema = {{"library.root", s::string("absolute path of the library folder")},
                 {"library.roms", s::string("the library's own roms folder (always scanned)")},
-                {"library.romFolders", s::array(s::string("added with gui.add_rom_folder"), 1000)}};
+                {"library.romFolders", s::array(s::string("added with gui.add_rom_folder"), 1000)},
+                {"servers.apiEnabled", s::boolean("the API listener (off by default; off turns MCP off)")},
+                {"servers.apiPort", s::integer(0, 65535, "the API port; 0 picks a free one")},
+                {"servers.mcpEnabled", s::boolean("the MCP server (off by default; on turns the API on)")},
+                {"servers.mcpPort", s::integer(0, 65535, "the MCP port; 0 picks a free one")}};
             return Result::ok({{"values", values}, {"schema", schema}});
         });
 
@@ -963,6 +971,30 @@ void GuiHost::registerCommands(api::Registry& registry)
             if (key == "library.root") {
                 if (!args["value"].is_string()) return invalid("/value", "must be a string");
                 return setLibraryRoot(ctx, QString::fromStdString(args["value"].get<std::string>()));
+            }
+            if (key.rfind("servers.", 0) == 0) {
+                const Json& value = args["value"];
+                AppSettings::ServerSettings servers = m_settings.servers();
+                if (key == "servers.apiEnabled" || key == "servers.mcpEnabled") {
+                    if (!value.is_boolean()) return invalid("/value", "must be true or false");
+                    const bool on = value.get<bool>();
+                    // MCP needs the API: on turns the API on, API off turns MCP off.
+                    if (key == "servers.apiEnabled") {
+                        servers.apiEnabled = on;
+                        if (!on) servers.mcpEnabled = false;
+                    } else {
+                        servers.mcpEnabled = on;
+                        if (on) servers.apiEnabled = true;
+                    }
+                } else {
+                    if (!value.is_number_integer() || value.get<long long>() < 0 || value.get<long long>() > 65535) {
+                        return invalid("/value", "must be a port from 0 to 65535 (0 picks a free one)");
+                    }
+                    (key == "servers.apiPort" ? servers.apiPort : servers.mcpPort) = value.get<int>();
+                }
+                m_settings.setServers(servers);
+                m_window.serversChanged();
+                return Result::ok({{"key", key}, {"value", value}});
             }
             return invalid("/key", "unknown setting");
         });

@@ -18,6 +18,8 @@
 #include <cutenes/qt/input_mapper.hpp>
 
 #include <QFuture>
+
+#include <atomic>
 #include <QMainWindow>
 #include <QPointer>
 #include <QSet>
@@ -29,6 +31,7 @@
 #include <mutex>
 
 class QLabel;
+class QPushButton;
 class QMenu;
 class QStackedWidget;
 class QTimer;
@@ -43,6 +46,7 @@ namespace cutenes::app {
 
 class LibraryBrowser;
 class LibraryIndex;
+class Servers;
 class SettingsDialog;
 
 struct MainWindowOptions {
@@ -53,6 +57,9 @@ struct MainWindowOptions {
     std::chrono::milliseconds batteryInterval = std::chrono::seconds(5);
     // Open Library Folder starts the file manager; tests turn it off.
     bool openExternally = true;
+    // Where the API and MCP token files go; empty: the user's state folder
+    // (api::token::defaultDirectory(), which cutenes-server --attach reads).
+    QString tokenDir;
 };
 
 class MainWindow : public QMainWindow, private GuiHost::Window {
@@ -130,6 +137,7 @@ private:
     // GuiHost::Window, called on the emulation thread.
     void showFileDialog(FileDialog dialog) override;
     void displayChanged() override;
+    void serversChanged() override;
     void showMessage(const QString& text) override;
     void playbackChanged(const Playback& playback) override;
     void showLibrary(const QString& select, bool paused) override;
@@ -152,6 +160,8 @@ private:
     void placeOsd();
     void updateOverlays(); // GUI thread: PAUSED, the speed indicator and the FPS
     void updateFps();      // GUI thread, each second: frames shown in the last one
+    void applyServers();   // GUI thread: start or stop the listeners to match the settings
+    void updateAutomation(); // GUI thread: the automation indicator
     void releaseHeld(int key); // the release of a hold action's key
     void setRunState(const QString& runState);    // GUI thread
     void showGame();
@@ -184,6 +194,10 @@ private:
     Playback m_playback; // under m_playbackMutex
     double m_baseRate = 60.0988; // the console's frame rate
     QTimer* m_osdTimer = nullptr;
+    std::unique_ptr<Servers> m_servers; // the API and MCP listeners (Settings > Servers)
+    QPushButton* m_automation = nullptr; // bottom right while a client is there; opens Settings > Servers
+    QTimer* m_automationTimer = nullptr;
+    std::atomic<bool> m_pausedByAutomation{false};
     QLabel* m_fps = nullptr; // "60 FPS", top left, like the speed indicator (Show FPS)
     QTimer* m_fpsTimer = nullptr;
     struct FrameSample {

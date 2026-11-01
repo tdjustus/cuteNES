@@ -9,6 +9,7 @@ add_library(cutenes-app-lib STATIC
     cli.cpp
     dialogs/settings_dialog.cpp
     host/gui_host.cpp
+    host/servers.cpp
     library/game_identity.cpp
     library/library.cpp
     library/library_browser.cpp
@@ -18,7 +19,7 @@ add_library(cutenes-app-lib STATIC
     persistence/state_slots.cpp
     settings/app_settings.cpp)
 target_include_directories(cutenes-app-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(cutenes-app-lib PUBLIC cutenes-qt Qt6::Widgets Qt6::Concurrent)
+target_link_libraries(cutenes-app-lib PUBLIC cutenes-qt cutenes-mcp Qt6::Widgets Qt6::Concurrent)
 target_compile_definitions(cutenes-app-lib PUBLIC
     CUTENES_APP_VERSION="${PROJECT_VERSION}")
 set_target_properties(cutenes-app-lib PROPERTIES AUTOMOC ON)

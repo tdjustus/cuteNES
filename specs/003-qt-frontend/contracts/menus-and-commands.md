@@ -215,15 +215,34 @@ Settings pages that do not exist yet do the same through
 - A paused game shows "PAUSED" over the picture. Short confirmations
   ("State saved to slot 3") float over the bottom-left corner of the window
   and never take room from the game.
-- Show FPS puts the frames shown in the last second ("60 FPS") at the top
-  left of the picture, in the speed indicator's style. With Show On-Screen
-  Messages off, the confirmations are not shown.
-- The window shows the movie state and an **automation indicator** (G035,
-  G7).
-- The indicator appears while any API or MCP client is connected. Its
-  tooltip lists the clients and says "Paused by automation" when
-  `pausedByAutomation` is true.
+- Show FPS puts the frames the game ran in the last second ("60 FPS") at
+  the top left of the picture, in the speed indicator's style. With Show
+  On-Screen Messages off, the confirmations are not shown.
+- There is no status bar (it took room from the game). The **automation
+  indicator**, "AUTOMATION", sits at the bottom right of the window in the
+  same style, and the movie state (G7) will join the overlays.
+- The indicator appears while an API or MCP client is there: an event or
+  `subscriptions/listen` stream open (an attached `cutenes-server --attach`
+  keeps one), a call running, or a call in the last 5 seconds. It reads
+  "AUTOMATION · PAUSED" when `pausedByAutomation` is true, and its tooltip
+  lists the listeners and says "Paused by automation". Pause / Resume
+  plays on.
 - Clicking it opens Settings > Servers.
+
+## Settings > Servers (FR-071, FR-072)
+
+- "API" and "MCP server", each with a port (0 picks a free one), the address
+  while running, and Copy Token. MCP on turns the API on; API off turns MCP
+  off. The keys are `servers.apiEnabled`, `servers.apiPort`,
+  `servers.mcpEnabled` and `servers.mcpPort` (`gui.set_setting`).
+- Each start makes a new token, written to `api.token` and `mcp.token` in
+  the user's state folder (002 R11), where `cutenes-server --attach` finds
+  the MCP one. The files go when a listener stops or the window closes.
+- A change through the API itself (a client turning the API off) gets its
+  reply first; the listeners change right after, and calls still in flight
+  end with `ShuttingDown`. The game plays on.
+- Servers that were on start with the next launch. One that cannot start (a
+  port in use) is turned off, and the user is told.
 
 ## Remapping shortcuts (FR-022)
 

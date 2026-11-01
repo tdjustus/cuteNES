@@ -12,10 +12,11 @@ add_executable(cutenes-gui-tests
     test_qt_parts.cpp
     test_rewind.cpp
     test_rewind_buffer.cpp
+    test_servers.cpp
     test_skeleton.cpp
     test_states.cpp
     test_tools.cpp)
-target_link_libraries(cutenes-gui-tests PRIVATE cutenes-app-lib gtest)
+target_link_libraries(cutenes-gui-tests PRIVATE cutenes-app-lib cutenes-httplib gtest)
 target_compile_definitions(cutenes-gui-tests PRIVATE
     CUTENES_TEST_ROMS="${PROJECT_SOURCE_DIR}/tests/roms")
 

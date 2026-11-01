@@ -72,7 +72,7 @@ int statusByte(MainWindow& w, int addr)
 } // namespace
 
 // The commands implemented so far that need no game; Settings shows only
-// its Library page so far, and Clear List needs a recent game.
+// its Library and Servers pages so far, and Clear List needs a recent game.
 TEST(GuiPlay, WithoutAGameOnlyTheImplementedNonGameActionsAreEnabled)
 {
     MainWindow w(windowOptions());
@@ -86,7 +86,7 @@ TEST(GuiPlay, WithoutAGameOnlyTheImplementedNonGameActionsAreEnabled)
         bool enabled = noGame.contains(command);
         if (command == QLatin1String("gui.show_settings")) {
             const QString page = a->property("commandArgs").toMap().value(QStringLiteral("page")).toString();
-            enabled = page.isEmpty() || page == QLatin1String("library");
+            enabled = page.isEmpty() || page == QLatin1String("library") || page == QLatin1String("servers");
         }
         EXPECT_EQ(a->isEnabled(), enabled) << command.toStdString() << " " << a->text().toStdString();
     }

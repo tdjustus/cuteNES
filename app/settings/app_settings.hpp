@@ -47,6 +47,17 @@ public:
     int selectedSlot(const QString& sha1) const;
     void setSelectedSlot(const QString& sha1, int slot);
 
+    // servers.* (data-model "ServerSettings"): both off until the user
+    // turns them on. A port of 0 picks a free one.
+    struct ServerSettings {
+        bool apiEnabled = false;
+        int apiPort = 8765;
+        bool mcpEnabled = false;
+        int mcpPort = 8766;
+    };
+    ServerSettings servers() const;
+    void setServers(const ServerSettings& servers);
+
     // video.showFps (off) and video.showOsd (on), data-model "Settings".
     bool showFps() const;
     void setShowFps(bool on);

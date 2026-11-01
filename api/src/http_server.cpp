@@ -94,6 +94,7 @@ struct HttpServer::Impl {
 
     std::mutex inflightMutex;
     std::set<CancelFlag> inflight;
+    std::atomic<std::chrono::steady_clock::rep> lastCall{0}; // since the clock's epoch
 
     std::mutex subscriberMutex;
     std::set<std::shared_ptr<Subscriber>> subscribers;
@@ -118,6 +119,7 @@ struct HttpServer::Impl {
     Result execute(const httplib::Request& req, const std::string& method, const Json& params)
     {
         auto cancel = std::make_shared<std::atomic<bool>>(stopping.load());
+        lastCall = std::chrono::steady_clock::now().time_since_epoch().count();
         {
             std::lock_guard lock(inflightMutex);
             inflight.insert(cancel);
@@ -271,6 +273,22 @@ void HttpServer::stop()
 }
 
 int HttpServer::port() const { return m_impl->boundPort; }
+
+ListenerActivity HttpServer::activity() const
+{
+    auto& impl = *m_impl;
+    ListenerActivity a;
+    {
+        std::lock_guard lock(impl.subscriberMutex);
+        a.streams = static_cast<int>(impl.subscribers.size());
+    }
+    {
+        std::lock_guard lock(impl.inflightMutex);
+        a.calls = static_cast<int>(impl.inflight.size());
+    }
+    a.lastCall = std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(impl.lastCall.load()));
+    return a;
+}
 
 std::string HttpServer::url() const
 {

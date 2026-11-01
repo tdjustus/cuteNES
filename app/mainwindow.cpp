@@ -43,6 +43,12 @@
 #include <QVariant>
 #include <QtConcurrent/QtConcurrentRun>
 
+#include "host/servers.hpp"
+
+#include <cutenes/api/token.hpp>
+
+#include <filesystem>
+
 namespace cutenes::app {
 
 namespace {
@@ -120,7 +126,7 @@ const QStringList kImplemented = {
     QStringLiteral("gui.import_battery_save"), QStringLiteral("gui.export_battery_save"),
     QStringLiteral("gui.take_screenshot"), QStringLiteral("gui.toggle_fps"), QStringLiteral("gui.toggle_osd"),
 };
-const QStringList kSettingsPages = {QStringLiteral("library")};
+const QStringList kSettingsPages = {QStringLiteral("library"), QStringLiteral("servers")};
 const QStringList kNeedGame = {
     QStringLiteral("gui.close_game"), QStringLiteral("gui.toggle_pause"),
     QStringLiteral("gui.reset"), QStringLiteral("gui.power_cycle"),
@@ -135,6 +141,15 @@ const QStringList kNeedGame = {
 // Actions that act while their key is held: on at the press, off at the
 // release (contract "Fast Forward (hold)", "Rewind (hold)").
 const QStringList kHeld = {QStringLiteral("gui.set_fast_forward"), QStringLiteral("gui.set_rewind")};
+
+// Every overlay's design: PAUSED at full size; the speed, the FPS, messages
+// and the automation indicator at half, so they stay out of the way of play.
+QString overlayStyle(int scale)
+{
+    return QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150); border-radius: %1px;"
+                          " padding: %2px %3px; font-size: %4px; font-weight: 800; letter-spacing: %5px; }")
+        .arg(10 / scale).arg(10 / scale).arg(26 / scale).arg(28 / scale).arg(4 / scale);
+}
 
 api::Json toJson(const QVariantMap& map)
 {
@@ -209,13 +224,6 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_pages->addWidget(m_browser);
     m_pages->addWidget(m_view);
     setCentralWidget(m_pages);
-    // Every overlay shares one design: PAUSED at full size; the speed,
-    // the FPS and messages at half, so they stay out of the way of play.
-    const auto overlayStyle = [](int scale) {
-        return QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150); border-radius: %1px;"
-                              " padding: %2px %3px; font-size: %4px; font-weight: 800; letter-spacing: %5px; }")
-            .arg(10 / scale).arg(10 / scale).arg(26 / scale).arg(28 / scale).arg(4 / scale);
-    };
     m_osd = new QLabel(m_pages);
     m_osd->setObjectName(QStringLiteral("osdMessage"));
     m_osd->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -269,6 +277,26 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_session->setMediaSinks(m_view, m_audio.get());
     m_session->setRealtime(true);
 
+    // Settings > Servers: off until the user turns them on (FR-071).
+    m_servers = std::make_unique<Servers>(*m_session,
+        options.tokenDir.isEmpty() ? api::token::defaultDirectory()
+                                   : std::filesystem::path(options.tokenDir.toStdString()));
+    m_automation = new QPushButton(m_pages);
+    m_automation->setObjectName(QStringLiteral("automationIndicator"));
+    m_automation->setFlat(true);
+    m_automation->setCursor(Qt::PointingHandCursor);
+    m_automation->setStyleSheet(overlayStyle(2).replace(QStringLiteral("QLabel"), QStringLiteral("QPushButton")));
+    m_automation->setAccessibleName(tr("Automation"));
+    m_automation->hide();
+    connect(m_automation, &QPushButton::clicked, this, [this] {
+        runCommand(QStringLiteral("gui.show_settings"), {{QStringLiteral("page"), QStringLiteral("servers")}});
+    });
+    m_automationTimer = new QTimer(this);
+    m_automationTimer->setInterval(250);
+    connect(m_automationTimer, &QTimer::timeout, this, &MainWindow::updateAutomation);
+    m_automationTimer->start();
+    applyServers();
+
     // Timer pacing at the console's rate (R4); frames requested while
     // nothing runs are dropped by the session.
     m_clock = std::make_unique<qt::FrameClock>(
@@ -296,6 +324,8 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
 MainWindow::~MainWindow()
 {
     qApp->removeEventFilter(this);
+    m_automationTimer->stop();
+    m_servers.reset(); // clients' calls end with ShuttingDown; the token files go
     m_clock->stop();
     m_host->detach(); // its frame runner must not outlive it
     // FR-012: the battery save is on disk before the window goes (a closed
@@ -642,6 +672,10 @@ void MainWindow::showSettings(const QString& page)
             connect(m_settingsDialog, &SettingsDialog::removeRomFolderRequested, this, [this](const QString& path) {
                 runCommand(QStringLiteral("gui.remove_rom_folder"), {{QStringLiteral("path"), path}});
             });
+            connect(m_settingsDialog, &SettingsDialog::serverSettingRequested, this,
+                [this](const QString& key, const QVariant& value) {
+                    runCommand(QStringLiteral("gui.set_setting"), {{QStringLiteral("key"), key}, {QStringLiteral("value"), value}});
+                });
             updateSettingsDialog();
         }
         m_settingsDialog->showPage(page);
@@ -733,6 +767,7 @@ void MainWindow::sessionEvent(const api::Event& event)
         return;
     }
     if (event.type != "run_state_changed") return;
+    m_pausedByAutomation = event.data.value("pausedByAutomation", false);
     const std::string runState = event.data.value("runState", "");
     // Stale sound never plays after a pause or a closed game (R4).
     if (runState != "Running") m_audio->clear();
@@ -760,6 +795,62 @@ void MainWindow::updateSettingsDialog()
     const Library current = library();
     m_settingsDialog->setLibraryRoot(current.root());
     m_settingsDialog->setRomFolders(current.folder(Library::Folder::Roms), m_settings.romFolders());
+    const AppSettings::ServerSettings saved = m_settings.servers();
+    const auto shown = [](bool enabled, int port, const Servers::Listener& running) {
+        return SettingsDialog::Server{enabled, port, running.on, running.url, running.token, running.tokenFile};
+    };
+    m_settingsDialog->setServers(shown(saved.apiEnabled, saved.apiPort, m_servers->api()),
+        shown(saved.mcpEnabled, saved.mcpPort, m_servers->mcp()));
+}
+
+void MainWindow::serversChanged()
+{
+    // Queued: the call that changed the setting may be on the listener
+    // being stopped, and it must have its reply first.
+    QMetaObject::invokeMethod(this, [this] { applyServers(); }, Qt::QueuedConnection);
+}
+
+void MainWindow::applyServers()
+{
+    AppSettings::ServerSettings wanted = m_settings.servers();
+    QString error;
+    if (!m_servers->apply(wanted.apiEnabled, wanted.apiPort, wanted.mcpEnabled, wanted.mcpPort, &error)) {
+        // A port in use: what could not start is turned off (spec edge case).
+        wanted.apiEnabled = m_servers->api().on;
+        wanted.mcpEnabled = m_servers->mcp().on;
+        m_settings.setServers(wanted);
+        showWarning(error);
+    }
+    updateSettingsDialog();
+    updateAutomation();
+}
+
+void MainWindow::updateAutomation()
+{
+    // FR-073: shown while a client is there (an open stream, a call
+    // running, or a call in the last few seconds), and says when
+    // automation has paused the game.
+    const api::ListenerActivity a = m_servers->activity();
+    constexpr auto kRecent = std::chrono::seconds(5);
+    const bool active = a.streams > 0 || a.calls > 0
+        || (a.lastCall != std::chrono::steady_clock::time_point{}
+            && std::chrono::steady_clock::now() - a.lastCall < kRecent);
+    const bool paused = m_pausedByAutomation && hasGame() && m_runState == QLatin1String("Paused");
+    m_automation->setVisible(active || paused);
+    if (!m_automation->isVisible()) return;
+    m_automation->setText(paused ? tr("AUTOMATION · PAUSED") : tr("AUTOMATION"));
+    QStringList tip;
+    tip << tr("An API or MCP client is connected.");
+    if (m_servers->api().on) tip << tr("API: %1").arg(m_servers->api().url);
+    if (m_servers->mcp().on) tip << tr("MCP server: %1").arg(m_servers->mcp().url);
+    if (paused) tip << tr("Paused by automation. Pause / Resume plays on.");
+    tip << tr("Click for Settings > Servers.");
+    m_automation->setToolTip(tip.join(QLatin1Char('\n')));
+    m_automation->adjustSize();
+    constexpr int kMargin = 12;
+    m_automation->move(m_pages->width() - m_automation->width() - kMargin,
+        m_pages->height() - m_automation->height() - kMargin);
+    m_automation->raise();
 }
 
 void MainWindow::addRomFolder()

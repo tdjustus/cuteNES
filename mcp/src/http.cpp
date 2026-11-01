@@ -87,6 +87,7 @@ struct McpHttpServer::Impl {
     std::set<api::CancelFlag> inflight;
     std::mutex streamsMutex;
     std::set<std::shared_ptr<Stream>> streams;
+    std::atomic<std::chrono::steady_clock::rep> lastCall{0}; // since the clock's epoch
 
     httplib::Server::HandlerResponse guard(const httplib::Request& req, httplib::Response& res)
     {
@@ -141,6 +142,7 @@ struct McpHttpServer::Impl {
 
     void post(const httplib::Request& req, httplib::Response& res)
     {
+        lastCall = std::chrono::steady_clock::now().time_since_epoch().count();
         const Json message = Json::parse(req.body, nullptr, false);
         if (message.is_discarded()) {
             return json(res, 400, errorResponse(Json(), kParseError, "Parse error"));
@@ -396,6 +398,22 @@ std::string McpHttpServer::url() const
     const std::string& host = m_impl->config.bindAddress;
     const std::string shown = host.find(':') != std::string::npos ? "[" + host + "]" : host;
     return "http://" + shown + ":" + std::to_string(m_impl->boundPort) + "/mcp";
+}
+
+api::ListenerActivity McpHttpServer::activity() const
+{
+    auto& impl = *m_impl;
+    api::ListenerActivity a;
+    {
+        std::lock_guard lock(impl.streamsMutex);
+        a.streams = static_cast<int>(impl.streams.size());
+    }
+    {
+        std::lock_guard lock(impl.inflightMutex);
+        a.calls = static_cast<int>(impl.inflight.size());
+    }
+    a.lastCall = std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(impl.lastCall.load()));
+    return a;
 }
 
 } // namespace cutenes::mcp

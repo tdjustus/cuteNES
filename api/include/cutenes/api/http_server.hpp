@@ -7,6 +7,7 @@
 
 #include <cutenes/api/session.hpp>
 
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -19,6 +20,15 @@ struct HttpServerConfig {
     int port = 0; // 0 picks a free port
     // Required; every request must send "Authorization: Bearer <token>".
     std::string token;
+};
+
+// What a listener is doing, for "is a client there?" (003 FR-073): open
+// event streams, calls running, and when the last call came (the epoch
+// before the first).
+struct ListenerActivity {
+    int streams = 0;
+    int calls = 0;
+    std::chrono::steady_clock::time_point lastCall{};
 };
 
 class HttpServer {
@@ -38,6 +48,7 @@ public:
 
     int port() const;
     std::string url() const; // http://127.0.0.1:N/api/v1
+    ListenerActivity activity() const; // any thread
 
 private:
     struct Impl;
