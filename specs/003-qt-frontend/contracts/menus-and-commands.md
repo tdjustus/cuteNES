@@ -209,6 +209,22 @@ The debugger (G081, FR-060):
   register field the user is editing is never overwritten; registers are
   typed in hex, with or without `$`.
 
+The memory viewer (G082, FR-061):
+- Four spaces: CPU memory ($0000-$FFFF), PPU memory ($0000-$3FFF), OAM
+  (256 bytes) and palette RAM (32), 16 bytes to a row, 256 at a time, with
+  a scroll bar and a Go To address (hex).
+- Viewing has no side effects: it reads only through `core.peek`,
+  `core.read_vram`, `core.read_oam` and `core.read_palette`. So the PPU and
+  APU registers ($2000-$5FFF) show the core's placeholders, not what a CPU
+  read would return; `core.read_ppu_registers` has their contents.
+- An edited byte (hex) is written with `core.write_memory`,
+  `core.write_vram`, or for OAM and palette RAM a read-change-write of the
+  whole block (`core.write_oam`, `core.write_palette`). A CPU write to a
+  register is a real write, with its effect. Anything that is not a byte
+  is refused and the cell shows the memory again.
+- Like the debugger it reads ten times a second while shown; its repeated
+  reads report no errors.
+
 ## Settings
 
 | Item | Command | Arguments | Shortcut | Game |

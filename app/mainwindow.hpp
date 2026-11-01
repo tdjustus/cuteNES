@@ -53,6 +53,7 @@ namespace cutenes::app {
 
 class CheatSearchWindow;
 class DebuggerWindow;
+class MemoryViewerWindow;
 class CheatsWindow;
 class KeyBindings;
 class KeyBindingsPage;
@@ -164,6 +165,7 @@ private:
     void showMovieDialog(bool record, const QString& from, const QString& folder) override;
     void movieChanged() override;
     void showDebugger() override;
+    void showMemoryViewer() override;
     void debuggerStopped() override;
     void showLibrary(const QString& select, bool paused) override;
     void showSettings(const QString& page) override;
@@ -253,6 +255,7 @@ private:
     QPointer<CheatsWindow> m_cheatsWindow;           // Tools > Cheats…
     QPointer<CheatSearchWindow> m_cheatSearchWindow; // Tools > Cheat Search…
     QPointer<DebuggerWindow> m_debuggerWindow;
+    QPointer<MemoryViewerWindow> m_memoryViewer;
     QTimer* m_osdTimer = nullptr;
     std::unique_ptr<Servers> m_servers; // the API and MCP listeners (Settings > Servers)
     QPushButton* m_automation = nullptr; // bottom right while a client is there; opens Settings > Servers

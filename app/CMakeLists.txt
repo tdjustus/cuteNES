@@ -11,6 +11,7 @@ add_library(cutenes-app-lib STATIC
     dialogs/settings_dialog.cpp
     dialogs/cheats_window.cpp
     dialogs/debugger_window.cpp
+    dialogs/memory_viewer.cpp
     host/gui_host.cpp
     host/servers.cpp
     library/game_identity.cpp

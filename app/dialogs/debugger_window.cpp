@@ -20,18 +20,6 @@ namespace {
 // The disassembly shown from PC.
 constexpr int kLines = 24;
 
-// Registers are hexadecimal: "5A", "$5A" and "0x5A" are the same.
-std::optional<unsigned> parseHex(const QString& text, unsigned max)
-{
-    QString t = text.trimmed();
-    if (t.startsWith(QLatin1Char('$'))) t = t.mid(1);
-    else if (t.startsWith(QLatin1String("0x"), Qt::CaseInsensitive)) t = t.mid(2);
-    bool ok = false;
-    const unsigned value = t.toUInt(&ok, 16);
-    if (!ok || t.isEmpty() || value > max) return std::nullopt;
-    return value;
-}
-
 QString hex(unsigned value, int digits)
 {
     return QStringLiteral("%1").arg(value, digits, 16, QLatin1Char('0')).toUpper();
