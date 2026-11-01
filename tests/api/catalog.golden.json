@@ -1226,6 +1226,74 @@
       }
     },
     {
+      "description": "The PPU's scroll registers (t, v, fine X, write toggle) and the scroll in pixels, without side effects",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.read_ppu_scroll",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "fineX": {
+            "maximum": 7,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scrollX": {
+            "description": "pixels across the four nametables",
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scrollY": {
+            "description": "pixels down them",
+            "maximum": 479,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "t": {
+            "description": "the next frame's start address: fine Y, nametable, coarse Y, coarse X",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "v": {
+            "description": "the current VRAM address",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "writeToggle": {
+            "description": "the $2005/$2006 second-write toggle",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "t",
+          "v",
+          "fineX",
+          "writeToggle",
+          "scrollX",
+          "scrollY",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "description": "Read battery-backed cartridge RAM",
       "inputSchema": {
         "additionalProperties": false,
@@ -2956,5 +3024,5 @@
       }
     }
   ],
-  "surface": "0.2"
+  "surface": "0.3"
 }

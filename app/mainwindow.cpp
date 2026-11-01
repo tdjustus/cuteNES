@@ -4,6 +4,7 @@
 #include "dialogs/cheats_window.hpp"
 #include "dialogs/debugger_window.hpp"
 #include "dialogs/memory_viewer.hpp"
+#include "dialogs/ppu_viewer.hpp"
 #include "dialogs/key_bindings_page.hpp"
 #include "dialogs/settings_dialog.hpp"
 #include "library/library_browser.hpp"
@@ -143,7 +144,7 @@ const QStringList kImplemented = {
     QStringLiteral("gui.set_filter"), QStringLiteral("gui.toggle_always_on_top"),
     QStringLiteral("gui.toggle_audio_recording"), QStringLiteral("gui.record_movie"), QStringLiteral("gui.play_movie"),
     QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only"), QStringLiteral("gui.show_debugger"),
-    QStringLiteral("gui.show_memory_viewer"),
+    QStringLiteral("gui.show_memory_viewer"), QStringLiteral("gui.show_ppu_viewer"),
 };
 // Settings > Hotkeys opens the Key Bindings page (#108).
 const QStringList kSettingsPages = {QStringLiteral("video"), QStringLiteral("audio"), QStringLiteral("emulation"),
@@ -159,7 +160,7 @@ const QStringList kNeedGame = {
     QStringLiteral("gui.frame_advance"), QStringLiteral("gui.import_battery_save"),
     QStringLiteral("gui.export_battery_save"), QStringLiteral("gui.take_screenshot"),
     QStringLiteral("gui.toggle_audio_recording"), QStringLiteral("gui.record_movie"), QStringLiteral("gui.play_movie"),
-    QStringLiteral("gui.show_debugger"), QStringLiteral("gui.show_memory_viewer"),
+    QStringLiteral("gui.show_debugger"), QStringLiteral("gui.show_memory_viewer"), QStringLiteral("gui.show_ppu_viewer"),
 };
 // Movie > Stop and Read-Only: only while a movie records or plays.
 const QStringList kNeedMovie = {QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only")};
@@ -1694,7 +1695,8 @@ CommandRunner MainWindow::toolRunner()
     static const QStringList reads = {QStringLiteral("core.get_cpu"), QStringLiteral("core.disassemble"),
         QStringLiteral("core.run_state"), QStringLiteral("gui.list_breakpoints"), QStringLiteral("gui.list_cheats"),
         QStringLiteral("gui.cheat_search_results"), QStringLiteral("gui.list_watches"), QStringLiteral("core.peek"),
-        QStringLiteral("core.read_vram"), QStringLiteral("core.read_oam"), QStringLiteral("core.read_palette")};
+        QStringLiteral("core.read_vram"), QStringLiteral("core.read_oam"), QStringLiteral("core.read_palette"),
+        QStringLiteral("core.read_ppu_registers"), QStringLiteral("core.read_ppu_scroll")};
     return [this](const QString& name, const QVariantMap& args) { return runCommand(name, args, reads.contains(name)); };
 }
 
@@ -1716,6 +1718,29 @@ void MainWindow::showMemoryViewer()
         if (!m_memoryViewer) m_memoryViewer = new MemoryViewerWindow(toolRunner(), this);
         m_memoryViewer->show();
         m_memoryViewer->raise();
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::showPpuViewer(const QString& view)
+{
+    QMetaObject::invokeMethod(this, [this, view] {
+        if (!m_ppuViewer) {
+            // The colours View > Palette has the game in.
+            const auto colours = [this] {
+                const QString name = m_settings.video().palette;
+                std::optional<std::vector<std::uint32_t>> table = name == QLatin1String("default")
+                    ? std::nullopt
+                    : builtinPalette(name);
+                if (!table && name != QLatin1String("default")) table = readPalFile(name, nullptr);
+                ppu::Colours out = defaultPalette();
+                if (table && table->size() >= 64) std::copy_n(table->begin(), 64, out.begin());
+                return out;
+            };
+            m_ppuViewer = new PpuViewerWindow(toolRunner(), colours, this);
+        }
+        m_ppuViewer->showView(view);
+        m_ppuViewer->show();
+        m_ppuViewer->raise();
     }, Qt::QueuedConnection);
 }
 

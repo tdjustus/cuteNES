@@ -44,6 +44,7 @@ Conventions:
 | `core.set_cpu` | any of `a x y s p pc` | `cpu` | `writeCpu` (mask from present fields) | Also covers `debugSetProgramCounter` |
 | `core.disassemble` | `addr`, `count` (1-256) | `lines[]` | `disassemble` | No execution |
 | `core.read_ppu_registers` | none | 8 bytes | `readPpuRegisters` | No latch side effects |
+| `core.read_ppu_scroll` | none | `t`, `v`, `fineX`, `writeToggle`, `scrollX`, `scrollY` | `readPpuScroll` | No side effects; the PPU viewer's scroll (003) |
 | `core.read_vram` / `core.write_vram` | `addr`, `length` / `bytes` | `bytes` / none | `readVram` / `writeVram` | Mirroring resolved |
 | `core.read_oam` / `core.write_oam` | none / 256 `bytes` | `bytes` / none | `readOam` / `writeOam` | |
 | `core.read_palette` / `core.write_palette` | none / 32 `bytes` | `bytes` / none | `readPalette` / `writePalette` | |

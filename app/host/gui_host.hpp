@@ -117,6 +117,7 @@ public:
         // debugger reads the machine itself.
         virtual void showDebugger() = 0;
         virtual void showMemoryViewer() = 0;
+        virtual void showPpuViewer(const QString& view) = 0;
         virtual void debuggerStopped() = 0;
         virtual void showAbout() = 0;
         virtual void openLibraryFolder() = 0;

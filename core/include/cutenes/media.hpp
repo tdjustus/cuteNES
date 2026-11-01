@@ -1,9 +1,14 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
 namespace cutenes {
+
+// The colours the PPU outputs with no palette set (Machine::setPalette),
+// XRGB8888, indexed by palette entry, without emphasis.
+const std::array<std::uint32_t, 64>& defaultPalette();
 
 // One complete 256x240 frame, XRGB8888 little-endian, row-major, stride 256,
 // 61440 bytes total (contracts/media-output.md). `pixels` points at core-

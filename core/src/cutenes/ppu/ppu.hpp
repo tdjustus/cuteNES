@@ -78,6 +78,13 @@ public:
     // $2004 = OAM[oamAddr], $2005 = fineX, $2006 = current v,
     // $2007 = the read buffer.
     void debugReadRegisters(std::uint8_t dst[8]) const;
+    void debugReadScroll(std::uint16_t& t, std::uint16_t& v, std::uint8_t& fineX, bool& w) const
+    {
+        t = m_t;
+        v = m_v;
+        fineX = static_cast<std::uint8_t>(m_fineX & 7);
+        w = m_w != 0;
+    }
     void debugReadVram(std::uint16_t addr, std::size_t len,
                        std::uint8_t* dst) const;
     void debugWriteVram(std::uint16_t addr, const std::uint8_t* src,

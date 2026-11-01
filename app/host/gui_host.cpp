@@ -1756,8 +1756,13 @@ void GuiHost::registerCommands(api::Registry& registry)
             m_window.showMemoryViewer();
             return Result::ok();
         });
-    later("gui.show_ppu_viewer", "Open the PPU viewer",
-        s::object({{"view", s::stringEnum({"patterns", "nametables", "sprites", "palette"})}}), true, "G8");
+    add(registry, "gui.show_ppu_viewer",
+        "Open the PPU viewer at a view: pattern tables, nametables with the scroll, sprites, or palette RAM",
+        s::object({{"view", s::stringEnum({"patterns", "nametables", "sprites", "palette"})}}), s::object({}), false,
+        true, [this](CallContext&, const Json& args) {
+            m_window.showPpuViewer(QString::fromStdString(args.value("view", std::string("patterns"))));
+            return Result::ok();
+        });
     later("gui.show_trace_logger", "Open the trace logger", none, true, "G8");
     later("gui.write_memory_dump", "Write a memory dump to the library's debug folder", none, true, "G8");
     later("gui.show_user_guide", "Open the user guide", none, false, "G9");

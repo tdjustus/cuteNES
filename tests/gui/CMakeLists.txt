@@ -25,7 +25,8 @@ add_executable(cutenes-gui-tests
     test_cheats.cpp
     test_movies.cpp
     test_debugger.cpp
-    test_memory_viewer.cpp)
+    test_memory_viewer.cpp
+    test_ppu_viewer.cpp)
 target_link_libraries(cutenes-gui-tests PRIVATE cutenes-app-lib cutenes-httplib gtest)
 target_compile_definitions(cutenes-gui-tests PRIVATE
     CUTENES_TEST_ROMS="${PROJECT_SOURCE_DIR}/tests/roms")
