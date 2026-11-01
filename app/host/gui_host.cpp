@@ -19,6 +19,7 @@
 #include <QSaveFile>
 
 #include <algorithm>
+#include <climits>
 
 namespace cutenes::app {
 
@@ -317,6 +318,7 @@ void GuiHost::runFrame(Machine& machine)
         m_rewind.push(m_rewound->state.data(), m_rewound->state.size(), m_rewound->input[0], m_rewound->input[1]);
         m_rewound.reset();
     }
+    keepTracing(machine);
     // A frame a breakpoint or a step stopped part way goes on where it
     // was, its bookkeeping done already.
     if (!m_midFrame) {
@@ -388,6 +390,7 @@ Result GuiHost::stepInstructions(CallContext& ctx, int count)
         if (r.isError()) return r;
     }
     Machine& machine = ctx.session.machine();
+    keepTracing(machine);
     for (int i = 0; i < count; ++i) {
         // An instruction that starts a frame starts its bookkeeping too, so
         // stepping keeps movies, rewind and cheats as play does.
@@ -404,6 +407,79 @@ Result GuiHost::stepInstructions(CallContext& ctx, int count)
         }
     }
     return Result::ok({{"cpu", call(ctx, "core.get_cpu").value["cpu"]}});
+}
+
+Result GuiHost::startTrace(Machine& machine, QString path)
+{
+    if (m_trace) {
+        return Result::fail("Tracing", "the trace logger is logging already; stop it first", {{"path", str(m_tracePath)}});
+    }
+    if (path.isEmpty()) {
+        // contracts/library-layout.md: debug/trace-<YYYYMMDD-HHMMSS>.log.
+        const Library library = m_window.library();
+        if (!library.isUsable()) return Result::fail("WriteError", "the library cannot be written; see Settings > Library");
+        const QDir folder(library.folder(Library::Folder::Debug));
+        if (!folder.mkpath(QStringLiteral("."))) return Result::fail("WriteError", "cannot create " + str(folder.path()));
+        const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+        path = folder.filePath(QStringLiteral("trace-%1.log").arg(stamp));
+        for (int n = 2; QFile::exists(path); ++n) path = folder.filePath(QStringLiteral("trace-%1-%2.log").arg(stamp).arg(n));
+    }
+    auto file = std::make_unique<QFile>(path);
+    if (!file->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return Result::fail("WriteError", "cannot write " + str(path) + ": " + str(file->errorString()), {{"path", str(path)}});
+    }
+    m_trace = std::move(file);
+    m_tracePath = path;
+    m_traceBuffer.clear();
+    m_traceLines = 0;
+    m_traceFailed = false;
+    keepTracing(machine);
+    m_window.showMessage(QObject::tr("Trace logging to %1").arg(QFileInfo(path).fileName()));
+    return Result::ok({{"path", str(path)}});
+}
+
+void GuiHost::keepTracing(Machine& machine)
+{
+    if (!m_trace) return;
+    // The line is the one core.disassemble gives: nestest.log's format, with
+    // the registers, PPU position and cycle count before the instruction.
+    machine.setInstructionTrace([this, &machine](const TracePoint& tp) {
+        m_traceBuffer += machine.disassemble(tp.cpu.pc);
+        m_traceBuffer += '\n';
+        ++m_traceLines;
+        if (m_traceBuffer.size() >= (1u << 20)) flushTrace();
+    });
+}
+
+void GuiHost::flushTrace()
+{
+    if (!m_trace || m_traceBuffer.empty()) return;
+    const auto size = static_cast<qint64>(m_traceBuffer.size());
+    if (m_trace->write(m_traceBuffer.data(), size) != size) m_traceFailed = true;
+    m_traceBuffer.clear();
+}
+
+Result GuiHost::stopTrace(Machine& machine)
+{
+    if (!m_trace) return Result::fail("NotTracing", "the trace logger is not logging");
+    machine.setInstructionTrace(nullptr);
+    flushTrace();
+    m_trace->close();
+    const bool failed = m_traceFailed || m_trace->error() != QFileDevice::NoError;
+    const QString path = m_tracePath;
+    const std::uint64_t lines = m_traceLines;
+    m_trace.reset();
+    m_tracePath.clear();
+    m_traceBuffer.clear();
+    m_traceBuffer.shrink_to_fit();
+    if (failed) {
+        m_window.showMessage(QObject::tr("The trace could not be written in full"));
+        return Result::fail("WriteError", "the trace could not be written in full (is the disk full?)",
+            {{"path", str(path)}, {"lines", lines}});
+    }
+    m_window.showMessage(QObject::tr("Trace saved: %1 (%n instructions)", nullptr, static_cast<int>(std::min<std::uint64_t>(lines, INT_MAX)))
+            .arg(QFileInfo(path).fileName()));
+    return Result::ok({{"path", str(path)}, {"lines", lines}});
 }
 
 bool GuiHost::playMovieFrame(Machine& machine)
@@ -858,6 +934,7 @@ Result GuiHost::closeGame(CallContext& ctx)
 {
     if (m_tap.wav.isOpen()) stopRecording();
     if (m_movieMode != MovieStatus::Mode::None) stopMovie();
+    if (m_trace) stopTrace(ctx.session.machine());
     // FR-037: where the player left off, for the next open.
     if (m_settings.emulation().resumeOnOpen) {
         if (const QString path = autoStatePath(); !path.isEmpty() && QDir().mkpath(QFileInfo(path).path())) {
@@ -1763,8 +1840,53 @@ void GuiHost::registerCommands(api::Registry& registry)
             m_window.showPpuViewer(QString::fromStdString(args.value("view", std::string("patterns"))));
             return Result::ok();
         });
-    later("gui.show_trace_logger", "Open the trace logger", none, true, "G8");
-    later("gui.write_memory_dump", "Write a memory dump to the library's debug folder", none, true, "G8");
+    add(registry, "gui.show_trace_logger", "Open the trace logger: start and stop logging every instruction to a file",
+        none, s::object({}), false, true, [this](CallContext&, const Json&) {
+            m_window.showTraceLogger();
+            return Result::ok();
+        });
+    const Json traceSchema = s::object({{"path", s::string()}, {"lines", s::u64("instructions logged")}}, {"path", "lines"});
+    add(registry, "gui.trace_start",
+        "Log every instruction the CPU runs, in nestest.log's format, to a file (without path, "
+        "trace-<YYYYMMDD-HHMMSS>.log in the library's debug folder) until gui.trace_stop or the game closes",
+        s::object({{"path", s::string("an absolute file path")}}), s::object({{"path", s::string()}}, {"path"}), true,
+        true, [this](CallContext& ctx, const Json& args) {
+            return startTrace(ctx.session.machine(), QString::fromStdString(args.value("path", std::string())));
+        });
+    add(registry, "gui.trace_stop", "Stop the trace logger and finish its file", none, traceSchema, true, false,
+        [this](CallContext& ctx, const Json&) { return stopTrace(ctx.session.machine()); });
+    add(registry, "gui.trace_status", "Whether the trace logger is logging, to which file, and how many instructions so far",
+        none, s::object({{"active", s::boolean()}, {"path", s::string()}, {"lines", s::u64()}}, {"active"}), false,
+        false, [this](CallContext&, const Json&) {
+            if (!m_trace) return Result::ok({{"active", false}});
+            return Result::ok({{"active", true}, {"path", str(m_tracePath)}, {"lines", m_traceLines}});
+        });
+    add(registry, "gui.write_memory_dump",
+        "Write the core's memory dump (<YYYYMMDDHHMMSS>.dmp, 001 core-api.md \"Memory dump\") into the library's debug "
+        "folder",
+        none, s::object({{"path", s::string()}}, {"path"}), false, true, [this](CallContext& ctx, const Json&) {
+            const Library library = m_window.library();
+            if (!library.isUsable()) return Result::fail("WriteError", "the library cannot be written; see Settings > Library");
+            const QDir folder(library.folder(Library::Folder::Debug));
+            if (!folder.mkpath(QStringLiteral("."))) return Result::fail("WriteError", "cannot create " + str(folder.path()));
+            // The core's dumpMemory names and writes the file itself, but
+            // through a std::string path, which Windows reads in the ANSI
+            // code page; Qt writes any path. Same name, same bytes.
+            const QDateTime now = QDateTime::currentDateTime();
+            const QString stamp = now.toString(QStringLiteral("yyyyMMddHHmmss"));
+            QString path = folder.filePath(stamp + QStringLiteral(".dmp"));
+            for (int n = 2; QFile::exists(path); ++n) path = folder.filePath(QStringLiteral("%1-%2.dmp").arg(stamp).arg(n));
+            const std::vector<std::uint8_t> bytes = ctx.session.machine().memoryDump(static_cast<std::uint64_t>(now.toSecsSinceEpoch()));
+            QSaveFile file(path);
+            if (!file.open(QIODevice::WriteOnly)
+                || file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<qint64>(bytes.size()))
+                    != static_cast<qint64>(bytes.size())
+                || !file.commit()) {
+                return Result::fail("WriteError", "cannot write " + str(path), {{"path", str(path)}});
+            }
+            m_window.showMessage(QObject::tr("Memory dump written: %1").arg(QFileInfo(path).fileName()));
+            return Result::ok({{"path", str(path)}});
+        });
     later("gui.show_user_guide", "Open the user guide", none, false, "G9");
     later("gui.open_log_folder", "Show the log folder in the file manager", none, false, "G9");
 

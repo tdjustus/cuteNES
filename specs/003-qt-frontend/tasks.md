@@ -263,7 +263,7 @@ logger and memory dump (G084).
 - [x] G082 [P] [US9] Memory viewer and editor: CPU, PPU, OAM and palette.
 - [x] G083 [P] [US9] PPU viewers: patterns, nametables with the scroll
   position, sprites and palette, refreshed at up to 30 Hz.
-- [ ] G084 [US9] Trace logger and Write Memory Dump into `debug/`.
+- [x] G084 [US9] Trace logger and Write Memory Dump into `debug/`.
 - [ ] G085 Manual checklist **M8**.
 
 ## Phase G9: Parity, acceptance, packaging (branch `feature/gui-release`)
