@@ -349,3 +349,26 @@ the `GuiWindowCommands` tests. Nothing to do by hand but a look:
    `gui.close_window` with `all` closes them.
 2. Every menu item shows the shortcut the Keyboard Shortcuts page lists.
 
+### Human and AI together (G091, #101, #32)
+
+Automated by `GuiCoexistence`:
+- While the game runs, the window and an HTTP API client change the state
+  at the same time: 300 rounds of memory writes, saves and loads, resets and
+  input. Neither side ever reads a half-written block or loads a state
+  caught part way through a write.
+- A state the client saves into a slot is the one the window loads from it.
+- Afterwards both sides see the same frame, CPU, memory and controller.
+- The real `cutenes-server --attach` reaches the real window through the MCP
+  token file and sees its catalog; opening a game through it shows the game
+  in the window.
+
+By hand, once:
+1. Settings > Servers: turn on the MCP server. Connect Claude (or any MCP
+   client) through `cutenes-server --attach`.
+2. Play Super Mario Bros. while the client saves to slot 3 and writes
+   memory (for example lives at $075A). The game never glitches or jumps;
+   the slot menu shows the client's save, and loading it from the menu
+   gives the client's state.
+3. Turn the API off in Settings: the client's next call fails with
+   ShuttingDown and the game keeps playing.
+

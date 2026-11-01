@@ -270,7 +270,7 @@ logger and memory dump (G084).
 
 - [x] G090 [US6] The `gui-audit` test (A8): the menu actions, the contract
   table and the `gui.*` catalog are equal, and every action is wired.
-- [ ] G091 [US6] `gui-coexistence` (A10, 002 SC-006) and the GUI-mode
+- [x] G091 [US6] `gui-coexistence` (A10, 002 SC-006) and the GUI-mode
   `--attach` test against the real application. This closes 002's GUI-mode
   items recorded in #32.
 - [ ] G092 Pacing soak `gui-pacing` (A15) in Release.
