@@ -2134,7 +2134,7 @@ void GuiHost::registerCommands(api::Registry& registry)
     add(registry, "gui.get_settings", "Every setting's value and schema, or one group's",
         s::object({{"group", s::stringEnum({"video", "audio", "emulation", "library", "servers", "hotkeys", "input", "updates"})}}),
         s::object({{"values", Json{{"type", "object"}}}, {"schema", Json{{"type", "object"}}}}, {"values", "schema"}),
-        false, false, [this, edge](CallContext&, const Json&) {
+        false, false, [this, edge](CallContext&, const Json& args) {
             const Library library = m_window.library();
             const AppSettings::ServerSettings servers = m_settings.servers();
             const AppSettings::UpdateSettings updates = m_settings.updates();
@@ -2198,7 +2198,15 @@ void GuiHost::registerCommands(api::Registry& registry)
                 {"input.allowOppositeDirections", s::boolean("Left with Right and Up with Down (off: the last pressed wins)")},
                 {"input.pauseOnGamepadDisconnect", s::boolean("pause when a gamepad in use is unplugged (on by default)")},
                 {"input.bindings", s::string("the game-button bindings that differ from the defaults, by id (gui.set_binding)")}};
-            return Result::ok({{"values", values}, {"schema", schema}});
+            if (!args.contains("group")) return Result::ok({{"values", values}, {"schema", schema}});
+            // One group: its values, and the schema keys under it ("video.scale"), or
+            // the group's own key for a one-key group ("hotkeys").
+            const std::string group = args["group"].get<std::string>();
+            Json groupSchema = Json::object();
+            for (const auto& [key, value] : schema.items()) {
+                if (key == group || key.rfind(group + ".", 0) == 0) groupSchema[key] = value;
+            }
+            return Result::ok({{"values", {{group, values[group]}}}, {"schema", groupSchema}});
         });
 
     add(registry, "gui.set_setting", "Validate and apply a setting (gui.get_settings lists them)",

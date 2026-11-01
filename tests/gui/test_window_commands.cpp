@@ -103,3 +103,48 @@ TEST(GuiWindowCommands, StateReportsThePageThePlayAndTheWindows)
     call(w, "gui.show_shortcuts");
     EXPECT_TRUE(waitUntil([&] { return call(w, "gui.state")["page"] == "key_bindings"; }));
 }
+
+// #117 (contract "Settings": "gui.get_settings (optional group)"; its
+// description: "Every setting's value and schema, or one group's"): with a
+// group, the values hold that group alone and the schema only its keys
+// (<group>.<key>, or the group's own name for one-key groups); without one,
+// every group.
+TEST(GuiWindowCommands, GetSettingsWithAGroupReturnsThatGroupOnly)
+{
+    MainWindow w(windowOptions());
+    const std::vector<std::string> groups = {
+        "video", "audio", "emulation", "library", "servers", "hotkeys", "input", "updates"};
+    const Json all = call(w, "gui.get_settings");
+    for (const std::string& group : groups) {
+        EXPECT_TRUE(all["values"].contains(group)) << group;
+    }
+    for (const std::string& group : groups) {
+        const Json one = call(w, "gui.get_settings", {{"group", group}});
+        ASSERT_TRUE(one["values"].is_object()) << group;
+        EXPECT_EQ(one["values"].size(), 1u) << group << ": " << one["values"].dump();
+        ASSERT_TRUE(one["values"].contains(group)) << group;
+        EXPECT_EQ(one["values"][group].is_object() || one["values"][group].is_array(),
+            all["values"][group].is_object() || all["values"][group].is_array())
+            << group;
+        size_t expected = 0;
+        for (const auto& [key, _] : all["schema"].items()) {
+            if (key == group || key.rfind(group + ".", 0) == 0) ++expected;
+        }
+        EXPECT_GT(expected, 0u) << group;
+        EXPECT_EQ(one["schema"].size(), expected) << group << ": " << one["schema"].dump();
+        for (const auto& [key, _] : one["schema"].items()) {
+            EXPECT_TRUE(key == group || key.rfind(group + ".", 0) == 0) << group << " has " << key;
+        }
+    }
+    if (!HasFailure()) {
+        // The groups together make up the whole.
+        Json values = Json::object();
+        for (const std::string& group : groups) {
+            values[group] = call(w, "gui.get_settings", {{"group", group}})["values"][group];
+        }
+        values["video"].erase("pacingNow"); // measured, not stored
+        Json whole = all["values"];
+        whole["video"].erase("pacingNow");
+        EXPECT_EQ(values, whole);
+    }
+}
