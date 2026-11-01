@@ -300,7 +300,10 @@ setting.
 
 As a player, I can find and apply cheats (search RAM for a value that
 changes, then freeze or set it; or enter Game Genie codes), and record my
-inputs as a movie that plays back exactly.
+inputs as a movie that plays back exactly. Like Cheat Engine, the search
+works while I play: I enter the value I see (lives: 3), play until it
+changes, enter the new value, and repeat until one address is left; then I
+change it, and the game shows the change at once.
 
 **Why this priority**: These are standard emulator features named in the
 constitution. They rely on determinism, which the core already guarantees.
@@ -314,18 +317,25 @@ constitution. They rely on determinism, which the core already guarantees.
 **Acceptance Scenarios**:
 
 1. **Given** the cheat search, **When** the user narrows candidates by
-   "equal, greater, less, changed, unchanged" between snapshots, **Then** the
-   remaining addresses and their values are listed, and any of them can be
-   added as a cheat.
-2. **Given** an enabled cheat, **Then** it is applied every frame. Cheats are
+   "equal, not equal, greater, less, changed, unchanged" between snapshots,
+   or by an exact value, **Then** the remaining addresses and their values
+   are listed, and any of them can be added as a cheat.
+2. **Given** the cheat search window is open, **Then** the game keeps
+   running and taking input, and the listed values refresh live (at least
+   10 times a second). Each snapshot is taken at a frame boundary.
+3. **Given** a listed or watched address, **When** the user types a new
+   value, **Then** it is written at the next frame boundary and the game
+   shows its effect without a pause. Addresses can be kept in a watch list
+   with live values and labels, saved per game.
+4. **Given** an enabled cheat, **Then** it is applied every frame. Cheats are
    saved per game in the library, and each can be switched on or off.
-3. **Given** a valid Game Genie code, **When** it is enabled, **Then** the
+5. **Given** a valid Game Genie code, **When** it is enabled, **Then** the
    game behaves as with the original accessory. An invalid code is refused
    with the reason.
-4. **Given** movie recording from power-on or from a save state, **When** the
+6. **Given** movie recording from power-on or from a save state, **When** the
    movie is played back, **Then** each frame's input is identical and the
    final frame hash equals the recording's.
-5. **Given** a movie is playing in read-only mode, **Then** the user's input
+7. **Given** a movie is playing in read-only mode, **Then** the user's input
    is ignored until playback ends or the user takes over (read-write), which
    continues recording from that frame.
 
@@ -540,7 +550,13 @@ and compare the pattern table with the CHR data.
 
 - **FR-050**: Cheat search MUST snapshot CPU RAM ($0000-$07FF, plus
   cartridge RAM when present) and narrow candidates by comparison with the
-  previous snapshot or a value.
+  previous snapshot or a value (equal, not equal, greater, less, changed,
+  unchanged). Values MAY be 1 byte or 2 bytes (little-endian), unsigned. The
+  search MUST work while the game runs (US8-2).
+- **FR-053**: Search results and a per-game watch list MUST show live
+  values and MUST let the user edit a value in place. The write happens at
+  the next frame boundary, through the same session queue as every other
+  change (FR-075), so a running game shows it at once (US8-3).
 - **FR-051**: Cheats MUST be stored per game in the library. Each MUST be
   switchable on or off, and the forms MUST be: freeze an address to a value,
   set an address once, and Game Genie codes (6 and 8 letters). Game Genie

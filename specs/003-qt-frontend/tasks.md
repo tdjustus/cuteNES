@@ -225,10 +225,15 @@ documented ROM behavior. `contracts/core-additions.md`.
   - a movie from power-on and one from a state each replay to the same hash;
   - a movie for a different game is refused;
   - a read-only takeover truncates the movie;
-  - cheat search on a test ROM finds a counter;
+  - cheat search on a test ROM finds a counter, by value, while the game
+    runs (US8-2), with 1- and 2-byte values;
+  - an edited value reaches the game at the next frame boundary, without a
+    pause (US8-3, FR-053);
   - a freeze holds it.
 - [ ] G071 [US8] Cheats window: freeze, set and Game Genie, stored per game,
-  each switchable on and off. The cheat search window and its commands.
+  each switchable on and off. The cheat search window and its commands,
+  usable while the game runs, with live values, in-place editing and a
+  per-game watch list (FR-053).
 - [ ] G072 [US8] Movies: record from power-on or a state, play, stop,
   read-only and takeover, the `.cnm` format, and the status bar.
 - [ ] G073 Manual checklist **M7**.
