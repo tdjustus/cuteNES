@@ -280,8 +280,9 @@ logger and memory dump (G084).
   a keyboard shortcut list from the contract.
 - [x] G094a Help > Open Log Folder and the application log behind it
   (contract "The log"): the last later-phase menu item.
-- [ ] G096 [US10] Spec R16 settled: feed, asset names, checksums and the
+- [x] G096 [US10] Spec R16 settled: feed, asset names, checksums and the
   per-platform swap (#105). Release assets get the naming scheme (G093).
+  Signing and a manual check are deferred to #138.
 - [ ] G097 [US10] Tests first: a fake release feed for version comparison
   and asset choice, skip and later remembered, no prompt while a game runs,
   no request with checks off, a bad checksum replacing nothing, and the
