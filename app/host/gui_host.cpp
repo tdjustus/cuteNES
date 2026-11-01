@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QSaveFile>
 
 #include <algorithm>
 
@@ -353,6 +354,7 @@ Result GuiHost::openRom(CallContext& ctx, const QString& path)
     }
     m_gameOpen = true;
     m_identity = id;
+    m_gameName = QFileInfo(path).completeBaseName();
     m_undoState.reset();
     {
         std::lock_guard lock(m_slotsMutex);
@@ -574,7 +576,7 @@ void GuiHost::registerCommands(api::Registry& registry)
         s::object({{"path", s::string("a file path")}}), s::object({{"dialog", s::boolean()}, {"path", s::string()}}),
         true, true, [this](CallContext& ctx, const Json& args) {
             if (!args.contains("path")) {
-                m_window.showStateFileDialog(true);
+                m_window.showFileDialog(Window::FileDialog::SaveState);
                 return Result::ok({{"dialog", true}});
             }
             const QString path = QString::fromStdString(args["path"].get<std::string>());
@@ -593,7 +595,7 @@ void GuiHost::registerCommands(api::Registry& registry)
         s::object({{"path", s::string("a file path")}}), s::object({{"dialog", s::boolean()}, {"path", s::string()}}),
         true, true, [this](CallContext& ctx, const Json& args) {
             if (!args.contains("path")) {
-                m_window.showStateFileDialog(false);
+                m_window.showFileDialog(Window::FileDialog::LoadState);
                 return Result::ok({{"dialog", true}});
             }
             const QString path = QString::fromStdString(args["path"].get<std::string>());
@@ -604,6 +606,97 @@ void GuiHost::registerCommands(api::Registry& registry)
             if (r.isError()) return r;
             m_window.showMessage(QObject::tr("State loaded from %1").arg(QFileInfo(path).fileName()));
             return Result::ok({{"path", str(path)}});
+        });
+
+    add(registry, "gui.export_battery_save", "Write the battery save to a raw .sav file; without path, show the file dialog",
+        s::object({{"path", s::string("a file path")}}), s::object({{"dialog", s::boolean()}, {"path", s::string()}}),
+        true, true, [this](CallContext& ctx, const Json& args) {
+            const SramRange sram = ctx.session.machine().sram();
+            if (sram.size == 0) return Result::fail("NoBattery", "the cartridge has no battery-backed RAM");
+            if (!args.contains("path")) {
+                m_window.showFileDialog(Window::FileDialog::ExportBattery);
+                return Result::ok({{"dialog", true}});
+            }
+            const QString path = QString::fromStdString(args["path"].get<std::string>());
+            if (QDir::isRelativePath(path)) return invalid("/path", "the path must be absolute");
+            QString error;
+            const QByteArray bytes(reinterpret_cast<const char*>(sram.data), static_cast<qsizetype>(sram.size));
+            if (!StateSlots::writeFile(path, bytes, &error)) {
+                return Result::fail("WriteError", str(error), {{"path", str(path)}});
+            }
+            m_window.showMessage(QObject::tr("Battery save exported to %1").arg(QFileInfo(path).fileName()));
+            return Result::ok({{"path", str(path)}});
+        });
+
+    add(registry, "gui.import_battery_save",
+        "Replace the battery save with a raw .sav file (padded or trimmed) and reset the game; without path, show the file dialog",
+        s::object({{"path", s::string("a file path")}}), s::object({{"dialog", s::boolean()}, {"path", s::string()}}),
+        true, true, [this](CallContext& ctx, const Json& args) {
+            Machine& machine = ctx.session.machine();
+            if (machine.sram().size == 0) return Result::fail("NoBattery", "the cartridge has no battery-backed RAM");
+            if (!args.contains("path")) {
+                m_window.showFileDialog(Window::FileDialog::ImportBattery);
+                return Result::ok({{"dialog", true}});
+            }
+            const QString path = QString::fromStdString(args["path"].get<std::string>());
+            if (QDir::isRelativePath(path)) return invalid("/path", "the path must be absolute");
+            if (!QFileInfo(path).isFile()) return Result::fail("NotFound", "no such file", {{"path", str(path)}});
+            QString error;
+            const std::optional<QByteArray> bytes = StateSlots::readFile(path, &error);
+            if (!bytes) return Result::fail("NotFound", str(error), {{"path", str(path)}});
+            // The whole save is replaced: a short file is padded with zeros
+            // (loadSram alone would keep the old bytes past its end).
+            QByteArray ram = bytes->left(static_cast<qsizetype>(machine.sram().size));
+            ram.append(static_cast<qsizetype>(machine.sram().size) - ram.size(), '\0');
+            const Result loaded = call(ctx, "core.load_sram", {{"bytes", ram.toBase64().toStdString()}});
+            if (loaded.isError()) return loaded;
+            // Games read their save when they start, so the game starts
+            // again; the library's save follows now, even while paused.
+            const Result reset = call(ctx, "core.reset");
+            if (reset.isError()) return reset;
+            m_battery.poll(machine);
+            m_window.showMessage(QObject::tr("Battery save imported from %1").arg(QFileInfo(path).fileName()));
+            return Result::ok({{"path", str(path)}});
+        });
+
+    add(registry, "gui.take_screenshot", "Save the picture as a PNG in the library's screenshots folder (256x240, unfiltered)",
+        s::object({}), s::object({{"path", s::string()}}, {"path"}), false, true,
+        [this](CallContext& ctx, const Json&) {
+            const QImage image = currentFrame(ctx);
+            if (image.isNull()) return Result::fail("NotFound", "there is no picture yet");
+            const Library library = m_window.library();
+            if (m_identity.sha1.isEmpty() || !library.isUsable()) {
+                return Result::fail("WriteError", "the library cannot be written; see Settings > Library");
+            }
+            const QDir folder(library.gameFile(Library::Folder::Screenshots, m_identity, m_gameName, {}));
+            if (!folder.mkpath(QStringLiteral("."))) {
+                return Result::fail("WriteError", "cannot create " + str(folder.path()));
+            }
+            const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+            QString path = folder.filePath(stamp + QStringLiteral(".png"));
+            for (int n = 2; QFile::exists(path); ++n) {
+                path = folder.filePath(QStringLiteral("%1-%2.png").arg(stamp).arg(n));
+            }
+            QSaveFile file(path);
+            if (!file.open(QIODevice::WriteOnly) || !image.save(&file, "PNG") || !file.commit()) {
+                return Result::fail("WriteError", "cannot write " + str(path), {{"path", str(path)}});
+            }
+            m_window.showMessage(QObject::tr("Screenshot saved"));
+            return Result::ok({{"path", str(path)}});
+        });
+
+    add(registry, "gui.toggle_fps", "Show or hide the frame rate over the game", s::object({}),
+        s::object({{"showFps", s::boolean()}}, {"showFps"}), false, false, [this](CallContext&, const Json&) {
+            m_settings.setShowFps(!m_settings.showFps());
+            m_window.displayChanged();
+            return Result::ok({{"showFps", m_settings.showFps()}});
+        });
+
+    add(registry, "gui.toggle_osd", "Show or hide short on-screen messages", s::object({}),
+        s::object({{"showOsd", s::boolean()}}, {"showOsd"}), false, false, [this](CallContext&, const Json&) {
+            m_settings.setShowOsd(!m_settings.showOsd());
+            m_window.displayChanged();
+            return Result::ok({{"showOsd", m_settings.showOsd()}});
         });
 
     add(registry, "gui.list_slots", "The game's save-state slots 1-10 and the selected slot",

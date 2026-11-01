@@ -16,6 +16,8 @@ const QString kRomFolders = QStringLiteral("library/romFolders");
 const QString kPlayed = QStringLiteral("played/");
 const QString kSlot = QStringLiteral("slot/");
 const QString kSettingsPage = QStringLiteral("window/settingsPage");
+const QString kShowFps = QStringLiteral("video/showFps");
+const QString kShowOsd = QStringLiteral("video/showOsd");
 
 } // namespace
 
@@ -119,6 +121,30 @@ void AppSettings::setLastSettingsPage(const QString& page)
 {
     std::lock_guard lock(m_mutex);
     m_settings.setValue(kSettingsPage, page);
+}
+
+bool AppSettings::showFps() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_settings.value(kShowFps, false).toBool();
+}
+
+void AppSettings::setShowFps(bool on)
+{
+    std::lock_guard lock(m_mutex);
+    m_settings.setValue(kShowFps, on);
+}
+
+bool AppSettings::showOsd() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_settings.value(kShowOsd, true).toBool();
+}
+
+void AppSettings::setShowOsd(bool on)
+{
+    std::lock_guard lock(m_mutex);
+    m_settings.setValue(kShowOsd, on);
 }
 
 void AppSettings::sync()

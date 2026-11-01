@@ -39,8 +39,11 @@ public:
     public:
         virtual ~Window() = default;
         virtual void showOpenRomDialog() = 0;
-        // Save State to File… (save) or Load State from File… without a path.
-        virtual void showStateFileDialog(bool save) = 0;
+        // The file dialog of a command given no path.
+        enum class FileDialog { SaveState, LoadState, ExportBattery, ImportBattery };
+        virtual void showFileDialog(FileDialog dialog) = 0;
+        // Show FPS or Show On-Screen Messages changed in the settings.
+        virtual void displayChanged() = 0;
         // How the game plays now (speed, fast-forward, rewind): the window
         // sets its frame clock and the sound to match.
         struct Playback {
@@ -108,6 +111,7 @@ private:
     std::atomic<api::Session*> m_session{nullptr}; // set on the GUI thread, read on the emulation thread
     bool m_gameOpen = false; // emulation thread
     GameIdentity m_identity; // emulation thread
+    QString m_gameName;      // emulation thread: the ROM's file name, for file names
     mutable std::mutex m_slotsMutex;
     StateSlots m_slots; // under m_slotsMutex
     std::atomic<int> m_selectedSlot{1};
