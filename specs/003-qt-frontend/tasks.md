@@ -205,20 +205,20 @@ Real-time mode in `cutenes-api` (R3), test-first:
 
 Core rules apply: test first, with expectations from nesdev pages and
 documented ROM behavior. `contracts/core-additions.md`.
-- [ ] G060 Region override:
+- [x] G060 Region override:
   - tests: a forced PAL frame has 312 lines and runs at the PAL master
     clock; the `pal_apu_tests` verdicts hold when forced;
   - implementation, `core.set_region_override`, and Emulation > Region.
-- [ ] G061 Palette:
+- [x] G061 Palette:
   - tests: the 64- and 512-entry outputs; frame hashes do not depend on the
     palette;
   - implementation and `core.set_palette`;
   - View > Palette with built-in palettes and `.pal` loading.
-- [ ] G062 Game Genie:
+- [x] G062 Game Genie:
   - tests: decoding the nesdev worked examples; substitution with and
     without compare, on a test image;
   - implementation, `core.set_game_genie`, `core.decode_game_genie`.
-- [ ] G063 Core contract (`core-api.md`) amendments, capability rows, the
+- [x] G063 Core contract (`core-api.md`) amendments, capability rows, the
   golden catalog, the surface version MINOR bump, and the parity test.
 - [ ] G064 Manual checklist **M6**.
 

@@ -7,6 +7,7 @@ add_library(cutenes-core
     src/cutenes/system/scheduler.cpp
     src/cutenes/system/machine.cpp
     src/cutenes/bus/bus.cpp
+    src/cutenes/cheats/game_genie.cpp
     src/cutenes/serialize/save_state.cpp
     src/cutenes/cartridge/ines.cpp
     src/cutenes/cartridge/cart.cpp

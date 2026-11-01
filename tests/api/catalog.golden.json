@@ -327,6 +327,60 @@
       }
     },
     {
+      "description": "Decode a 6- or 8-letter Game Genie code",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "letters APZLGITYEOXUKSVN",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "mutating": false,
+      "name": "core.decode_game_genie",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "compare": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "value": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "address",
+          "value",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "description": "Disassemble forward from an address without executing",
       "inputSchema": {
         "additionalProperties": false,
@@ -1279,7 +1333,7 @@
       }
     },
     {
-      "description": "The timing region of the loaded cartridge",
+      "description": "The timing region in effect, and the override setting",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -1299,6 +1353,14 @@
             "minimum": 0,
             "type": "integer"
           },
+          "override": {
+            "enum": [
+              "auto",
+              "ntsc",
+              "pal"
+            ],
+            "type": "string"
+          },
           "region": {
             "enum": [
               "NTSC",
@@ -1310,6 +1372,7 @@
         },
         "required": [
           "region",
+          "override",
           "frame",
           "masterCycle"
         ],
@@ -1745,6 +1808,53 @@
       }
     },
     {
+      "description": "Replace the active Game Genie codes (any number; an empty list removes them)",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "codes": {
+            "description": "the codes",
+            "items": {
+              "description": "6 or 8 letters",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "codes"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.set_game_genie",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "codes": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "codes",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "description": "Choose the MMC3 IRQ revision (auto follows the header)",
       "inputSchema": {
         "additionalProperties": false,
@@ -1765,6 +1875,98 @@
       },
       "mutating": true,
       "name": "core.set_mmc3_revision",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Set the output colours: 64 or 512 XRGB entries, or a .pal file (192 or 1536 bytes); empty restores the default. Frame hashes stay the default palette's",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "contentEncoding": "base64",
+            "description": "base64",
+            "type": "string",
+            "x-maxDecodedBytes": 65536
+          },
+          "entries": {
+            "description": "XRGB8888: 64, or 512 by emphasis bits",
+            "items": {
+              "maximum": 16777215,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "maxItems": 512,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.set_palette",
+      "needsRom": false,
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "frame": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterCycle": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entries",
+          "frame",
+          "masterCycle"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Force NTSC or PAL timing (auto follows the header); applies at the next load or power-on",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "region": {
+            "enum": [
+              "auto",
+              "ntsc",
+              "pal"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "region"
+        ],
+        "type": "object"
+      },
+      "mutating": true,
+      "name": "core.set_region_override",
       "needsRom": false,
       "outputSchema": {
         "additionalProperties": false,
@@ -2754,5 +2956,5 @@
       }
     }
   ],
-  "surface": "0.1"
+  "surface": "0.2"
 }

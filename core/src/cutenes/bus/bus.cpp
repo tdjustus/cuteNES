@@ -49,12 +49,25 @@ std::uint8_t Bus::read(std::uint16_t addr)
     } else {
         // 0x6000-0xFFFF: PRG RAM (blargg reporting) + program ROM.
         if (m_cartridge != nullptr) {
-            value = m_cartridge->cpuRead(addr);
+            value = applyGameGenie(addr, m_cartridge->cpuRead(addr));
         }
     }
 
     m_openBus = value;
     return value;
+}
+
+std::uint8_t Bus::applyGameGenie(std::uint16_t addr, std::uint8_t cartridge) const
+{
+    if (addr < 0x8000) {
+        return cartridge;
+    }
+    for (const GameGenieCode& code : m_genie) {
+        if (code.address == addr && (!code.compare || *code.compare == cartridge)) {
+            return code.value;
+        }
+    }
+    return cartridge;
 }
 
 std::uint8_t Bus::peek(std::uint16_t addr) const
@@ -63,7 +76,7 @@ std::uint8_t Bus::peek(std::uint16_t addr) const
         return m_ram[addr & 0x07FF];
     }
     if (addr >= 0x6000) {
-        return m_cartridge != nullptr ? m_cartridge->cpuRead(addr) : 0;
+        return m_cartridge != nullptr ? applyGameGenie(addr, m_cartridge->cpuRead(addr)) : 0;
     }
     // Register regions: peeking must not disturb device state. The golden
     // nestest trace previews this space with the bus-high value.

@@ -129,6 +129,10 @@ void Machine::setVideoSink(IVideoSink*);
 void Machine::setAudioSink(IAudioSink*);
 ```
 
+`VideoFrame::referencePixels` (appended by feature 003) is the same frame
+in the default palette; it equals `pixels` unless `setPalette` is in use.
+Frame hashes are taken from it, so they never depend on the palette.
+
 Formats are fixed in [media-output.md](media-output.md). Sinks are called
 synchronously during `run*`/`step*`; bounded work only — the core never
 blocks on a slow sink (audio delivery is chunked, buffers bounded).
@@ -247,6 +251,29 @@ std::uint64_t Machine::frameCounter() const;
 std::uint64_t Machine::masterCycle() const;   // the sole time source
 ```
 
+## Feature 003 additions
+
+Specified in
+[specs/003-qt-frontend/contracts/core-additions.md](../../003-qt-frontend/contracts/core-additions.md),
+each test-first with nesdev expectations:
+
+```cpp
+// Region override: applies at the next loadCartridge or powerOn; a
+// running game is not retimed. region() reports the effective region.
+void Machine::setRegionOverride(std::optional<Region> region); // nullopt = header
+std::optional<Region> Machine::regionOverride() const;
+
+// Output colours: 64 entries (emphasis as the default palette's) or 512
+// (64 * e + i by PPUMASK emphasis bits); empty = default; else false.
+bool Machine::setPalette(std::span<const std::uint32_t> xrgb);
+
+// Game Genie: 6- or 8-letter codes (nesdev "Game Genie"); reads in
+// $8000-$FFFF are substituted, peek and readMemory included. Any number of
+// codes, a convenience beyond the accessory's three. Not saved in states.
+std::optional<GameGenieCode> decodeGameGenie(std::string_view code);
+void Machine::setGameGenieCodes(std::span<const GameGenieCode> codes);
+```
+
 ## Configuration
 
 ```cpp
@@ -277,6 +304,9 @@ table is therefore part of the contract:
 | Screen capture (FR-009) | `IVideoSink::onFrame` (consumer retains) |
 | Audio (FR-010) | `IAudioSink::onSamples` |
 | Region detect (FR-014) | `region()` |
+| Region override (003) | `setRegionOverride` / `regionOverride` |
+| Palette (003 FR-041) | `setPalette` |
+| Game Genie (003 FR-051) | `setGameGenieCodes` / `decodeGameGenie` |
 | Counters | `frameCounter` / `masterCycle` |
 | Run state (FR-008) | `runState` |
 | SRAM persistence (FR-006) | `sram()` / `loadSram` |

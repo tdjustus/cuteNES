@@ -11,6 +11,10 @@ namespace cutenes {
 struct VideoFrame {
     const std::uint32_t* pixels = nullptr;
     std::uint64_t frameIndex = 0;
+    // The same frame in the default palette: pixels itself unless a palette
+    // is set (Machine::setPalette). Frame hashes use it, so they never
+    // depend on the palette.
+    const std::uint32_t* referencePixels = nullptr;
 };
 
 // Sinks are called synchronously during run*/step* calls. Keep work bounded:

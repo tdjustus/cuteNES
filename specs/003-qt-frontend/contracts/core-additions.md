@@ -73,7 +73,34 @@ void Machine::setGameGenieCodes(std::span<const GameGenieCode> codes); // replac
 - **API**: `core.set_game_genie` (`codes`: an array of strings, with errors
   per invalid code) and `core.decode_game_genie` (`code`).
 
+## As built (G060-G063)
+
+- **Region.** `applyRegion` resolves the override, else the header, at
+  `loadCartridge` and `powerOn`, rebuilding the timing-dependent components
+  only when the region changes. The playtest harness's `region pal`
+  directive now uses the override instead of rewriting the header, so the
+  `pal_apu_tests` verdicts are the "holds when forced" test. In the GUI,
+  Emulation > Region is the `emulation.region` setting, applied before
+  every game loads; changing it during play says it takes effect at the
+  next power cycle (`gui.set_region` returns `pending`).
+- **Palette.** The PPU writes each pixel's palette index (`emphasis << 6 |
+  colour`) beside the default-palette RGB. With a palette set, the machine
+  colours the index buffer at frame delivery; `VideoFrame::referencePixels`
+  (an appended field) keeps the default-palette frame. Frame hashes are
+  taken from it, so every existing golden hash is unchanged, and a palette
+  can never change a determinism or replay check. Why not hash indices:
+  that would have changed every recorded hash for no gain. Built-in
+  palettes: the default, and the RGB PPU (2C03) table from the nesdev
+  "PPU palettes" page (`C = 255 * DAC / 7`). View > Palette also loads a
+  `.pal` file; the path is stored, and a file that has gone falls back to
+  the default.
+- **Game Genie.** The bus substitutes reads at a code's address in
+  `$8000-$FFFF`, in `read` and `peek`, so the CPU, DMA, `readMemory` and the
+  debugger agree. Codes live in the bus, which survives a region rebuild,
+  and are not serialized. The GUI's cheat list (FR-051) arrives in G7.
+
 ## Surface version
 
 The new `core.*` commands are a MINOR bump of the API surface (002 R9), from
-0.x to 0.(x+1). They are also added to the golden catalog.
+0.x to 0.(x+1). They are also added to the golden catalog. As built: 0.1 to
+0.2.

@@ -16,7 +16,7 @@ namespace cutenes::api {
 // catalog test (tests/api/catalog.golden.json) fails on any schema change,
 // so a change cannot land without a deliberate bump and golden update.
 inline constexpr int kSurfaceMajor = 0;
-inline constexpr int kSurfaceMinor = 1;
+inline constexpr int kSurfaceMinor = 2;
 std::string surfaceVersion();
 
 // The ordered set of commands available in this mode. Iteration order is

@@ -35,6 +35,8 @@ void Machine::Impl::buildComponents(Region region)
     });
 
     ppu->setVideoOutput(framebuffer.data());
+    ppu->setIndexOutput(indices.data());
+    buildPaletteTable(); // emphasis differs by region
     apu->setOutputRate(config.audioSampleRate);
     if (audioSink != nullptr) {
         apu->setAudioSink(audioSink);
@@ -53,6 +55,22 @@ void Machine::Impl::buildComponents(Region region)
     installTrace();
 }
 
+void Machine::Impl::applyRegion()
+{
+    const Region header = cart.info.region == Region::Pal ? Region::Pal : Region::Ntsc;
+    const Region region = regionOverride.value_or(header);
+    if (region == regionId) {
+        return;
+    }
+    // Rebuild the PPU/APU/CPU for the new timing profile in place (they are
+    // recreated, so no stale references survive). Sinks are kept.
+    buildComponents(region);
+    if (cart.mapper != nullptr) {
+        ppu->attachCartridge(&cart);
+        cart.attachScheduler(scheduler);
+    }
+}
+
 void Machine::Impl::installTrace()
 {
     if (!trace) {
@@ -66,12 +84,32 @@ void Machine::Impl::installTrace()
     });
 }
 
+void Machine::Impl::buildPaletteTable()
+{
+    if (palette.size() == 64) {
+        std::array<std::uint32_t, 64> base{};
+        std::copy(palette.begin(), palette.end(), base.begin());
+        paletteTable = Ppu::emphasisTable(base, regionId == Region::Pal);
+    } else if (palette.size() == 512) {
+        std::copy(palette.begin(), palette.end(), paletteTable.begin());
+    }
+}
+
 void Machine::Impl::deliverFrame()
 {
-    if (videoSink != nullptr) {
-        const VideoFrame frame{framebuffer.data(), frameCounter};
-        videoSink->onFrame(frame);
+    if (videoSink == nullptr) {
+        return;
     }
+    const std::uint32_t* pixels = framebuffer.data();
+    if (!palette.empty()) {
+        paletteFrame.resize(indices.size());
+        for (std::size_t i = 0; i < indices.size(); ++i) {
+            paletteFrame[i] = paletteTable[indices[i]];
+        }
+        pixels = paletteFrame.data();
+    }
+    const VideoFrame frame{pixels, frameCounter, framebuffer.data()};
+    videoSink->onFrame(frame);
 }
 
 // Execute instructions until the PPU emits its final visible pixel, keeping
@@ -113,15 +151,9 @@ LoadResult Machine::loadCartridge(const std::uint8_t* data, std::size_t size)
         return result;
     }
 
-    // Region resolves from the header (NES 2.0) with the NTSC default.
-    // A region change rebuilds every timing-dependent component.
-    const Region region =
-        result.info.region == Region::Pal ? Region::Pal : Region::Ntsc;
-    if (region != impl.regionId) {
-        // Rebuild the PPU/APU/CPU for the new timing profile in place (they
-        // are recreated, so no stale references survive). Sinks are kept.
-        impl.buildComponents(region);
-    }
+    // Region resolves from the override, else the header (NES 2.0) with
+    // the NTSC default.
+    impl.applyRegion();
     m_impl->ppu->attachCartridge(&m_impl->cart);
     m_impl->cart.attachScheduler(m_impl->scheduler);
     applyMmc3Revision(); // header default or the stored manual override
@@ -172,6 +204,7 @@ const CartridgeInfo& Machine::cartridgeInfo() const
 void Machine::powerOn()
 {
     auto& impl = *m_impl;
+    impl.applyRegion(); // a region override set since the load
     // Cold boot: zero the sole time source, reset the passive components,
     // then the CPU last — its 7-cycle reset drives PPU/APU catch-up, so the
     // machine ends at CYC:7 / PPU (0,21) exactly (nestest.log line 1).
@@ -269,6 +302,11 @@ std::uint8_t peekThunk(std::uint16_t addr)
         : 0;
 }
 } // namespace
+
+void Machine::setGameGenieCodes(std::span<const GameGenieCode> codes)
+{
+    m_impl->bus.setGameGenieCodes({codes.begin(), codes.end()});
+}
 
 std::uint8_t Machine::peek(std::uint16_t addr) const
 {
@@ -531,6 +569,30 @@ void Machine::debugSetProgramCounter(std::uint16_t pc)
 }
 
 Region Machine::region() const { return m_impl->regionId; }
+
+bool Machine::setPalette(std::span<const std::uint32_t> xrgb)
+{
+    if (!xrgb.empty() && xrgb.size() != 64 && xrgb.size() != 512) {
+        return false;
+    }
+    auto& impl = *m_impl;
+    impl.palette.assign(xrgb.begin(), xrgb.end());
+    for (std::uint32_t& colour : impl.palette) {
+        colour &= 0xFFFFFF; // XRGB: the X byte is unused
+    }
+    impl.buildPaletteTable();
+    return true;
+}
+
+void Machine::setRegionOverride(std::optional<Region> region)
+{
+    m_impl->regionOverride = region;
+}
+
+std::optional<Region> Machine::regionOverride() const
+{
+    return m_impl->regionOverride;
+}
 
 std::uint64_t Machine::frameCounter() const { return m_impl->frameCounter; }
 

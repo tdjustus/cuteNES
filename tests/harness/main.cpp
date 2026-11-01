@@ -856,17 +856,16 @@ bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry, const 
         why = "cannot read " + romPath;
         return false;
     }
-    if ((entry.forceSubmapper >= 0 || entry.forceRegion >= 0) && rom.size() >= 16) {
+    if (entry.forceSubmapper >= 0 && rom.size() >= 16) {
         // Test-only: promote the header to NES 2.0 and select the submapper
-        // (byte 7 bit 3; byte 13 low nibble) and/or TV system (byte 12 bits
-        // 0-1). Keeps PRG/CHR sizes; RAM bytes set to a safe 8K shift.
+        // (byte 7 bit 3; byte 13 low nibble). Keeps PRG/CHR sizes; RAM
+        // bytes set to a safe 8K shift.
         rom[7] = static_cast<std::uint8_t>((rom[7] & 0xF0) | 0x08);
         rom[8] = 0;
         rom[9] = 0;
         rom[10] = 7; // 8K PRG-RAM shift
         rom[11] = 0;
-        rom[12] = static_cast<std::uint8_t>(
-            entry.forceRegion >= 0 ? entry.forceRegion : 0);
+        rom[12] = 0;
         rom[13] = static_cast<std::uint8_t>(
             (rom[13] & 0xF0)
             | ((entry.forceSubmapper >= 0 ? entry.forceSubmapper : 0) & 0x0F));
@@ -874,6 +873,11 @@ bool runPlaytestEntry(const std::string& dir, const PlaytestEntry& entry, const 
         rom[15] = 0;
     }
     cutenes::Machine machine;
+    if (entry.forceRegion >= 0) {
+        // The core's region override (core-additions.md), as Emulation >
+        // Region uses it; the header stays as the ROM has it.
+        machine.setRegionOverride(entry.forceRegion == 1 ? cutenes::Region::Pal : cutenes::Region::Ntsc);
+    }
     const auto result = machine.loadCartridge(rom.data(), rom.size());
     if (!entry.expectError.empty()) {
         if (std::string(loadErrorName(result.error)) == entry.expectError) {

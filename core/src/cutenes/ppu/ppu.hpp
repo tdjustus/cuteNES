@@ -27,6 +27,14 @@ public:
 
     void attachCartridge(Cartridge* cartridge);
     void setVideoOutput(std::uint32_t* framebuffer);
+    // Each pixel's palette index: (emphasis bits << 6) | colour, 0-511,
+    // after greyscale. A consumer palette colours it (Machine::setPalette).
+    void setIndexOutput(std::uint16_t* indices);
+
+    // 8 emphasis variants (PPUMASK bits 5-7) of a 64-colour palette:
+    // entry 64 * e + i. PAL PPUs swap the red and green bits.
+    static std::array<std::uint32_t, 512> emphasisTable(const std::array<std::uint32_t, 64>& base, bool pal);
+    static const std::array<std::uint32_t, 64>& defaultPalette() { return kPalette; }
 
     // NMI line: vblank flag AND enable (the CPU samples and edge-detects).
     bool consumeNmiKill() override
@@ -134,6 +142,7 @@ private:
     Scheduler& m_sched;
     Cartridge* m_cart = nullptr;
     std::uint32_t* m_frame = nullptr; // consumer-owned 256x240 buffer
+    std::uint16_t* m_indices = nullptr; // consumer-owned 256x240 palette indices
 
     // Register file + scroll latches.
     std::uint8_t m_ctrl = 0, m_mask = 0, m_status = 0;
@@ -198,10 +207,9 @@ private:
     std::uint64_t m_ignoreWritesUntil = 0; // master clock
 
     static const std::array<std::uint32_t, 64> kPalette;
-    // 8 emphasis variants of kPalette (PPUMASK bits 5-7), built at
-    // construction (region-dependent red/green swap on PAL).
-    void buildEmphasisTables();
-    std::array<std::array<std::uint32_t, 64>, 8> m_emphasis{};
+    // emphasisTable(kPalette), built at construction (region-dependent
+    // red/green swap on PAL).
+    std::array<std::uint32_t, 512> m_emphasis{};
 };
 
 } // namespace cutenes

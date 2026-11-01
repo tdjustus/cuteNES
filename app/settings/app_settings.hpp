@@ -74,6 +74,7 @@ public:
         QString filter = QStringLiteral("nearest");
         bool alwaysOnTop = false;
         QString pacing = QStringLiteral("auto"); // auto, display or audio (R4)
+        QString palette = QStringLiteral("default"); // a built-in name, or a .pal file's path
         bool operator==(const VideoSettings&) const = default;
     };
     VideoSettings video() const;
@@ -99,6 +100,7 @@ public:
         bool pauseWhenInactive = true;
         bool resumeOnOpen = false;
         int fastForwardSpeed = 300;
+        QString region = QStringLiteral("auto"); // auto, ntsc or pal (Emulation > Region)
     };
     EmulationSettings emulation() const;
     void setEmulation(const EmulationSettings& emulation);

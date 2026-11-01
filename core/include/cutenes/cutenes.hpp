@@ -5,6 +5,7 @@
 
 #include <cutenes/cartridge.hpp>
 #include <cutenes/controller.hpp>
+#include <cutenes/game_genie.hpp>
 #include <cutenes/machine.hpp>
 #include <cutenes/media.hpp>
 #include <cutenes/save_state.hpp>

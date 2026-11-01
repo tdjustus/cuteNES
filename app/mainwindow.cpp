@@ -5,6 +5,7 @@
 #include "dialogs/settings_dialog.hpp"
 #include "library/library_browser.hpp"
 #include "library/library_index.hpp"
+#include "media/palettes.hpp"
 
 #include <cutenes/qt/audio_output.hpp>
 #include <cutenes/qt/emulation_view.hpp>
@@ -119,7 +120,7 @@ constexpr double kPalFps = 50.0070;
 // The actions implemented so far (G1, G2), and those of them that need a
 // game (contract "Game" column). Settings pages arrive with their phases.
 const QStringList kImplemented = {
-    QStringLiteral("gui.open_rom"), QStringLiteral("gui.close_game"),
+    QStringLiteral("gui.open_rom"), QStringLiteral("gui.set_region"), QStringLiteral("gui.set_palette"), QStringLiteral("gui.close_game"),
     QStringLiteral("gui.toggle_pause"), QStringLiteral("gui.reset"),
     QStringLiteral("gui.power_cycle"), QStringLiteral("gui.exit"),
     QStringLiteral("gui.show_about"), QStringLiteral("gui.show_library"),
@@ -549,6 +550,7 @@ void MainWindow::createMenus()
         none);
     MenuBuilder palette = view.submenu(tr("&Palette"));
     palette.item(tr("Default"), "gui.set_palette", {}, {{QStringLiteral("name"), QStringLiteral("default")}});
+    palette.item(tr("RGB PPU (2C03)"), "gui.set_palette", {}, {{QStringLiteral("name"), QStringLiteral("rgb")}});
     palette.item(tr("Load .pal…"), "gui.set_palette");
     view.separator();
     view.item(tr("Show &FPS"), "gui.toggle_fps")->setCheckable(true);
@@ -1219,6 +1221,13 @@ void MainWindow::sessionEvent(const api::Event& event)
         return;
     }
     if (event.type != "run_state_changed") return;
+    // A power-on may have changed the region (Emulation > Region): the
+    // frame clock follows the region in effect.
+    const double rate = m_session->machine().region() == Region::Pal ? kPalFps : kNtscFps;
+    if (rate != m_consoleRate.load()) {
+        m_consoleRate = rate;
+        playbackChanged(playback());
+    }
     m_pausedByAutomation = event.data.value("pausedByAutomation", false);
     const std::string runState = event.data.value("runState", "");
     // Stale sound never plays after a pause or a closed game (R4).
@@ -1376,6 +1385,12 @@ void MainWindow::showFileDialog(FileDialog dialog)
 {
     // Callable from any thread, like showOpenRomDialog.
     QMetaObject::invokeMethod(this, [this, dialog] {
+        if (dialog == FileDialog::Palette) {
+            const QString path = QFileDialog::getOpenFileName(this, tr("Load Palette"), library().root(),
+                tr("Palettes (*.pal)"));
+            if (!path.isEmpty()) runCommand(QStringLiteral("gui.set_palette"), {{QStringLiteral("path"), path}});
+            return;
+        }
         const bool battery = dialog == FileDialog::ExportBattery || dialog == FileDialog::ImportBattery;
         const bool save = dialog == FileDialog::SaveState || dialog == FileDialog::ExportBattery;
         const QString folder = library().folder(battery ? Library::Folder::Saves : Library::Folder::States);
@@ -1387,6 +1402,7 @@ void MainWindow::showFileDialog(FileDialog dialog)
         case FileDialog::LoadState: title = tr("Load State from File"); command = QStringLiteral("gui.load_state_file"); break;
         case FileDialog::ExportBattery: title = tr("Export Battery Save"); command = QStringLiteral("gui.export_battery_save"); break;
         case FileDialog::ImportBattery: title = tr("Import Battery Save"); command = QStringLiteral("gui.import_battery_save"); break;
+        case FileDialog::Palette: break;
         }
         const QString path = save ? QFileDialog::getSaveFileName(this, title, folder, filter)
                                   : QFileDialog::getOpenFileName(this, title, folder, filter);
@@ -1483,7 +1499,7 @@ void MainWindow::applyVideo()
         static const QStringList checked = {QStringLiteral("gui.set_scale"), QStringLiteral("gui.toggle_fullscreen"),
             QStringLiteral("gui.toggle_integer_scaling"), QStringLiteral("gui.set_aspect"),
             QStringLiteral("gui.set_filter"), QStringLiteral("gui.toggle_always_on_top"),
-            QStringLiteral("gui.set_overscan")};
+            QStringLiteral("gui.set_overscan"), QStringLiteral("gui.set_region"), QStringLiteral("gui.set_palette")};
         if (checked.contains(command)) action->setCheckable(true);
         if (command == QLatin1String("gui.set_scale")) {
             action->setChecked(args.value(QStringLiteral("scale")).toInt() == v.scale);
@@ -1497,6 +1513,12 @@ void MainWindow::applyVideo()
             action->setChecked(args.value(QStringLiteral("filter")).toString() == v.filter);
         } else if (command == QLatin1String("gui.toggle_always_on_top")) {
             action->setChecked(v.alwaysOnTop);
+        } else if (command == QLatin1String("gui.set_region")) {
+            action->setChecked(args.value(QStringLiteral("region")).toString() == m_settings.emulation().region);
+        } else if (command == QLatin1String("gui.set_palette")) {
+            // A built-in by name; Load .pal… is checked while a file is in use.
+            const bool file = !builtinPalette(v.palette).has_value();
+            action->setChecked(args.isEmpty() ? file : args.value(QStringLiteral("name")).toString() == v.palette);
         } else if (command == QLatin1String("gui.set_overscan")) {
             const bool none = v.overscanTop == 0 && v.overscanBottom == 0 && v.overscanLeft == 0 && v.overscanRight == 0;
             const bool tv = v.overscanTop == 8 && v.overscanBottom == 8 && v.overscanLeft == 0 && v.overscanRight == 0;

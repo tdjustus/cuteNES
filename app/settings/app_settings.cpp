@@ -218,6 +218,7 @@ AppSettings::VideoSettings AppSettings::video() const
     v.filter = get("filter", v.filter).toString();
     v.alwaysOnTop = get("alwaysOnTop", v.alwaysOnTop).toBool();
     v.pacing = get("pacing", v.pacing).toString();
+    v.palette = get("palette", v.palette).toString();
     return v;
 }
 
@@ -238,6 +239,7 @@ void AppSettings::setVideo(const VideoSettings& v)
     set("filter", v.filter);
     set("alwaysOnTop", v.alwaysOnTop);
     set("pacing", v.pacing);
+    set("palette", v.palette);
 }
 
 AppSettings::AudioSettings AppSettings::audio() const
@@ -269,6 +271,7 @@ AppSettings::EmulationSettings AppSettings::emulation() const
     e.pauseWhenInactive = m_settings.value(QStringLiteral("emulation/pauseWhenInactive"), e.pauseWhenInactive).toBool();
     e.resumeOnOpen = m_settings.value(QStringLiteral("emulation/resumeOnOpen"), e.resumeOnOpen).toBool();
     e.fastForwardSpeed = m_settings.value(QStringLiteral("emulation/fastForwardSpeed"), e.fastForwardSpeed).toInt();
+    e.region = m_settings.value(QStringLiteral("emulation/region"), e.region).toString();
     return e;
 }
 
@@ -278,6 +281,7 @@ void AppSettings::setEmulation(const EmulationSettings& e)
     m_settings.setValue(QStringLiteral("emulation/pauseWhenInactive"), e.pauseWhenInactive);
     m_settings.setValue(QStringLiteral("emulation/resumeOnOpen"), e.resumeOnOpen);
     m_settings.setValue(QStringLiteral("emulation/fastForwardSpeed"), e.fastForwardSpeed);
+    m_settings.setValue(QStringLiteral("emulation/region"), e.region);
 }
 
 AppSettings::InputSettings AppSettings::input() const

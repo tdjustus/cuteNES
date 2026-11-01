@@ -42,7 +42,7 @@ public:
         virtual ~Window() = default;
         virtual void showOpenRomDialog() = 0;
         // The file dialog of a command given no path.
-        enum class FileDialog { SaveState, LoadState, ExportBattery, ImportBattery };
+        enum class FileDialog { SaveState, LoadState, ExportBattery, ImportBattery, Palette };
         virtual void showFileDialog(FileDialog dialog) = 0;
         // Show FPS or Show On-Screen Messages changed in the settings.
         virtual void displayChanged() = 0;
@@ -156,6 +156,11 @@ private:
     // Validates `value` for a video.* key, saves it and has the window apply
     // it. Returns {key, value} as saved.
     api::Result setVideo(const std::string& key, const api::Json& value, bool showPage = false);
+    // Emulation > Region and View > Palette (G060-G061), and applying both
+    // to the core before a game loads.
+    api::Result setRegion(api::CallContext& ctx, const api::Json& value);
+    api::Result setPalette(api::CallContext& ctx, const QString& name, const QString& path);
+    void applyCoreSettings(api::CallContext& ctx);
 
     Window& m_window;
     AppSettings& m_settings;

@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <vector>
 #include <memory>
+#include <optional>
 
 namespace cutenes {
 
@@ -186,11 +187,15 @@ struct Machine::Impl {
     explicit Impl(const MachineConfig& config);
 
     void buildComponents(Region region);
+    // The override, else the header (NTSC when unspecified); rebuilds the
+    // timing-dependent components when that differs from the current one.
+    void applyRegion();
     void deliverFrame();
     void runUntilFrameComplete();
 
     MachineConfig config;
     Region regionId = Region::Ntsc;
+    std::optional<Region> regionOverride;
     const RegionProfile* profile = &regionProfile(Region::Ntsc);
     Scheduler scheduler{*profile};
     Bus bus;
@@ -208,7 +213,14 @@ struct Machine::Impl {
     // means tracing is off.
     std::function<void(const TracePoint&)> trace;
     void installTrace();
-    std::array<std::uint32_t, 256 * 240> framebuffer{};
+    std::array<std::uint32_t, 256 * 240> framebuffer{}; // the default palette
+    std::array<std::uint16_t, 256 * 240> indices{};     // Ppu::setIndexOutput
+    // setPalette: the caller's entries, and the 512-entry table and frame
+    // they make (64 entries get the region's emphasis when it is built).
+    std::vector<std::uint32_t> palette;
+    std::array<std::uint32_t, 512> paletteTable{};
+    std::vector<std::uint32_t> paletteFrame;
+    void buildPaletteTable();
     std::vector<std::uint8_t> stateBlob;
 
     std::uint16_t cartridgeId() const;

@@ -168,6 +168,28 @@ TEST(ApiCore, Mmc3RevisionRoundTrips)
     EXPECT_EQ(ok(s, "core.get_mmc3_revision")["revision"], "A");
 }
 
+// core-additions.md "Region override": the override applies at the next
+// load or power-on, and core.region reports it beside the effective region.
+TEST(ApiCore, RegionOverrideAppliesAtTheNextLoadOrPowerOn)
+{
+    Session s(testConfig());
+    EXPECT_EQ(ok(s, "core.region")["override"], "auto");
+    ok(s, "core.set_region_override", {{"region", "pal"}});
+    loadTiny(s); // an iNES 1.0 header: NTSC by default
+    Json region = ok(s, "core.region");
+    EXPECT_EQ(region["region"], "PAL");
+    EXPECT_EQ(region["override"], "pal");
+
+    ok(s, "core.set_region_override", {{"region", "auto"}});
+    EXPECT_EQ(ok(s, "core.region")["region"], "PAL") << "not retimed until power-on";
+    ok(s, "core.power_on");
+    region = ok(s, "core.region");
+    EXPECT_EQ(region["region"], "NTSC");
+    EXPECT_EQ(region["override"], "auto");
+
+    EXPECT_TRUE(s.call("core.set_region_override", {{"region", "secam"}}).isError());
+}
+
 TEST(ApiCore, CpuRegistersWriteAndForceBit5)
 {
     Session s(testConfig());
@@ -280,6 +302,70 @@ TEST(ApiCore, ScreenRawIsTheFrameBytes)
     ASSERT_EQ(bytes.size(), 256u * 240u * 4u);
     EXPECT_EQ(media::hashHex(media::fnv1a32(bytes.data(), bytes.size())), raw["frameHash"].get<std::string>());
     EXPECT_EQ(raw["frameIndex"].get<std::uint64_t>() + 1, raw["frame"].get<std::uint64_t>());
+}
+
+// core-additions.md "Palette": the palette colours the screen, the frame
+// hash stays the default palette's, and a .pal file is 192 or 1536 bytes
+// of RGB triplets (nesdev "PPU palettes").
+TEST(ApiCore, APaletteColoursTheScreenButNotTheHash)
+{
+    const auto firstPixel = [](Session& s) {
+        const auto bytes = download(s, ok(s, "core.screen", {{"format", "raw"}})["blobId"]);
+        return std::uint32_t(bytes[0]) | std::uint32_t(bytes[1]) << 8 | std::uint32_t(bytes[2]) << 16;
+    };
+    Session plain(testConfig());
+    loadTiny(plain);
+    ok(plain, "core.run_frames", {{"frames", 3}});
+    const Json hash = ok(plain, "core.frame_hash")["frameHash"];
+
+    Session s(testConfig());
+    ok(s, "core.set_palette", {{"entries", Json(std::vector<std::uint32_t>(64, 0xFF00FF))}});
+    loadTiny(s);
+    ok(s, "core.run_frames", {{"frames", 3}});
+    EXPECT_EQ(firstPixel(s), 0xFF00FFu);
+    EXPECT_EQ(ok(s, "core.frame_hash")["frameHash"], hash) << "the hash ignores the palette";
+
+    std::vector<std::uint8_t> pal;
+    for (int i = 0; i < 64; ++i) pal.insert(pal.end(), {0x10, 0x20, 0x30});
+    ok(s, "core.set_palette", {{"bytes", media::base64Encode(pal)}});
+    ok(s, "core.run_frames", {{"frames", 1}});
+    EXPECT_EQ(firstPixel(s), 0x102030u);
+
+    ok(s, "core.set_palette", {{"entries", Json::array()}});
+    ok(s, "core.run_frames", {{"frames", 1}});
+    EXPECT_EQ(firstPixel(s), firstPixel(plain)) << "empty restores the default";
+
+    EXPECT_TRUE(s.call("core.set_palette", {{"entries", Json(std::vector<std::uint32_t>(100, 0))}}).isError());
+    EXPECT_TRUE(s.call("core.set_palette", {{"bytes", media::base64Encode(std::vector<std::uint8_t>(100))}}).isError());
+    EXPECT_TRUE(s.call("core.set_palette", Json::object()).isError()) << "entries or bytes";
+}
+
+// core-additions.md "Game Genie": GOSSIP is $D1DD = $14 (nesdev "Game
+// Genie"); a set with any invalid code is refused whole, naming each one.
+TEST(ApiCore, GameGenieCodesDecodeAndPatchReads)
+{
+    Session s(testConfig());
+    const Json decoded = ok(s, "core.decode_game_genie", {{"code", "GOSSIP"}});
+    EXPECT_EQ(decoded["address"], 0xD1DD);
+    EXPECT_EQ(decoded["value"], 0x14);
+    EXPECT_FALSE(decoded.contains("compare"));
+    EXPECT_EQ(ok(s, "core.decode_game_genie", {{"code", "ZEXPYGLA"}})["compare"], 0x03);
+    EXPECT_TRUE(s.call("core.decode_game_genie", {{"code", "HELLO1"}}).isError());
+
+    loadTiny(s);
+    const std::uint8_t original = peekByte(s, 0xD1DD);
+    ASSERT_NE(original, 0x14);
+    EXPECT_EQ(ok(s, "core.set_game_genie", {{"codes", {"GOSSIP"}}})["codes"], 1);
+    EXPECT_EQ(peekByte(s, 0xD1DD), 0x14);
+
+    const Result bad = s.call("core.set_game_genie", {{"codes", {"GOSSIP", "BADBAD", "ZEXPY"}}});
+    ASSERT_TRUE(bad.isError());
+    EXPECT_EQ(bad.error->data["path"], "/codes/1");
+    EXPECT_EQ(bad.error->data["invalid"], Json({1, 2}));
+    EXPECT_EQ(peekByte(s, 0xD1DD), 0x14) << "a refused set leaves the codes as they were";
+
+    ok(s, "core.set_game_genie", {{"codes", Json::array()}});
+    EXPECT_EQ(peekByte(s, 0xD1DD), original);
 }
 
 TEST(ApiCore, AudioArrivesInMasterCycleOrder)
