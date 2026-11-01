@@ -40,6 +40,7 @@ inline app::MainWindow::Options windowOptions(QString* folder = nullptr)
     options.settingsFile = dir + QStringLiteral("/cutenes.ini");
     options.libraryRoot = dir + QStringLiteral("/library");
     options.indexCacheFile = dir + QStringLiteral("/library-index.json");
+    options.tokenDir = dir + QStringLiteral("/tokens"); // never the user's own
     options.batteryInterval = std::chrono::milliseconds(100);
     options.openExternally = false;
     return options;

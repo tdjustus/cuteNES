@@ -1,6 +1,7 @@
 #include "host/servers.hpp"
 
 #include <cutenes/api/token.hpp>
+#include <cutenes/mcp/bridge.hpp>
 #include <cutenes/mcp/http.hpp>
 #include <cutenes/mcp/server.hpp>
 
@@ -17,8 +18,14 @@ namespace {
 const char* const kApiTokenFile = "api.token";
 const char* const kMcpTokenFile = "mcp.token";
 
-void removeFile(const std::filesystem::path& path)
+// Every cuteNES on the machine shares the token files and the latest to
+// start a server owns them, so a file goes only while it holds `token`:
+// never one of another instance, which a client may be attached to.
+void removeOwnFile(const std::filesystem::path& path, const std::string& token)
 {
+    std::string error;
+    const auto file = mcp::readTokenFile(path, error);
+    if (token.empty() || !file || file->token != token) return;
     std::error_code ec;
     std::filesystem::remove(path, ec);
 }
@@ -56,7 +63,7 @@ bool Servers::apply(bool api, int apiPort, bool mcp, int mcpPort, QString* error
             m_apiToken = config.token;
         } else {
             server.reset();
-            removeFile(m_tokenDir / kApiTokenFile);
+            removeOwnFile(m_tokenDir / kApiTokenFile, config.token);
             if (error) *error = QObject::tr("The API could not start: %1").arg(text(why));
             stopMcp();
             return false;
@@ -76,7 +83,7 @@ bool Servers::apply(bool api, int apiPort, bool mcp, int mcpPort, QString* error
             m_mcpToken = config.token;
         } else {
             server.reset();
-            removeFile(m_tokenDir / kMcpTokenFile);
+            removeOwnFile(m_tokenDir / kMcpTokenFile, config.token);
             if (error) *error = QObject::tr("The MCP server could not start: %1").arg(text(why));
             return false;
         }
@@ -97,16 +104,16 @@ void Servers::stopMcp()
     if (m_mcpHttp) m_mcpHttp->stop();
     m_mcpHttp.reset();
     m_mcp.reset();
+    removeOwnFile(m_tokenDir / kMcpTokenFile, m_mcpToken);
     m_mcpToken.clear();
-    removeFile(m_tokenDir / kMcpTokenFile);
 }
 
 void Servers::stopApi()
 {
     if (m_api) m_api->stop();
     m_api.reset();
+    removeOwnFile(m_tokenDir / kApiTokenFile, m_apiToken);
     m_apiToken.clear();
-    removeFile(m_tokenDir / kApiTokenFile);
 }
 
 Servers::Listener Servers::api() const

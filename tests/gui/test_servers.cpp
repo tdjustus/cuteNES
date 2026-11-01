@@ -37,13 +37,11 @@ Json call(MainWindow& w, const char* name, const Json& args = Json::object())
     return r.value;
 }
 
-// Options whose token files go in the test's own folder, with ports any
-// free one (0) so tests never collide.
+// Options whose token folder the test reads (windowOptions gives every
+// window its own); ports are any free one (0) so tests never collide.
 MainWindow::Options serverOptions(QString* tokenDir)
 {
-    QString folder;
-    MainWindow::Options options = windowOptions(&folder);
-    options.tokenDir = folder + QStringLiteral("/tokens");
+    MainWindow::Options options = windowOptions();
     if (tokenDir) *tokenDir = options.tokenDir;
     return options;
 }
@@ -154,6 +152,56 @@ TEST(GuiServers, ApiOffEndsTheListenersAndThePlayGoesOn)
     const auto frame = call(w, "core.counters")["frame"].get<std::uint64_t>();
     EXPECT_TRUE(waitUntil([&] { return call(w, "core.counters")["frame"].get<std::uint64_t>() > frame + 10; }))
         << "the game plays on";
+}
+
+// The token files are shared by every cuteNES on the machine, and the
+// latest one to start its server owns them: a window removes a token file
+// only when the file still holds its own token. A window that never served
+// (servers off, or a second copy of the application) leaves alone those of
+// the instance a client is attached to, and so does one whose files
+// another launch has replaced since.
+TEST(GuiServers, AWindowRemovesOnlyItsOwnTokenFiles)
+{
+    QString tokens;
+    const MainWindow::Options options = serverOptions(&tokens);
+    const QString mcpFile = tokens + QStringLiteral("/mcp.token");
+    const QString apiFile = tokens + QStringLiteral("/api.token");
+    const auto otherLaunch = [&] {
+        std::string error;
+        EXPECT_TRUE(cutenes::api::token::writeFile(mcpFile.toStdString(), "http://127.0.0.1:1/mcp", "other", error));
+        EXPECT_TRUE(cutenes::api::token::writeFile(apiFile.toStdString(), "http://127.0.0.1:2/api/v1", "other", error));
+    };
+    const auto stillTheOtherLaunchs = [&] {
+        const auto mcp = readToken(mcpFile);
+        const auto api = readToken(apiFile);
+        return mcp && api && mcp->token == "other" && api->token == "other";
+    };
+
+    otherLaunch();
+    {
+        MainWindow w(options);
+        w.show();
+    }
+    EXPECT_TRUE(stillTheOtherLaunchs()) << "a window that never served removed them";
+
+    otherLaunch();
+    {
+        MainWindow w(options);
+        w.show();
+        anyPorts(w);
+        call(w, "gui.set_setting", {{"key", "servers.mcpEnabled"}, {"value", true}});
+        std::optional<TokenFile> own;
+        ASSERT_TRUE(waitUntil([&] {
+            own = readToken(apiFile);
+            return own && own->token != "other" && QFile::exists(mcpFile);
+        })) << "the window took the token files over";
+        otherLaunch();
+        call(w, "gui.set_setting", {{"key", "servers.mcpEnabled"}, {"value", false}});
+        call(w, "gui.set_setting", {{"key", "servers.apiEnabled"}, {"value", false}});
+        ASSERT_TRUE(waitUntil([&] { return !rpc(*own, "api.version"); })) << "the window's API stopped";
+        EXPECT_TRUE(stillTheOtherLaunchs()) << "turning the servers off removed another launch's files";
+    }
+    EXPECT_TRUE(stillTheOtherLaunchs()) << "closing the window removed another launch's files";
 }
 
 TEST(GuiServers, TheIndicatorShowsAClientAndAnAutomationPause)
