@@ -31,7 +31,8 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QStandardPaths>
-#include <QStatusBar>
+#include <QLabel>
+#include <QTimer>
 #include <QLocale>
 #include <QIcon>
 #include <QPixmap>
@@ -194,6 +195,17 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_pages->addWidget(m_browser);
     m_pages->addWidget(m_view);
     setCentralWidget(m_pages);
+    m_osd = new QLabel(m_pages);
+    m_osd->setObjectName(QStringLiteral("osdMessage"));
+    m_osd->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_osd->setStyleSheet(QStringLiteral(
+        "QLabel { color: white; background: rgba(0, 0, 0, 170); border-radius: 6px; padding: 6px 10px; }"));
+    m_osd->hide();
+    m_osdTimer = new QTimer(this);
+    m_osdTimer->setSingleShot(true);
+    m_osdTimer->setInterval(2500);
+    connect(m_osdTimer, &QTimer::timeout, m_osd, &QWidget::hide);
+    m_pages->installEventFilter(this);
     m_audio = std::make_unique<qt::AudioOutput>();
     m_audio->open(); // silent if no device (spec US7-5)
 
@@ -524,8 +536,7 @@ void MainWindow::showError(const QString& name, const api::Error& error)
     // in the middle of play.
     if (error.name == "NotFound" && (name == QLatin1String("gui.load_state") || name == QLatin1String("gui.quick_load")
             || name == QLatin1String("gui.undo_load_state"))) {
-        statusBar()->showMessage(text, 3000);
-        emit messageShown(text);
+        showOsd(text);
         emit commandFailed(name, text);
         return;
     }
@@ -755,10 +766,26 @@ void MainWindow::showStateFileDialog(bool save)
 
 void MainWindow::showMessage(const QString& text)
 {
-    QMetaObject::invokeMethod(this, [this, text] {
-        statusBar()->showMessage(text, 3000);
-        emit messageShown(text);
-    }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(this, [this, text] { showOsd(text); }, Qt::QueuedConnection);
+}
+
+void MainWindow::showOsd(const QString& text)
+{
+    // The message floats over the page, so it never takes room from the
+    // game (a status bar did, for good).
+    m_osd->setText(text);
+    m_osd->adjustSize();
+    placeOsd();
+    m_osd->show();
+    m_osd->raise();
+    m_osdTimer->start();
+    emit messageShown(text);
+}
+
+void MainWindow::placeOsd()
+{
+    constexpr int kMargin = 12;
+    m_osd->move(kMargin, m_pages->height() - m_osd->height() - kMargin);
 }
 
 void MainWindow::updateSlotMenus()
@@ -861,6 +888,9 @@ void MainWindow::pushInput()
 bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 {
     switch (event->type()) {
+    case QEvent::Resize:
+        if (watched == m_pages) placeOsd();
+        break;
     case QEvent::FileOpen: // macOS "Open With" and drops on the Dock icon
         if (watched == qApp) {
             openRom(static_cast<QFileOpenEvent*>(event)->file());

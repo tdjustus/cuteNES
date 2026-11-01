@@ -7,11 +7,14 @@
 #include "mainwindow.hpp"
 #include "persistence/state_slots.hpp"
 
+#include <cutenes/qt/emulation_view.hpp>
+
 #include <QAction>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QTemporaryDir>
@@ -285,4 +288,30 @@ TEST(GuiStates, TheLibraryCountsAGamesStates)
         }
         return false;
     })) << "the library index refreshes after the close";
+}
+
+// A bug the maintainer found: the first message added a status bar, which
+// took its height from the game view for good. Messages float over the
+// game and never resize it.
+TEST(GuiStates, AMessageNeverResizesTheGameView)
+{
+    MainWindow w(windowOptions());
+    w.show();
+    QStringList messages;
+    QObject::connect(&w, &MainWindow::messageShown, [&](const QString& text) { messages << text; });
+    openPaused(w);
+    ASSERT_TRUE(waitUntil([&] { return w.view()->isVisible(); }));
+    const QSize window = w.size();
+    const QSize view = w.view()->size();
+    call(w, "gui.save_state", {{"slot", 1}});
+    ASSERT_TRUE(waitUntil([&] { return !messages.isEmpty(); }));
+    QCoreApplication::processEvents();
+    EXPECT_EQ(w.view()->size(), view);
+    EXPECT_EQ(w.size(), window);
+    auto* osd = w.findChild<QLabel*>(QStringLiteral("osdMessage"));
+    ASSERT_NE(osd, nullptr);
+    EXPECT_TRUE(osd->isVisible());
+    EXPECT_EQ(osd->text(), QStringLiteral("State saved to slot 1"));
+    EXPECT_TRUE(waitUntil([&] { return !osd->isVisible(); }, 6000)) << "it goes away by itself";
+    EXPECT_EQ(w.view()->size(), view);
 }

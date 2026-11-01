@@ -27,8 +27,10 @@
 #include <memory>
 #include <mutex>
 
+class QLabel;
 class QMenu;
 class QStackedWidget;
+class QTimer;
 
 namespace cutenes::qt {
 class AudioOutput;
@@ -133,6 +135,8 @@ private:
     void wireActions();
     void rebuildRecentMenu();
     void updateSlotMenus(); // GUI thread: each slot's time and thumbnail
+    void showOsd(const QString& text); // GUI thread
+    void placeOsd();
     void setRunState(const QString& runState);    // GUI thread
     void showGame();
     void returnToGame();
@@ -156,6 +160,8 @@ private:
     LibraryIndex* m_index = nullptr;
     QMenu* m_recentMenu = nullptr;
     QAction* m_pauseAction = nullptr;
+    QLabel* m_osd = nullptr; // on-screen messages, over the page
+    QTimer* m_osdTimer = nullptr;
     QMenu* m_saveStateMenu = nullptr;
     QMenu* m_loadStateMenu = nullptr;
     QMenu* m_selectSlotMenu = nullptr;
