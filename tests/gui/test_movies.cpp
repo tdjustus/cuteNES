@@ -100,6 +100,15 @@ void hold(MainWindow& w, Json buttons)
     call(w, "core.set_controller", {{"port", 1}, {"buttons", std::move(buttons)}});
 }
 
+// The program's running sum at $20 (the picture shows only its colour, and
+// several colours are the same black, so pictures can match when sums do
+// not).
+int sum(MainWindow& w)
+{
+    const Json r = call(w, "core.peek", {{"addr", 0x20}, {"length", 1}});
+    return static_cast<unsigned char>(QByteArray::fromBase64(QByteArray::fromStdString(r["bytes"].get<std::string>()))[0]);
+}
+
 std::string hash(MainWindow& w)
 {
     return call(w, "core.frame_hash")["frameHash"].get<std::string>();
@@ -233,18 +242,23 @@ TEST(GuiMovies, AMovieFromAStateReplaysToTheSameFinalFrame)
     call(w, "gui.toggle_pause");
     const int frames = call(w, "gui.stop_movie")["frames"].get<int>();
     const std::string recorded = hash(w);
+    const int recordedSum = sum(w);
     const CnmFile cnm = readCnm(path);
     EXPECT_EQ(cnm.header.value(QStringLiteral("start")).toString(), QStringLiteral("state"));
     EXPECT_FALSE(QByteArray::fromBase64(cnm.header.value(QStringLiteral("state")).toString().toLatin1()).isEmpty());
 
-    // The game goes on somewhere else first: exactly 3 frames of Up+A, which
-    // read as $88 and add 24 (mod 64) to the colour. A count of frames by
-    // the clock could land on a multiple of 8, the same colour again.
+    // The game goes on somewhere else first: 3 frames of Up+A, read as $88
+    // once per vblank the program sees (2 or 3 of them, as the pause fell),
+    // so the sum moves on: k x $88 is 0 mod 256 only for k a multiple of 32.
+    // The picture cannot show it reliably: $20 & $3F may land on another of
+    // the palette's blacks, the same frame hash.
     hold(w, {"Up", "A"});
     call(w, "core.run_frames", {{"frames", 3}});
-    EXPECT_NE(hash(w), recorded);
+    EXPECT_NE(sum(w), recordedSum);
+    hold(w, Json::array());
     call(w, "gui.play_movie", {{"path", path.toStdString()}});
     playToTheEnd(w);
+    EXPECT_EQ(sum(w), recordedSum);
     EXPECT_EQ(hash(w), recorded);
     EXPECT_EQ(call(w, "gui.movie_status")["frames"], 0) << "no movie once it ends";
     (void)frames;
