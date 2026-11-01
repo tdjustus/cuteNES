@@ -2,6 +2,7 @@
 
 #include "about_dialog.hpp"
 #include "dialogs/cheats_window.hpp"
+#include "dialogs/debugger_window.hpp"
 #include "dialogs/key_bindings_page.hpp"
 #include "dialogs/settings_dialog.hpp"
 #include "library/library_browser.hpp"
@@ -140,7 +141,7 @@ const QStringList kImplemented = {
     QStringLiteral("gui.toggle_integer_scaling"), QStringLiteral("gui.set_aspect"), QStringLiteral("gui.set_overscan"),
     QStringLiteral("gui.set_filter"), QStringLiteral("gui.toggle_always_on_top"),
     QStringLiteral("gui.toggle_audio_recording"), QStringLiteral("gui.record_movie"), QStringLiteral("gui.play_movie"),
-    QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only"),
+    QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only"), QStringLiteral("gui.show_debugger"),
 };
 // Settings > Hotkeys opens the Key Bindings page (#108).
 const QStringList kSettingsPages = {QStringLiteral("video"), QStringLiteral("audio"), QStringLiteral("emulation"),
@@ -156,6 +157,7 @@ const QStringList kNeedGame = {
     QStringLiteral("gui.frame_advance"), QStringLiteral("gui.import_battery_save"),
     QStringLiteral("gui.export_battery_save"), QStringLiteral("gui.take_screenshot"),
     QStringLiteral("gui.toggle_audio_recording"), QStringLiteral("gui.record_movie"), QStringLiteral("gui.play_movie"),
+    QStringLiteral("gui.show_debugger"),
 };
 // Movie > Stop and Read-Only: only while a movie records or plays.
 const QStringList kNeedMovie = {QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only")};
@@ -1051,20 +1053,23 @@ void MainWindow::rebuildRecentMenu()
 
 QFuture<api::Result> MainWindow::runCommand(const QString& name, const QVariantMap& args, bool quiet)
 {
+    // A widget torn down with the window may still ask (a line edit ends
+    // its editing as it goes); the session is gone by then.
+    if (!m_session) return QtFuture::makeReadyValueFuture(api::Result::fail("ShuttingDown", "the window is closing"));
     QFuture<api::Result> future = QtConcurrent::run(&m_commands,
         [session = m_session.get(), command = name.toStdString(), json = toJson(args)] {
             return session->call(command, json);
         });
-    if (!quiet) {
-        future.then(this, [this, name](const api::Result& result) {
-            if (result.isError()) {
-                showError(name, *result.error);
-            } else if (result.value.contains("warning") && result.value["warning"].is_string()) {
-                showWarning(QString::fromStdString(result.value["warning"].get<std::string>()));
-            }
-        });
-    }
-    return future;
+    if (quiet) return future;
+    // The caller's continuation goes after this one (a future takes one).
+    return future.then(this, [this, name](const api::Result& result) {
+        if (result.isError()) {
+            showError(name, *result.error);
+        } else if (result.value.contains("warning") && result.value["warning"].is_string()) {
+            showWarning(QString::fromStdString(result.value["warning"].get<std::string>()));
+        }
+        return result;
+    });
 }
 
 void MainWindow::showError(const QString& name, const api::Error& error)
@@ -1628,9 +1633,7 @@ void MainWindow::playbackChanged(const Playback& playback)
 void MainWindow::showCheats(bool search)
 {
     QMetaObject::invokeMethod(this, [this, search] {
-        const CommandRunner run = [this](const QString& name, const QVariantMap& args) {
-            return runCommand(name, args);
-        };
+        const CommandRunner run = toolRunner();
         QDialog* window = nullptr;
         if (search) {
             if (!m_cheatSearchWindow) m_cheatSearchWindow = new CheatSearchWindow(run, this);
@@ -1680,6 +1683,33 @@ void MainWindow::movieChanged()
         }
         updateOverlays();
     }, Qt::QueuedConnection);
+}
+
+CommandRunner MainWindow::toolRunner()
+{
+    // The reads a tool window repeats while open fail quietly (a game that
+    // just closed, say): only what the user did reports an error.
+    static const QStringList reads = {QStringLiteral("core.get_cpu"), QStringLiteral("core.disassemble"),
+        QStringLiteral("core.run_state"), QStringLiteral("gui.list_breakpoints"), QStringLiteral("gui.list_cheats"),
+        QStringLiteral("gui.cheat_search_results"), QStringLiteral("gui.list_watches")};
+    return [this](const QString& name, const QVariantMap& args) { return runCommand(name, args, reads.contains(name)); };
+}
+
+void MainWindow::showDebugger()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        if (!m_debuggerWindow) {
+            m_debuggerWindow = new DebuggerWindow(toolRunner(), this);
+        }
+        m_debuggerWindow->show();
+        m_debuggerWindow->raise();
+        m_debuggerWindow->refresh();
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::debuggerStopped()
+{
+    showDebugger(); // a breakpoint shows where it stopped (spec US9-2)
 }
 
 void MainWindow::cheatsChanged()

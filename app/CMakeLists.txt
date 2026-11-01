@@ -10,6 +10,7 @@ add_library(cutenes-app-lib STATIC
     dialogs/key_bindings_page.cpp
     dialogs/settings_dialog.cpp
     dialogs/cheats_window.cpp
+    dialogs/debugger_window.cpp
     host/gui_host.cpp
     host/servers.cpp
     library/game_identity.cpp

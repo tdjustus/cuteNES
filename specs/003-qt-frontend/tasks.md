@@ -245,14 +245,20 @@ then movies (G072 and G070's movie tests).
   is no status bar).
 - [ ] G073 Manual checklist **M7**.
 
-## Phase G8: Debug tools (branch `feature/gui-debug`)
+## Phase G8: Debug tools (branches `feature/gui-debugger`, then one per viewer)
+
+Split like G7, one branch after another: the debugger (G081 and its
+tests), the memory viewer (G082), the PPU viewers (G083), then the trace
+logger and memory dump (G084).
 
 - [ ] G080 [US9] Tests first (A13):
-  - a breakpoint at nestest's `$C000`;
-  - 10 steps match nestest's log;
+  - [x] a breakpoint stops nestest where its log has it, with the log's
+    registers (nestest's reset vector is `$C004`; the test enters at the
+    log's `$C000` with a PC edit, as the log does);
+  - [x] 10 steps match nestest's log;
   - the memory viewer reads change no state;
   - the pattern table equals the CHR data.
-- [ ] G081 [US9] Debugger: registers and flags, disassembly, step, run,
+- [x] G081 [US9] Debugger: registers and flags, disassembly, step, run,
   breakpoints by stepping, and register edits.
 - [ ] G082 [P] [US9] Memory viewer and editor: CPU, PPU, OAM and palette.
 - [ ] G083 [P] [US9] PPU viewers: patterns, nametables with the scroll

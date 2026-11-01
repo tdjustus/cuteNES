@@ -9,6 +9,7 @@
 // through that queue (R11). It shows the library browser when no game is
 // open, and the game otherwise.
 
+#include "dialogs/cheats_window.hpp" // CommandRunner
 #include "host/gui_host.hpp"
 #include "library/library.hpp"
 #include "persistence/battery_saver.hpp"
@@ -51,6 +52,7 @@ class FrameClock;
 namespace cutenes::app {
 
 class CheatSearchWindow;
+class DebuggerWindow;
 class CheatsWindow;
 class KeyBindings;
 class KeyBindingsPage;
@@ -106,6 +108,8 @@ public:
     // failure is shown to the user unless `quiet`.
     QFuture<api::Result> runCommand(const QString& name, const QVariantMap& args = {},
         bool quiet = false);
+    // The runner the tool windows get: their repeated reads are quiet.
+    CommandRunner toolRunner();
 
     // Says so when the library folder is missing or not writable, and offers
     // to recreate it or choose another (spec US2-5). The application calls
@@ -159,6 +163,8 @@ private:
     void cheatsChanged() override;
     void showMovieDialog(bool record, const QString& from, const QString& folder) override;
     void movieChanged() override;
+    void showDebugger() override;
+    void debuggerStopped() override;
     void showLibrary(const QString& select, bool paused) override;
     void showSettings(const QString& page) override;
     void showKeyBindings(const QString& section, bool paused) override;
@@ -246,6 +252,7 @@ private:
     bool m_screenWatched = false;
     QPointer<CheatsWindow> m_cheatsWindow;           // Tools > Cheats…
     QPointer<CheatSearchWindow> m_cheatSearchWindow; // Tools > Cheat Search…
+    QPointer<DebuggerWindow> m_debuggerWindow;
     QTimer* m_osdTimer = nullptr;
     std::unique_ptr<Servers> m_servers; // the API and MCP listeners (Settings > Servers)
     QPushButton* m_automation = nullptr; // bottom right while a client is there; opens Settings > Servers

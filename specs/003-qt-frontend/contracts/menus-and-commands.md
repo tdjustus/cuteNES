@@ -186,6 +186,29 @@ The debugger's own controls:
 Register and memory edits use the existing `core.set_cpu` and
 `core.write_memory`.
 
+The debugger (G081, FR-060):
+- A breakpoint stops **before** the instruction at its address, and the
+  game pauses there, mid-frame if need be; the debugger window opens on it.
+  `gui.debug_run` (and any resume) goes on from a breakpoint without
+  stopping at it again.
+- Breakpoints work by stepping: while any are set, play runs the same
+  instructions one at a time and checks PC before each, which costs speed
+  only while there are some.
+- A frame stopped part way (a breakpoint or a step) goes on from where it
+  was; its start-of-frame work (the rewind history, the movie's input,
+  freeze cheats) is not done twice. An instruction step that starts a new
+  frame does that frame's start-of-frame work, so stepping keeps movies,
+  rewind and cheats as play does.
+- `gui.debug_step_instruction` (`count`, default 1) and
+  `gui.debug_step_frame` pause first. Step Frame runs to the end of the
+  current frame, so from a stop part way it finishes that frame, and a
+  breakpoint on the way ends it there (`breakpoint` in the result).
+- Breakpoints belong to the session, not the game file: closing the game
+  clears them.
+- The window reads the machine ten times a second while it is shown. A
+  register field the user is editing is never overwritten; registers are
+  typed in hex, with or without `$`.
+
 ## Settings
 
 | Item | Command | Arguments | Shortcut | Game |

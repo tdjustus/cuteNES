@@ -309,6 +309,7 @@ void GuiHost::runFrame(Machine& machine)
         machine.setController(Port::Two, entry->input[1]);
         machine.runFrames(1);
         m_rewound = std::move(entry);
+        m_midFrame = false;
         return;
     }
     if (m_rewound) {
@@ -316,7 +317,20 @@ void GuiHost::runFrame(Machine& machine)
         m_rewind.push(m_rewound->state.data(), m_rewound->state.size(), m_rewound->input[0], m_rewound->input[1]);
         m_rewound.reset();
     }
-    if (m_movieMode == MovieStatus::Mode::Playing && !playMovieFrame(machine)) return;
+    // A frame a breakpoint or a step stopped part way goes on where it
+    // was, its bookkeeping done already.
+    if (!m_midFrame) {
+        if (!beginFrame(machine)) return;
+        m_midFrame = true;
+    }
+    if (!runToFrameEnd(machine)) return;
+    m_midFrame = false;
+    endFrame();
+}
+
+bool GuiHost::beginFrame(Machine& machine)
+{
+    if (m_movieMode == MovieStatus::Mode::Playing && !playMovieFrame(machine)) return false;
     const SaveStateBlob state = machine.captureState();
     m_rewind.push(state.data, state.size, machine.controller(Port::One), machine.controller(Port::Two));
     // Freeze cheats write before every frame (data-model "Cheat").
@@ -327,11 +341,69 @@ void GuiHost::runFrame(Machine& machine)
         m_movie.input.append(static_cast<char>(machine.controller(Port::One).to_ulong()));
         m_movie.input.append(static_cast<char>(machine.controller(Port::Two).to_ulong()));
     }
-    machine.runFrames(1);
+    return true;
+}
+
+void GuiHost::endFrame()
+{
     if (m_movieMode != MovieStatus::Mode::None) {
         ++m_movieFrame;
         publishMovie(false);
     }
+}
+
+bool GuiHost::runToFrameEnd(Machine& machine)
+{
+    if (m_breakpoints.none()) {
+        machine.runFrames(1); // also ends a frame begun part way
+        return true;
+    }
+    // Breakpoints by stepping (G081): the same instructions runFrames(1)
+    // runs, with PC checked before each.
+    const std::uint64_t frame = machine.frameCounter();
+    while (machine.frameCounter() == frame) {
+        const std::uint16_t pc = machine.cpu().pc;
+        if (m_breakpoints.test(pc) && m_skipBreakpoint != pc) {
+            stopAtBreakpoint(pc);
+            return false;
+        }
+        m_skipBreakpoint.reset();
+        machine.stepInstruction();
+    }
+    return true;
+}
+
+void GuiHost::stopAtBreakpoint(std::uint16_t pc)
+{
+    if (api::Session* session = m_session.load()) session->call("core.pause");
+    m_skipBreakpoint = pc; // Run goes on from here
+    m_window.showMessage(QObject::tr("Breakpoint at $%1").arg(pc, 4, 16, QLatin1Char('0')).toUpper());
+    m_window.debuggerStopped();
+}
+
+Result GuiHost::stepInstructions(CallContext& ctx, int count)
+{
+    if (isRunning(ctx)) {
+        Result r = call(ctx, "core.pause");
+        if (r.isError()) return r;
+    }
+    Machine& machine = ctx.session.machine();
+    for (int i = 0; i < count; ++i) {
+        // An instruction that starts a frame starts its bookkeeping too, so
+        // stepping keeps movies, rewind and cheats as play does.
+        if (!m_midFrame) {
+            if (!beginFrame(machine)) break;
+            m_midFrame = true;
+        }
+        const std::uint64_t frame = machine.frameCounter();
+        machine.stepInstruction();
+        m_skipBreakpoint.reset();
+        if (machine.frameCounter() != frame) {
+            m_midFrame = false;
+            endFrame();
+        }
+    }
+    return Result::ok({{"cpu", call(ctx, "core.get_cpu").value["cpu"]}});
 }
 
 bool GuiHost::playMovieFrame(Machine& machine)
@@ -615,6 +687,8 @@ void GuiHost::onSessionEvent(const api::Event& event)
     if (event.type == "state_changed") {
         m_rewind.clear();
         m_rewound.reset();
+        m_midFrame = false;
+        m_skipBreakpoint.reset();
     }
     // Battery RAM is checked as frames run (frame events come at most 10
     // times a second, on the emulation thread, which owns the machine).
@@ -803,6 +877,9 @@ Result GuiHost::closeGame(CallContext& ctx)
     m_rewound.reset();
     m_rewinding = false;
     m_pauseAfterRewind = false;
+    m_breakpoints.reset();
+    m_skipBreakpoint.reset();
+    m_midFrame = false;
     m_fastForward = false;
     updatePlayback();
     m_undoState.reset();
@@ -1625,7 +1702,53 @@ void GuiHost::registerCommands(api::Registry& registry)
             m_window.showMessage(QObject::tr("Recording audio"));
             return Result::ok({{"recording", true}, {"path", str(path)}});
         });
-    later("gui.show_debugger", "Open the debugger", none, true, "G8");
+    add(registry, "gui.show_debugger", "Open the debugger: registers, flags, disassembly, stepping and breakpoints",
+        none, s::object({}), false, true, [this](CallContext&, const Json&) {
+            m_window.showDebugger();
+            return Result::ok();
+        });
+    add(registry, "gui.debug_step_instruction", "Pause and run CPU instructions (default 1)",
+        s::object({{"count", s::integer(1, 100000, "default 1")}}), s::object({{"cpu", Json{{"type", "object"}}}}, {"cpu"}),
+        true, true, [this](CallContext& ctx, const Json& args) { return stepInstructions(ctx, args.value("count", 1)); });
+    add(registry, "gui.debug_step_frame",
+        "Pause and run to the end of the frame; a breakpoint on the way stops it (breakpoint: its address)",
+        none, s::object({{"cpu", Json{{"type", "object"}}}, {"breakpoint", s::u16()}}, {"cpu"}), true, true,
+        [this](CallContext& ctx, const Json&) {
+            if (isRunning(ctx)) {
+                Result r = call(ctx, "core.pause");
+                if (r.isError()) return r;
+            }
+            runFrame(ctx.session.machine());
+            Json v = {{"cpu", call(ctx, "core.get_cpu").value["cpu"]}};
+            if (m_midFrame && m_skipBreakpoint) v["breakpoint"] = *m_skipBreakpoint;
+            return Result::ok(v);
+        });
+    add(registry, "gui.debug_run", "Run from here; a breakpoint at PC does not stop it again", none, runStateOutput(),
+        true, true, [](CallContext& ctx, const Json&) { return runStateResult(call(ctx, "core.resume")); });
+    const auto breakpointList = [this] {
+        Json list = Json::array();
+        for (std::size_t a = 0; a < m_breakpoints.size(); ++a) {
+            if (m_breakpoints.test(a)) list.push_back(a);
+        }
+        return list;
+    };
+    const Json breakpointsSchema = s::object({{"breakpoints", s::array(s::u16(), 65536, "in address order")}}, {"breakpoints"});
+    add(registry, "gui.add_breakpoint", "Stop before the instruction at an address (execution breakpoint)",
+        s::object({{"address", s::u16()}}, {"address"}), breakpointsSchema, true, true,
+        [this, breakpointList](CallContext&, const Json& args) {
+            m_breakpoints.set(args["address"].get<std::size_t>());
+            return Result::ok({{"breakpoints", breakpointList()}});
+        });
+    add(registry, "gui.remove_breakpoint", "Remove the breakpoint at an address",
+        s::object({{"address", s::u16()}}, {"address"}), breakpointsSchema, true, true,
+        [this, breakpointList](CallContext&, const Json& args) {
+            const auto address = args["address"].get<std::size_t>();
+            if (!m_breakpoints.test(address)) return invalid("/address", "no breakpoint there");
+            m_breakpoints.reset(address);
+            return Result::ok({{"breakpoints", breakpointList()}});
+        });
+    add(registry, "gui.list_breakpoints", "The execution breakpoints", none, breakpointsSchema, false, false,
+        [breakpointList](CallContext&, const Json&) { return Result::ok({{"breakpoints", breakpointList()}}); });
     later("gui.show_memory_viewer", "Open the memory viewer", none, true, "G8");
     later("gui.show_ppu_viewer", "Open the PPU viewer",
         s::object({{"view", s::stringEnum({"patterns", "nametables", "sprites", "palette"})}}), true, "G8");
