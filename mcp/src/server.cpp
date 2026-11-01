@@ -34,7 +34,7 @@ std::string stringAt(const Json& object, const char* key)
 
 Json serverInfo()
 {
-    return {{"name", "cutenes"}, {"title", "cuteNES"}, {"version", api::surfaceVersion()}};
+    return {{"name", "cuteNES"}, {"title", "cuteNES"}, {"version", api::surfaceVersion()}};
 }
 
 Json capabilities() { return {{"tools", {{"listChanged", true}}}}; }
@@ -124,6 +124,12 @@ Json errorResponse(const Json& id, int code, const std::string& message, const J
     return r;
 }
 
+Json initializeResult()
+{
+    return {{"protocolVersion", kLegacyVersion}, {"capabilities", capabilities()},
+        {"serverInfo", serverInfo()}, {"instructions", kInstructions}};
+}
+
 std::string serialize(const Json& message)
 {
     return message.dump(-1, ' ', false, Json::error_handler_t::replace);
@@ -165,12 +171,6 @@ struct McpServer::Impl {
         return modernResult({{"supportedVersions", supportedVersions()},
             {"capabilities", capabilities()}, {"instructions", kInstructions},
             {"ttlMs", kListTtlMs}, {"cacheScope", "private"}});
-    }
-
-    Json initializeResult() const
-    {
-        return {{"protocolVersion", kLegacyVersion}, {"capabilities", capabilities()},
-            {"serverInfo", serverInfo()}, {"instructions", kInstructions}};
     }
 
     // One tool per command, in the registry's order (by name).
@@ -349,7 +349,7 @@ Reply McpServer::handle(const Json& message, Connection& connection, const Send&
         if (connection.canNotify && send && !connection.legacyListChanged) {
             connection.legacyListChanged = std::make_shared<ListChanged>(session(), Json(), true, send);
         }
-        return now(response(id, m_impl->initializeResult()));
+        return now(response(id, initializeResult()));
     }
     if (method == "server/discover") {
         return now(response(id, m_impl->discover()));

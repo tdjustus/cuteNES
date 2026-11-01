@@ -142,8 +142,9 @@ std::filesystem::path tokenPath(const std::string& flag, const char* defaultName
 }
 
 // --attach: relay stdio to a running instance (the GUI with its MCP setting
-// on, or cutenes-server --mcp-port). Exit 4 when there is nothing usable
-// to attach to.
+// on, or cutenes-server --mcp-port). With none running yet, the bridge says
+// so and waits for one: an MCP client starts it once and does not retry.
+// Exit 4 only for an endpoint no instance could ever have (not http://).
 int attach(const Options& o, std::istream& in, std::ostream& out, std::ostream& err,
     const std::atomic<bool>& stop)
 {
@@ -155,32 +156,34 @@ int attach(const Options& o, std::istream& in, std::ostream& out, std::ostream& 
     }
     const auto path = tokenPath(o.mcpTokenFile, "mcp.token");
     const char* const remedy = "Turn on the \"MCP server\" setting in cuteNES, or start "
-                               "cutenes-server --mcp-port N.";
+                               "cutenes-server --mcp-port N. The bridge waits for it.";
+    if (!o.attachUrl.empty() && o.attachUrl.rfind("http://", 0) != 0) {
+        err << "cutenes-server: --attach reaches http:// endpoints only, not " << o.attachUrl << "\n";
+        return kExitNoEndpoint;
+    }
     std::string error;
     auto endpoint = mcp::readTokenFile(path, error);
-    if (!endpoint) {
-        err << "cutenes-server: --attach found no MCP endpoint: " << error << ". " << remedy << "\n";
-        return kExitNoEndpoint;
-    }
-    if (!o.attachUrl.empty()) endpoint->url = o.attachUrl;
-    const int status = mcp::probe(*endpoint, error);
-    if (status == 401) {
+    if (endpoint && !o.attachUrl.empty()) endpoint->url = o.attachUrl;
+    const int status = endpoint ? mcp::probe(*endpoint, error) : -1;
+    if (status == 0) {
+        err << "cutenes-server " << coreVersionString() << ": relaying stdio MCP to "
+            << endpoint->url << std::endl;
+    } else if (status == 401) {
         err << "cutenes-server: --attach: " << endpoint->url << " refused the token in "
             << path.string() << " (HTTP 401); the file is from an earlier launch of the "
-               "endpoint, so restart it or point --mcp-token-file at its current file\n";
-        return kExitNoEndpoint;
+               "endpoint. The bridge waits for a new one."
+            << std::endl;
+    } else if (endpoint) {
+        err << "cutenes-server: --attach found no MCP endpoint yet: " << error << " (from "
+            << path.string() << "). " << remedy << std::endl;
+    } else {
+        err << "cutenes-server: --attach found no MCP endpoint yet: " << error << ". " << remedy
+            << std::endl;
     }
-    if (status != 0) {
-        err << "cutenes-server: --attach found no MCP endpoint: " << error << " (from "
-            << path.string() << "). " << remedy << "\n";
-        return kExitNoEndpoint;
-    }
-    err << "cutenes-server " << coreVersionString() << ": relaying stdio MCP to "
-        << endpoint->url << std::endl;
     // The instance's MCP server may restart with a new token or port (the
     // GUI setting toggled, the application reopened): read the file again.
     const std::string urlOverride = o.attachUrl;
-    mcp::serveBridge(*endpoint, in, out, stop, [path, urlOverride]() -> std::optional<mcp::Endpoint> {
+    mcp::serveBridge(endpoint.value_or(mcp::Endpoint{}), in, out, stop, [path, urlOverride]() -> std::optional<mcp::Endpoint> {
         std::string ignored;
         auto fresh = mcp::readTokenFile(path, ignored);
         if (fresh && !urlOverride.empty()) fresh->url = urlOverride;

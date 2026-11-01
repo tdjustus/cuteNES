@@ -15,12 +15,12 @@ This produces `build/server/cutenes-server`.
 Register the command in any MCP client's standard server config:
 
 ```json
-{ "mcpServers": { "cutenes": {
+{ "mcpServers": { "cuteNES": {
     "command": "/path/to/cutenes-server",
     "args": ["--library", "/path/to/roms"] } } }
 ```
 
-In Claude Code: `claude mcp add cutenes -- /path/to/cutenes-server --library /path/to/roms`.
+In Claude Code: `claude mcp add cuteNES -- /path/to/cutenes-server --library /path/to/roms`.
 
 ### Client verification (A061, SC-001)
 

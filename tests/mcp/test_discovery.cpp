@@ -36,7 +36,7 @@ TEST(McpDiscovery, ServerDiscoverAdvertisesBothRevisionsAndTheTools)
     EXPECT_EQ(d["resultType"], "complete");
     EXPECT_EQ(d["supportedVersions"], Json::array({"2026-07-28", "2025-11-25"}));
     EXPECT_EQ(d["capabilities"]["tools"]["listChanged"], true);
-    EXPECT_EQ(d["_meta"][kMetaServerInfo]["name"], "cutenes");
+    EXPECT_EQ(d["_meta"][kMetaServerInfo]["name"], "cuteNES");
     EXPECT_EQ(d["_meta"][kMetaServerInfo]["version"], cutenes::api::surfaceVersion());
     EXPECT_EQ(d["ttlMs"], kListTtlMs);
     EXPECT_EQ(d["cacheScope"], "private");
@@ -77,7 +77,7 @@ TEST(McpDiscovery, InitializeServesA20251125ClientForTheProcess)
     ASSERT_TRUE(init.contains("result")) << init.dump();
     EXPECT_EQ(init["result"]["protocolVersion"], "2025-11-25");
     EXPECT_EQ(init["result"]["capabilities"]["tools"]["listChanged"], true);
-    EXPECT_EQ(init["result"]["serverInfo"]["name"], "cutenes");
+    EXPECT_EQ(init["result"]["serverInfo"]["name"], "cuteNES");
     EXPECT_EQ(init["result"]["serverInfo"]["version"], cutenes::api::surfaceVersion());
     server.send(notification("notifications/initialized"));
 

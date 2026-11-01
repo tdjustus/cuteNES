@@ -21,6 +21,9 @@ namespace {
 constexpr int kInternalError = -32603;
 // The subscription a 2025-11-25 client's list changes arrive through.
 const char* const kLegacyListenId = "cutenes-bridge-list-changed";
+const char* const kNoInstance =
+    "cuteNES is not running, or its MCP server is off: turn on the \"MCP server\" setting "
+    "in cuteNES, or start cutenes-server --mcp-port N";
 
 struct Target {
     std::string base; // http://host:port
@@ -264,11 +267,14 @@ private:
         return true;
     }
 
+    // Null while no instance is known (no token file yet).
     std::shared_ptr<InFlight> newFlight()
     {
         auto flight = std::make_shared<InFlight>();
         flight->endpoint = endpoint();
-        flight->client = makeClient(*parseUrl(flight->endpoint.url), flight->endpoint.token);
+        const auto target = parseUrl(flight->endpoint.url);
+        if (!target) return nullptr;
+        flight->client = makeClient(*target, flight->endpoint.token);
         return flight;
     }
 
@@ -334,16 +340,20 @@ private:
             bool retried = false;
             for (;;) {
                 auto flight = newFlight();
-                {
-                    std::lock_guard lock(m_mutex);
-                    if (m_finishing) return;
-                    m_streams[key] = flight;
+                Outcome outcome{false, true, kNoInstance};
+                if (flight) {
+                    {
+                        std::lock_guard lock(m_mutex);
+                        if (m_finishing) return;
+                        m_streams[key] = flight;
+                    }
+                    outcome = exchange(raw, message, *flight, on);
                 }
-                const Outcome outcome = exchange(raw, message, *flight, on);
+                const Endpoint used = flight ? flight->endpoint : endpoint();
                 {
                     std::unique_lock lock(m_mutex);
-                    m_streams.erase(key);
-                    if (m_finishing || flight->cancelled) return;
+                    if (flight) m_streams.erase(key);
+                    if (m_finishing || (flight && flight->cancelled)) return;
                     if (persistent) {
                         // The endpoint went away or restarted: wait a moment,
                         // look for its new address, and listen again.
@@ -352,10 +362,10 @@ private:
                     }
                 }
                 if (persistent) {
-                    refreshFrom(flight->endpoint);
+                    refreshFrom(used);
                     continue;
                 }
-                if (!outcome.ok && outcome.retry && !retried && refreshFrom(flight->endpoint)) {
+                if (!outcome.ok && outcome.retry && !retried && refreshFrom(used)) {
                     retried = true;
                     continue;
                 }
@@ -370,7 +380,11 @@ private:
     // A 2025-11-25 client has no subscriptions/listen, and Streamable HTTP
     // has no other channel, so the bridge holds one for it and passes on
     // notifications/tools/list_changed as the 2025-11-25 notification.
-    void relayLegacyListChanges()
+    // `wait`: for the subscription to be acknowledged, when the instance is
+    // there. Each acknowledgement after the first is a new instance (or the
+    // first one, after the bridge answered for it), whose tools the client
+    // has not seen.
+    void relayLegacyListChanges(bool wait)
     {
         auto acknowledged = std::make_shared<std::promise<void>>();
         auto ready = acknowledged->get_future();
@@ -384,13 +398,44 @@ private:
                 const std::string method = stringAt(m, "method");
                 if (method == "notifications/subscriptions/acknowledged") {
                     std::call_once(*once, [&] { acknowledged->set_value(); });
+                    if (m_acknowledgements++ > 0 || m_answeredOffline) {
+                        write({{"jsonrpc", "2.0"}, {"method", "notifications/tools/list_changed"}});
+                    }
                 } else if (method == "notifications/tools/list_changed") {
                     write({{"jsonrpc", "2.0"}, {"method", "notifications/tools/list_changed"}});
                 }
             },
             /*persistent=*/true);
         // Changes after initialize must not be missed.
-        ready.wait_for(std::chrono::seconds(5));
+        if (wait) ready.wait_for(std::chrono::seconds(5));
+    }
+
+    // While no instance answers, a 2025-11-25 client is still initialized
+    // (and sees no tools), so that it keeps the bridge; true when answered.
+    bool answerOffline(const Json& message)
+    {
+        const std::string method = stringAt(message, "method");
+        const Json params = message.value("params", Json::object());
+        const Json meta = params.is_object() ? params.value("_meta", Json::object()) : Json::object();
+        if (meta.is_object() && meta.contains(kMetaVersion)) return false; // 2026-07-28
+        Json result;
+        if (method == "initialize") {
+            m_legacyVersion = kLegacyVersion;
+            result = initializeResult();
+        } else if (method == "tools/list" && !m_legacyVersion.empty()) {
+            result = {{"tools", Json::array()}};
+        } else if (method == "ping") {
+            result = Json::object();
+        } else {
+            return false;
+        }
+        m_answeredOffline = true;
+        write({{"jsonrpc", "2.0"}, {"id", idOf(message)}, {"result", result}});
+        if (method == "initialize" && !m_relayingLegacy) {
+            m_relayingLegacy = true;
+            relayLegacyListChanges(/*wait=*/false);
+        }
+        return true;
     }
 
     void work()
@@ -419,7 +464,7 @@ private:
                     m_legacyVersion = stringAt(m["result"], "protocolVersion");
                     if (!m_relayingLegacy) {
                         m_relayingLegacy = true;
-                        relayLegacyListChanges();
+                        relayLegacyListChanges(/*wait=*/true);
                     }
                 }
                 write(m);
@@ -427,6 +472,11 @@ private:
             Outcome outcome;
             for (int attempt = 0; attempt < 2; ++attempt) {
                 auto flight = newFlight();
+                if (!flight) {
+                    if (attempt == 0 && refreshFrom(endpoint())) continue;
+                    outcome = {false, true, kNoInstance};
+                    break;
+                }
                 {
                     std::lock_guard lock(m_mutex);
                     m_current = flight;
@@ -442,6 +492,12 @@ private:
                 // port after its MCP server restarted).
                 if (outcome.ok || !outcome.retry || attempt == 1 || !refreshFrom(flight->endpoint)) break;
             }
+            if (!outcome.ok && outcome.retry && !idOf(q.message).is_null()) {
+                if (answerOffline(q.message)) continue;
+                if (outcome.error != kNoInstance) {
+                    outcome.error = std::string(kNoInstance) + " (" + outcome.error + ")";
+                }
+            }
             if (!outcome.ok && !idOf(q.message).is_null()) {
                 write(errorResponse(idOf(q.message), kInternalError, outcome.error));
             }
@@ -454,6 +510,8 @@ private:
     Writer m_writer;
     std::string m_legacyVersion; // the worker's
     bool m_relayingLegacy = false;
+    std::atomic<bool> m_answeredOffline{false};
+    std::atomic<int> m_acknowledgements{0};
 
     std::mutex m_mutex;
     std::condition_variable m_cv;
@@ -515,9 +573,6 @@ int probe(const Endpoint& endpoint, std::string& error)
 bool serveBridge(const Endpoint& endpoint, std::istream& in, std::ostream& out,
     const std::atomic<bool>& stop, RefreshEndpoint refresh)
 {
-    const auto target = parseUrl(endpoint.url);
-    if (!target) return false;
-
     struct Input {
         std::mutex mutex;
         std::condition_variable cv;
