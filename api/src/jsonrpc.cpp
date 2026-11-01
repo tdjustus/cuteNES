@@ -74,6 +74,7 @@ int errorCode(const std::string& name)
         {"ShuttingDown", -32009},
         {"NotFound", -32010},
         {"NoBattery", -32011},
+        {"NotImplemented", -32012},
     };
     const auto it = codes.find(name);
     return it == codes.end() ? -32000 : it->second;

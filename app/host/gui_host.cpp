@@ -821,6 +821,54 @@ void GuiHost::registerCommands(api::Registry& registry)
             return invalid(args.contains("path") ? "/path" : "/identity", "no such game in the library");
         });
 
+    // G034: the contract's commands whose features land in later phases.
+    // Their menu items are present but disabled; the commands are in the
+    // catalog with their contract arguments and return NotImplemented.
+    const auto later = [&registry](const char* name, std::string description, Json input, bool needsRom,
+                           const char* phase) {
+        add(registry, name, std::move(description) + " (coming in " + phase + ")", std::move(input), s::object({}),
+            true, needsRom, [name, phase](CallContext&, const Json&) {
+                return Result::fail("NotImplemented", std::string(name) + " is coming in a later update",
+                    {{"phase", phase}});
+            });
+    };
+    const Json none = s::object({});
+    const Json path = s::object({{"path", s::string("a file path; without it, a file dialog")}});
+    later("gui.set_region", "Force NTSC or PAL, or follow the header",
+        s::object({{"region", s::stringEnum({"auto", "ntsc", "pal"})}}, {"region"}), false, "G6");
+    later("gui.set_scale", "Scale the window to a whole multiple of the picture",
+        s::object({{"scale", s::integer(1, 6)}}, {"scale"}), false, "G5");
+    later("gui.toggle_fullscreen", "Enter or leave fullscreen", none, false, "G5");
+    later("gui.toggle_integer_scaling", "Scale by whole multiples only", none, false, "G5");
+    later("gui.set_aspect", "The pixel aspect ratio",
+        s::object({{"aspect", s::stringEnum({"square", "8:7", "4:3"})}}, {"aspect"}), false, "G5");
+    later("gui.set_overscan", "Hide the picture's edges: a preset, or each edge in lines or pixels",
+        s::object({{"preset", s::stringEnum({"none", "tv", "custom"})}, {"top", s::integer(0, 16)},
+            {"bottom", s::integer(0, 16)}, {"left", s::integer(0, 16)}, {"right", s::integer(0, 16)}}),
+        false, "G5");
+    later("gui.set_filter", "The picture filter",
+        s::object({{"filter", s::stringEnum({"nearest", "smooth", "scanlines"})}}, {"filter"}), false, "G5");
+    later("gui.set_palette", "A built-in palette by name, or a .pal file",
+        s::object({{"name", s::string()}, {"path", s::string()}}), false, "G6");
+    later("gui.toggle_always_on_top", "Keep the window above others", none, false, "G5");
+    later("gui.show_cheats", "Open the cheats window", none, true, "G7");
+    later("gui.show_cheat_search", "Open the cheat search", none, true, "G7");
+    later("gui.record_movie", "Record a movie from power-on or the current state",
+        s::object({{"path", s::string()}, {"from", s::stringEnum({"power_on", "state"})}}), true, "G7");
+    later("gui.play_movie", "Play a movie", path, true, "G7");
+    later("gui.stop_movie", "Stop recording or playing the movie", none, true, "G7");
+    later("gui.toggle_movie_read_only", "Play the movie without recording over it", none, true, "G7");
+    later("gui.toggle_audio_recording", "Start or stop recording the sound to a WAV file", path, true, "G5");
+    later("gui.show_debugger", "Open the debugger", none, true, "G8");
+    later("gui.show_memory_viewer", "Open the memory viewer", none, true, "G8");
+    later("gui.show_ppu_viewer", "Open the PPU viewer",
+        s::object({{"view", s::stringEnum({"patterns", "nametables", "sprites", "palette"})}}), true, "G8");
+    later("gui.show_trace_logger", "Open the trace logger", none, true, "G8");
+    later("gui.write_memory_dump", "Write a memory dump to the library's debug folder", none, true, "G8");
+    later("gui.show_shortcuts", "Show the key bindings", none, false, "G3");
+    later("gui.show_user_guide", "Open the user guide", none, false, "G9");
+    later("gui.open_log_folder", "Show the log folder in the file manager", none, false, "G9");
+
     add(registry, "gui.open_library_folder", "Show the library folder in the file manager",
         s::object({}), s::object({}), false, false, [this](CallContext&, const Json&) {
             m_window.openLibraryFolder();
@@ -883,6 +931,12 @@ void GuiHost::registerCommands(api::Registry& registry)
         false, false, [this](CallContext&, const Json& args) {
             const QString page = args.contains("page") ? QString::fromStdString(args["page"].get<std::string>())
                                                        : m_settings.lastSettingsPage();
+            // Only the Library page exists so far (G034: the others are
+            // in the menus, disabled, until their phase).
+            if (page != QLatin1String("library")) {
+                return Result::fail("NotImplemented", "the " + str(page) + " page is coming in a later update",
+                    {{"page", str(page)}});
+            }
             m_window.showSettings(page);
             return Result::ok({{"page", str(page)}});
         });
