@@ -307,6 +307,12 @@ jobs:
           codesign --force --deep --sign - stage/cutenes.app
           # The update check needs a TLS backend (R16; docs/packaging.md).
           ls stage/cutenes.app/Contents/PlugIns/tls/*.dylib
+          # It must start on macOS 13 (plan.md), not only the runner's.
+          for bin in cutenes cutenes-server; do
+            minos=$(otool -l "stage/cutenes.app/Contents/MacOS/$bin" | awk '/minos/ {print $2; exit}')
+            echo "$bin needs macOS $minos"
+            [ "${minos%%.*}" -le 13 ] || { echo "$bin needs macOS $minos, above 13"; exit 1; }
+          done
           stage/cutenes.app/Contents/MacOS/cutenes --version
           stage/cutenes.app/Contents/MacOS/cutenes-server --help
           name="cuteNES-$VERSION-macos-$(uname -m).zip"
