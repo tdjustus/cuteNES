@@ -47,6 +47,12 @@ public:
     int selectedSlot(const QString& sha1) const;
     void setSelectedSlot(const QString& sha1, int slot);
 
+    // video.showFps (off) and video.showOsd (on), data-model "Settings".
+    bool showFps() const;
+    void setShowFps(bool on);
+    bool showOsd() const;
+    void setShowOsd(bool on);
+
     // The last Settings page shown.
     QString lastSettingsPage() const;
     void setLastSettingsPage(const QString& page);

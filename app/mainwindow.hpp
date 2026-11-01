@@ -20,6 +20,7 @@
 #include <QFuture>
 #include <QMainWindow>
 #include <QPointer>
+#include <QElapsedTimer>
 #include <QSet>
 #include <QThreadPool>
 #include <QVariantMap>
@@ -128,7 +129,8 @@ protected:
 
 private:
     // GuiHost::Window, called on the emulation thread.
-    void showStateFileDialog(bool save) override;
+    void showFileDialog(FileDialog dialog) override;
+    void displayChanged() override;
     void showMessage(const QString& text) override;
     void playbackChanged(const Playback& playback) override;
     void showLibrary(const QString& select, bool paused) override;
@@ -149,7 +151,8 @@ private:
     void updateSlotMenus(); // GUI thread: each slot's time and thumbnail
     void showOsd(const QString& text); // GUI thread
     void placeOsd();
-    void updateOverlays(); // GUI thread: PAUSED and the speed indicator
+    void updateOverlays(); // GUI thread: PAUSED, the speed indicator and the FPS
+    void updateFps();      // GUI thread, each second: frames shown in the last one
     void releaseHeld(int key); // the release of a hold action's key
     void setRunState(const QString& runState);    // GUI thread
     void showGame();
@@ -182,6 +185,10 @@ private:
     Playback m_playback; // under m_playbackMutex
     double m_baseRate = 60.0988; // the console's frame rate
     QTimer* m_osdTimer = nullptr;
+    QLabel* m_fps = nullptr; // "60 FPS", top left, like the speed indicator (Show FPS)
+    QTimer* m_fpsTimer = nullptr;
+    std::uint64_t m_fpsFrame = 0; // the view's frame index at the last count
+    QElapsedTimer m_fpsClock;
     QMenu* m_saveStateMenu = nullptr;
     QMenu* m_loadStateMenu = nullptr;
     QMenu* m_selectSlotMenu = nullptr;

@@ -151,7 +151,7 @@ Real-time mode in `cutenes-api` (R3), test-first:
   (hold and toggle), speed, Frame Advance, and the audio policy during
   fast-forward. Measure state sizes and set the rewind budget so the default
   holds at least 30 s.
-- [ ] G033 [P] [US3] Screenshot (F12), the OSD message layer, Show FPS, and
+- [x] G033 [P] [US3] Screenshot (F12), the OSD message layer, Show FPS, and
   Open Library Folder. Import and export battery saves.
 - [ ] G034 [US3] The complete menu bar per `contracts/menus-and-commands.md`,
   with every item present. Items whose feature lands in a later phase are

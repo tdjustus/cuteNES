@@ -47,6 +47,12 @@ Conventions:
 | Open Library Folder | `gui.open_library_folder` | | | |
 | Exit † | `gui.exit` | | Ctrl+Q | |
 
+Import Battery Save replaces the whole battery RAM (a short file is padded
+with zeros) and resets the game, which reads its save as it starts; a paused
+game stays paused. Both battery items need a cartridge with battery RAM
+(`NoBattery`). Take Screenshot writes the core's 256x240 frame, unfiltered,
+to `screenshots/<game>/<YYYYMMDD-HHMMSS>.png` and returns its `path`.
+
 `gui.list_slots` (no menu item; it backs the slot submenus' labels) returns
 each slot's time and thumbnail file. It is listed under "Queries" below.
 
@@ -200,8 +206,11 @@ Each group's keys are an enum in its schema (data-model.md "Settings").
 - A paused game shows "PAUSED" over the picture. Short confirmations
   ("State saved to slot 3") float over the bottom-left corner of the window
   and never take room from the game.
-- The status bar shows the game name, the FPS (when on), the speed when it is
-  not 100%, the movie state, and an **automation indicator**.
+- Show FPS puts the frames shown in the last second ("60 FPS") at the top
+  left of the picture, in the speed indicator's style. With Show On-Screen
+  Messages off, the confirmations are not shown.
+- The window shows the movie state and an **automation indicator** (G035,
+  G7).
 - The indicator appears while any API or MCP client is connected. Its
   tooltip lists the clients and says "Paused by automation" when
   `pausedByAutomation` is true.

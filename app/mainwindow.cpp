@@ -117,6 +117,8 @@ const QStringList kImplemented = {
     QStringLiteral("gui.load_state_file"), QStringLiteral("gui.set_rewind"),
     QStringLiteral("gui.set_fast_forward"), QStringLiteral("gui.toggle_fast_forward"),
     QStringLiteral("gui.set_speed"), QStringLiteral("gui.frame_advance"),
+    QStringLiteral("gui.import_battery_save"), QStringLiteral("gui.export_battery_save"),
+    QStringLiteral("gui.take_screenshot"), QStringLiteral("gui.toggle_fps"), QStringLiteral("gui.toggle_osd"),
 };
 const QStringList kSettingsPages = {QStringLiteral("library")};
 const QStringList kNeedGame = {
@@ -127,7 +129,8 @@ const QStringList kNeedGame = {
     QStringLiteral("gui.undo_load_state"), QStringLiteral("gui.save_state_file"),
     QStringLiteral("gui.load_state_file"), QStringLiteral("gui.set_rewind"),
     QStringLiteral("gui.set_fast_forward"), QStringLiteral("gui.toggle_fast_forward"),
-    QStringLiteral("gui.frame_advance"),
+    QStringLiteral("gui.frame_advance"), QStringLiteral("gui.import_battery_save"),
+    QStringLiteral("gui.export_battery_save"), QStringLiteral("gui.take_screenshot"),
 };
 // Actions that act while their key is held: on at the press, off at the
 // release (contract "Fast Forward (hold)", "Rewind (hold)").
@@ -229,7 +232,13 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_speed = new QLabel(m_view);
     m_speed->setObjectName(QStringLiteral("speedOverlay"));
     m_speed->setStyleSheet(overlayStyle(2));
-    for (QLabel* overlay : {m_paused, m_speed}) {
+    m_fps = new QLabel(m_view);
+    m_fps->setObjectName(QStringLiteral("fpsOverlay"));
+    m_fps->setStyleSheet(overlayStyle(2));
+    m_fpsTimer = new QTimer(this);
+    m_fpsTimer->setInterval(1000);
+    connect(m_fpsTimer, &QTimer::timeout, this, &MainWindow::updateFps);
+    for (QLabel* overlay : {m_paused, m_speed, m_fps}) {
         overlay->setAttribute(Qt::WA_TransparentForMouseEvents);
         overlay->hide();
     }
@@ -270,6 +279,11 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_commands.setMaxThreadCount(2);
     createMenus();
     wireActions();
+    for (QAction* action : menuBar()->findChildren<QAction*>()) {
+        const QString command = action->property("command").toString();
+        if (command == QLatin1String("gui.toggle_fps")) action->setChecked(m_settings.showFps());
+        if (command == QLatin1String("gui.toggle_osd")) action->setChecked(m_settings.showOsd());
+    }
     rebuildRecentMenu();
     setRunState(QStringLiteral("NeedsRom"));
 
@@ -433,8 +447,8 @@ void MainWindow::createMenus()
     palette.item(tr("Default"), "gui.set_palette", {}, {{QStringLiteral("name"), QStringLiteral("default")}});
     palette.item(tr("Load .pal…"), "gui.set_palette");
     view.separator();
-    view.item(tr("Show &FPS"), "gui.toggle_fps");
-    view.item(tr("Show On-Screen &Messages"), "gui.toggle_osd");
+    view.item(tr("Show &FPS"), "gui.toggle_fps")->setCheckable(true);
+    view.item(tr("Show On-Screen &Messages"), "gui.toggle_osd")->setCheckable(true);
     view.item(tr("Always on &Top"), "gui.toggle_always_on_top");
 
     MenuBuilder tools(menu(QStringLiteral("menuTools")));
@@ -795,17 +809,38 @@ void MainWindow::showOpenRomDialog()
     }, Qt::QueuedConnection);
 }
 
-void MainWindow::showStateFileDialog(bool save)
+void MainWindow::showFileDialog(FileDialog dialog)
 {
     // Callable from any thread, like showOpenRomDialog.
-    QMetaObject::invokeMethod(this, [this, save] {
-        const QString folder = library().folder(Library::Folder::States);
-        const QString filter = tr("cuteNES states (*.state)");
-        const QString path = save ? QFileDialog::getSaveFileName(this, tr("Save State to File"), folder, filter)
-                                  : QFileDialog::getOpenFileName(this, tr("Load State from File"), folder, filter);
-        if (path.isEmpty()) return;
-        runCommand(save ? QStringLiteral("gui.save_state_file") : QStringLiteral("gui.load_state_file"),
-            {{QStringLiteral("path"), path}});
+    QMetaObject::invokeMethod(this, [this, dialog] {
+        const bool battery = dialog == FileDialog::ExportBattery || dialog == FileDialog::ImportBattery;
+        const bool save = dialog == FileDialog::SaveState || dialog == FileDialog::ExportBattery;
+        const QString folder = library().folder(battery ? Library::Folder::Saves : Library::Folder::States);
+        const QString filter = battery ? tr("Battery saves (*.sav)") : tr("cuteNES states (*.state)");
+        QString title;
+        QString command;
+        switch (dialog) {
+        case FileDialog::SaveState: title = tr("Save State to File"); command = QStringLiteral("gui.save_state_file"); break;
+        case FileDialog::LoadState: title = tr("Load State from File"); command = QStringLiteral("gui.load_state_file"); break;
+        case FileDialog::ExportBattery: title = tr("Export Battery Save"); command = QStringLiteral("gui.export_battery_save"); break;
+        case FileDialog::ImportBattery: title = tr("Import Battery Save"); command = QStringLiteral("gui.import_battery_save"); break;
+        }
+        const QString path = save ? QFileDialog::getSaveFileName(this, title, folder, filter)
+                                  : QFileDialog::getOpenFileName(this, title, folder, filter);
+        if (!path.isEmpty()) runCommand(command, {{QStringLiteral("path"), path}});
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::displayChanged()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        for (QAction* action : menuBar()->findChildren<QAction*>()) {
+            const QString command = action->property("command").toString();
+            if (command == QLatin1String("gui.toggle_fps")) action->setChecked(m_settings.showFps());
+            if (command == QLatin1String("gui.toggle_osd")) action->setChecked(m_settings.showOsd());
+        }
+        if (!m_settings.showOsd()) m_osd->hide();
+        updateOverlays();
     }, Qt::QueuedConnection);
 }
 
@@ -818,6 +853,7 @@ void MainWindow::showOsd(const QString& text)
 {
     // The message floats over the page, so it never takes room from the
     // game (a status bar did, for good).
+    if (!m_settings.showOsd()) return; // View > Show On-Screen Messages
     m_osd->setText(text);
     m_osd->adjustSize();
     placeOsd();
@@ -893,6 +929,29 @@ void MainWindow::updateOverlays()
     constexpr int kMargin = 12;
     m_speed->move(m_view->width() - m_speed->width() - kMargin, kMargin);
     m_speed->raise();
+
+    const bool fps = game && m_settings.showFps();
+    if (fps && !m_fps->isVisible()) {
+        m_fps->setText(tr("— FPS"));
+        m_fpsFrame = m_view->shownFrameIndex();
+        m_fpsClock.start();
+        m_fpsTimer->start();
+    } else if (!fps) {
+        m_fpsTimer->stop();
+    }
+    m_fps->setVisible(fps);
+    m_fps->adjustSize();
+    m_fps->move(kMargin, kMargin);
+    m_fps->raise();
+}
+
+void MainWindow::updateFps()
+{
+    const std::uint64_t shown = m_view->shownFrameIndex();
+    const qint64 ms = m_fpsClock.restart();
+    if (ms > 0) m_fps->setText(tr("%1 FPS").arg(qRound(static_cast<double>(shown - m_fpsFrame) * 1000.0 / static_cast<double>(ms))));
+    m_fpsFrame = shown;
+    m_fps->adjustSize();
 }
 
 void MainWindow::placeOsd()
