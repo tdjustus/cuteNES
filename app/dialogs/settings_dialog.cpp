@@ -13,6 +13,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QSlider>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QVBoxLayout>
@@ -119,6 +120,10 @@ SettingsDialog::SettingsDialog(QWidget* parent)
             page = buildServersPage(m_stack);
         } else if (QLatin1String(key) == QLatin1String("video")) {
             page = buildVideoPage(m_stack);
+        } else if (QLatin1String(key) == QLatin1String("audio")) {
+            page = buildAudioPage(m_stack);
+        } else if (QLatin1String(key) == QLatin1String("emulation")) {
+            page = buildEmulationPage(m_stack);
         } else if (QLatin1String(key) == QLatin1String("input")) {
             page = buildInputPage(m_stack);
         } else {
@@ -355,6 +360,115 @@ void SettingsDialog::setVideo(const Video& v)
     c.alwaysOnTop->setChecked(v.alwaysOnTop);
     c.showFps->setChecked(v.showFps);
     c.showOsd->setChecked(v.showOsd);
+}
+
+QWidget* SettingsDialog::buildAudioPage(QWidget* parent)
+{
+    auto* page = new QWidget(parent);
+    m_device = new QComboBox(page);
+    m_device->setObjectName(QStringLiteral("audioDevice"));
+    m_device->setAccessibleName(tr("Output device"));
+    connect(m_device, &QComboBox::activated, this,
+        [this] { emit settingRequested(QStringLiteral("audio.device"), m_device->currentData().toString()); });
+    m_volume = new QSlider(Qt::Horizontal, page);
+    m_volume->setObjectName(QStringLiteral("volume"));
+    m_volume->setRange(0, 100);
+    m_volume->setAccessibleName(tr("Volume"));
+    connect(m_volume, &QSlider::valueChanged, this,
+        [this](int volume) { emit settingRequested(QStringLiteral("audio.volume"), volume); });
+    m_muted = new QCheckBox(tr("Mute"), page);
+    m_muted->setObjectName(QStringLiteral("muted"));
+    connect(m_muted, &QCheckBox::toggled, this,
+        [this](bool on) { emit settingRequested(QStringLiteral("audio.muted"), on); });
+    m_latency = new QSpinBox(page);
+    m_latency->setObjectName(QStringLiteral("latencyMs"));
+    m_latency->setRange(32, 200);
+    m_latency->setSuffix(tr(" ms"));
+    m_latency->setAccessibleName(tr("Latency"));
+    connect(m_latency, &QSpinBox::valueChanged, this,
+        [this](int ms) { emit settingRequested(QStringLiteral("audio.latencyMs"), ms); });
+    m_ffAudio = new QComboBox(page);
+    m_ffAudio->setObjectName(QStringLiteral("fastForwardAudio"));
+    m_ffAudio->addItem(tr("Speed up (up to 2x, then mute)"), QStringLiteral("stretch"));
+    m_ffAudio->addItem(tr("Mute"), QStringLiteral("mute"));
+    connect(m_ffAudio, &QComboBox::currentIndexChanged, this, [this] {
+        emit settingRequested(QStringLiteral("audio.fastForwardAudio"), m_ffAudio->currentData().toString());
+    });
+    auto* volume = new QHBoxLayout;
+    volume->addWidget(m_volume, 1);
+    volume->addWidget(m_muted);
+    auto* form = new QFormLayout;
+    form->setLabelAlignment(Qt::AlignRight);
+    form->addRow(tr("Output device"), m_device);
+    form->addRow(tr("Volume"), volume);
+    form->addRow(tr("Latency"), m_latency);
+    form->addRow(tr("Fast-forward sound"), m_ffAudio);
+    auto* note = new QLabel(tr("Lower latency answers sooner but may crackle on a busy computer. If the device is "
+                               "unplugged, sound moves to the default device."),
+        page);
+    note->setWordWrap(true);
+    note->setForegroundRole(QPalette::PlaceholderText);
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(16, 4, 4, 4);
+    layout->addLayout(form);
+    layout->addWidget(note);
+    layout->addStretch();
+    setAudio({});
+    return page;
+}
+
+void SettingsDialog::setAudio(const Audio& a)
+{
+    const QSignalBlocker b1(m_device), b2(m_volume), b3(m_muted), b4(m_latency), b5(m_ffAudio);
+    m_device->clear();
+    m_device->addItem(tr("Default device"), QStringLiteral("default"));
+    for (const QString& name : a.devices) m_device->addItem(name, name);
+    if (m_device->findData(a.device) < 0) m_device->addItem(tr("%1 (not connected)").arg(a.device), a.device);
+    m_device->setCurrentIndex(m_device->findData(a.device));
+    if (!m_volume->isSliderDown()) m_volume->setValue(a.volume);
+    m_muted->setChecked(a.muted);
+    if (!m_latency->hasFocus()) m_latency->setValue(a.latencyMs);
+    m_ffAudio->setCurrentIndex(qMax(0, m_ffAudio->findData(a.fastForwardAudio)));
+}
+
+QWidget* SettingsDialog::buildEmulationPage(QWidget* parent)
+{
+    auto* page = new QWidget(parent);
+    m_pauseInactive = new QCheckBox(tr("Pause when cuteNES is in the background"), page);
+    m_pauseInactive->setObjectName(QStringLiteral("pauseWhenInactive"));
+    connect(m_pauseInactive, &QCheckBox::toggled, this,
+        [this](bool on) { emit settingRequested(QStringLiteral("emulation.pauseWhenInactive"), on); });
+    m_resumeOnOpen = new QCheckBox(tr("Resume games where I left off"), page);
+    m_resumeOnOpen->setObjectName(QStringLiteral("resumeOnOpen"));
+    m_resumeOnOpen->setToolTip(tr("Closing a game keeps its state, and opening it again offers to go on from there."));
+    connect(m_resumeOnOpen, &QCheckBox::toggled, this,
+        [this](bool on) { emit settingRequested(QStringLiteral("emulation.resumeOnOpen"), on); });
+    m_ffSpeed = new QComboBox(page);
+    m_ffSpeed->setObjectName(QStringLiteral("fastForwardSpeed"));
+    for (const int percent : {150, 200, 300, 400}) m_ffSpeed->addItem(tr("%1 %").arg(percent), percent);
+    m_ffSpeed->setAccessibleName(tr("Fast-forward speed"));
+    connect(m_ffSpeed, &QComboBox::currentIndexChanged, this, [this] {
+        emit settingRequested(QStringLiteral("emulation.fastForwardSpeed"), m_ffSpeed->currentData().toInt());
+    });
+    auto* form = new QFormLayout;
+    form->setLabelAlignment(Qt::AlignRight);
+    form->addRow(tr("Fast-forward speed"), m_ffSpeed);
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(16, 4, 4, 4);
+    layout->addWidget(m_pauseInactive);
+    layout->addWidget(m_resumeOnOpen);
+    layout->addLayout(form);
+    layout->addStretch();
+    setEmulation({});
+    return page;
+}
+
+void SettingsDialog::setEmulation(const Emulation& e)
+{
+    const QSignalBlocker b1(m_pauseInactive), b2(m_resumeOnOpen), b3(m_ffSpeed);
+    m_pauseInactive->setChecked(e.pauseWhenInactive);
+    m_resumeOnOpen->setChecked(e.resumeOnOpen);
+    m_ffSpeed->setCurrentIndex(qMax(0, m_ffSpeed->findData(e.fastForwardSpeed)));
 }
 
 QWidget* SettingsDialog::buildInputPage(QWidget* parent)

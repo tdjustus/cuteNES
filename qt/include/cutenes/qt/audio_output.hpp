@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <vector>
 
 struct SDL_AudioStream;
 
@@ -27,9 +28,16 @@ public:
     AudioOutput(const AudioOutput&) = delete;
     AudioOutput& operator=(const AudioOutput&) = delete;
 
-    // Opens the default playback device. False (with error()) leaves the
-    // output silent; samples are then dropped (spec US7-5).
-    bool open();
+    // The playback devices' names.
+    static std::vector<std::string> devices();
+
+    // Opens `device` by name, or the default playback device (which SDL
+    // moves to the system's new default by itself). A named device that is
+    // not there opens the default instead, and device() is then empty.
+    // False (with error()) leaves the output silent; samples are then
+    // dropped (spec US7-5).
+    bool open(const std::string& device = {});
+    std::string device() const; // empty: the default
     void close();
     bool isOpen() const;
     std::string error() const;
@@ -50,6 +58,18 @@ public:
     void setMuted(bool muted);
     bool muted() const { return m_muted.load(); }
 
+    // The player's volume (0-100) and mute (audio.volume, audio.muted).
+    void setVolume(int percent);
+    int volume() const { return m_volume.load(); }
+    void setUserMuted(bool muted);
+    bool userMuted() const { return m_userMuted.load(); }
+
+    // Reads SDL's audio device events (GUI thread). When the open device
+    // goes away, sound moves to the default device; when no device is left,
+    // the output is closed and silent. Returns what happened.
+    enum class DeviceChange { None, MovedToDefault, Lost };
+    DeviceChange poll();
+
     void setTargetLatencyMs(int ms); // default 64 (data-model "audio.latencyMs")
     int targetLatencyMs() const { return m_targetMs.load(); }
 
@@ -62,17 +82,22 @@ public:
 
 private:
     int queuedSamples() const; // m_mutex held
+    bool openLocked(const std::string& device); // m_mutex held
+    void applyGain();                           // m_mutex held
 
     const int m_sampleRate;
     mutable std::mutex m_mutex;
     SDL_AudioStream* m_stream = nullptr;
     std::string m_error;
+    std::string m_device; // the open device's name; empty: the default
     bool m_playing = false; // the device is consuming (primed)
     double m_rate = 1.0;
     std::uint64_t m_underruns = 0;
     std::atomic<int> m_targetMs{64};
     std::atomic<double> m_speed{1.0};
     std::atomic<bool> m_muted{false};
+    std::atomic<int> m_volume{100};
+    std::atomic<bool> m_userMuted{false};
 };
 
 } // namespace cutenes::qt

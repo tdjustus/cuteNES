@@ -186,7 +186,7 @@ Real-time mode in `cutenes-api` (R3), test-first:
 
 ## Phase G5: Display and sound (branch `feature/gui-av`)
 
-- [ ] G050 [US7] Tests first:
+- [x] G050 [US7] Tests first:
   - scale and aspect window sizes;
   - fullscreen state;
   - settings that persist across restarts;
@@ -195,9 +195,9 @@ Real-time mode in `cutenes-api` (R3), test-first:
   display-synced pacing goes with the audio work in `feature/gui-audio`): display-synced pacing (R4, moved from G1),
   scale, fullscreen with the menu reachable through Alt or the top edge, integer scaling, aspect, overscan, the smooth
   and scanline shaders, high DPI and Always on Top.
-- [ ] G052 [US7] Audio settings: the device list, volume, mute, latency and
+- [x] G052 [US7] Audio settings: the device list, volume, mute, latency and
   device-change handling. Record Audio (WAV).
-- [ ] G053 [US7] Pause when inactive, and resume where left off (the auto
+- [x] G053 [US7] Pause when inactive, and resume where left off (the auto
   state).
 - [ ] G054 Manual checklist **M5**.
 

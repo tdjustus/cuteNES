@@ -134,10 +134,11 @@ const QStringList kImplemented = {
     QStringLiteral("gui.show_shortcuts"), QStringLiteral("gui.set_scale"), QStringLiteral("gui.toggle_fullscreen"),
     QStringLiteral("gui.toggle_integer_scaling"), QStringLiteral("gui.set_aspect"), QStringLiteral("gui.set_overscan"),
     QStringLiteral("gui.set_filter"), QStringLiteral("gui.toggle_always_on_top"),
+    QStringLiteral("gui.toggle_audio_recording"),
 };
 // Settings > Hotkeys opens the Key Bindings page (#108).
-const QStringList kSettingsPages = {QStringLiteral("video"), QStringLiteral("library"), QStringLiteral("servers"),
-    QStringLiteral("input"), QStringLiteral("hotkeys")};
+const QStringList kSettingsPages = {QStringLiteral("video"), QStringLiteral("audio"), QStringLiteral("emulation"),
+    QStringLiteral("library"), QStringLiteral("servers"), QStringLiteral("input"), QStringLiteral("hotkeys")};
 const QStringList kNeedGame = {
     QStringLiteral("gui.close_game"), QStringLiteral("gui.toggle_pause"),
     QStringLiteral("gui.reset"), QStringLiteral("gui.power_cycle"),
@@ -148,6 +149,7 @@ const QStringList kNeedGame = {
     QStringLiteral("gui.set_fast_forward"), QStringLiteral("gui.toggle_fast_forward"),
     QStringLiteral("gui.frame_advance"), QStringLiteral("gui.import_battery_save"),
     QStringLiteral("gui.export_battery_save"), QStringLiteral("gui.take_screenshot"),
+    QStringLiteral("gui.toggle_audio_recording"),
 };
 // Actions that act while their key is held: on at the press, off at the
 // release (contract "Fast Forward (hold)", "Rewind (hold)").
@@ -264,7 +266,15 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
         overlay->hide();
     }
     m_audio = std::make_unique<qt::AudioOutput>();
-    m_audio->open(); // silent if no device (spec US7-5)
+    // The saved device, or the default when it is gone; silent if none
+    // (spec US7-5).
+    const QString device = m_settings.audio().device;
+    m_audio->open(device == QLatin1String("default") ? std::string() : device.toStdString());
+    if (m_audio->isOpen() && device != QLatin1String("default") && m_audio->device().empty()) {
+        QMetaObject::invokeMethod(this, [this, device] {
+            showOsd(tr("%1 is not available; sound plays on the default device").arg(device));
+        }, Qt::QueuedConnection);
+    }
 
     m_index = new LibraryIndex(options.indexCacheFile.isEmpty() ? LibraryIndex::defaultCacheFile()
                                                                  : options.indexCacheFile,
@@ -299,7 +309,7 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
                           .toStdString();
     m_session = std::make_unique<api::Session>(config);
     m_host->attach(*m_session);
-    m_session->setMediaSinks(m_view, m_audio.get());
+    m_session->setMediaSinks(m_view, m_host->audioTap(m_audio.get()));
     m_session->setRealtime(true);
 
     // Settings > Servers: off until the user turns them on (FR-071).
@@ -319,6 +329,19 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_automationTimer = new QTimer(this);
     m_automationTimer->setInterval(250);
     connect(m_automationTimer, &QTimer::timeout, this, &MainWindow::updateAutomation);
+    connect(m_automationTimer, &QTimer::timeout, this, [this] {
+        // A device that goes away never stops the game (FR-042).
+        switch (m_audio->poll()) {
+        case qt::AudioOutput::DeviceChange::MovedToDefault:
+            showOsd(tr("The sound device was disconnected; sound plays on the default device"));
+            break;
+        case qt::AudioOutput::DeviceChange::Lost:
+            showOsd(tr("No sound device is left; the game plays on silently"));
+            break;
+        case qt::AudioOutput::DeviceChange::None:
+            break;
+        }
+    });
     m_automationTimer->start();
 
     // Timer pacing at the console's rate (R4); frames requested while
@@ -333,6 +356,7 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     defineBindings();
     applyBindings();
     applyInputSettings();
+    applyAudioSettings();
 
     // Gamepads: a pad plugged back in gets its player back, across runs too.
     m_padBackend = options.gamepads ? options.gamepads : std::shared_ptr<qt::GamepadBackend>(qt::makeSdlGamepads());
@@ -712,6 +736,56 @@ QVector<MainWindow::Gamepad> MainWindow::gamepads() const
 void MainWindow::inputSettingsChanged()
 {
     QMetaObject::invokeMethod(this, &MainWindow::applyInputSettings, Qt::QueuedConnection);
+}
+
+void MainWindow::audioSettingsChanged()
+{
+    QMetaObject::invokeMethod(this, &MainWindow::applyAudioSettings, Qt::QueuedConnection);
+}
+
+void MainWindow::applyAudioSettings()
+{
+    const AppSettings::AudioSettings a = m_settings.audio();
+    const std::string device = a.device == QLatin1String("default") ? std::string() : a.device.toStdString();
+    if (m_audio->device() != device || !m_audio->isOpen()) m_audio->open(device);
+    m_audio->setVolume(a.volume);
+    m_audio->setUserMuted(a.muted);
+    m_audio->setTargetLatencyMs(a.latencyMs);
+    updateSettingsDialog();
+}
+
+void MainWindow::offerResume(const QString& autoState)
+{
+    QMetaObject::invokeMethod(this, [this, autoState] {
+        auto* box = new QMessageBox(QMessageBox::Question, tr("Resume"),
+            tr("Resume %1 where you left off?").arg(m_romName), QMessageBox::Yes | QMessageBox::No, this);
+        box->setObjectName(QStringLiteral("resumeOffer"));
+        box->setInformativeText(tr("No starts the game afresh."));
+        box->setDefaultButton(QMessageBox::Yes);
+        box->setAttribute(Qt::WA_DeleteOnClose);
+        connect(box, &QMessageBox::finished, this, [this, box, autoState](int) {
+            if (box->clickedButton() == box->button(QMessageBox::Yes)) {
+                runCommand(QStringLiteral("gui.load_state_file"), {{QStringLiteral("path"), autoState}})
+                    .then(this, [this](const api::Result& r) {
+                        if (!r.isError()) runCommand(QStringLiteral("core.resume"), {}, true);
+                    });
+            } else {
+                runCommand(QStringLiteral("core.resume"), {}, true);
+            }
+        });
+        box->open();
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::recordingChanged(const QString& path)
+{
+    QMetaObject::invokeMethod(this, [this, recording = !path.isEmpty()] {
+        for (QAction* action : menuBar()->findChildren<QAction*>()) {
+            if (action->property("command").toString() == QLatin1String("gui.toggle_audio_recording")) {
+                action->setText(recording ? tr("Stop &Recording") : tr("Record &Audio…"));
+            }
+        }
+    }, Qt::QueuedConnection);
 }
 
 void MainWindow::applyInputSettings()
@@ -1183,6 +1257,12 @@ void MainWindow::updateSettingsDialog()
         {v.overscanTop, v.overscanBottom, v.overscanLeft, v.overscanRight}, v.filter, v.alwaysOnTop,
         m_settings.showFps(), m_settings.showOsd()};
     m_settingsDialog->setVideo(video);
+    const AppSettings::AudioSettings a = m_settings.audio();
+    SettingsDialog::Audio audio{a.device, {}, a.volume, a.muted, a.latencyMs, a.fastForwardAudio};
+    for (const std::string& name : qt::AudioOutput::devices()) audio.devices << QString::fromStdString(name);
+    m_settingsDialog->setAudio(audio);
+    const AppSettings::EmulationSettings e = m_settings.emulation();
+    m_settingsDialog->setEmulation({e.pauseWhenInactive, e.resumeOnOpen, e.fastForwardSpeed});
 }
 
 void MainWindow::serversChanged()
@@ -1753,8 +1833,29 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
     return QMainWindow::eventFilter(watched, event);
 }
 
+void MainWindow::followFocus()
+{
+    // Our own dialogs keep the game going; another application pauses it
+    // (FR-036), and coming back resumes what this paused.
+    QWidget* active = QApplication::activeWindow();
+    const bool ours = active == this || (active && active->parentWidget() && active->parentWidget()->window() == this);
+    if (!ours) {
+        if (!m_pausedByFocus && m_settings.emulation().pauseWhenInactive && m_runState == QLatin1String("Running")) {
+            m_pausedByFocus = true;
+            runCommand(QStringLiteral("core.pause"), {}, true);
+        }
+    } else if (m_pausedByFocus) {
+        m_pausedByFocus = false;
+        if (hasGame()) runCommand(QStringLiteral("core.resume"), {}, true);
+    }
+}
+
 void MainWindow::changeEvent(QEvent* event)
 {
+    if (event->type() == QEvent::ActivationChange) {
+        // Once the activation settles: a dialog of ours may be taking it.
+        QTimer::singleShot(0, this, &MainWindow::followFocus);
+    }
     // Keys held while the window loses focus would stay down (G015).
     if (event->type() == QEvent::ActivationChange && !isActiveWindow()) {
         m_input.clear();

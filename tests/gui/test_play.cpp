@@ -90,7 +90,8 @@ TEST(GuiPlay, WithoutAGameOnlyTheImplementedNonGameActionsAreEnabled)
         bool enabled = noGame.contains(command);
         if (command == QLatin1String("gui.show_settings")) {
             const QString page = a->property("commandArgs").toMap().value(QStringLiteral("page")).toString();
-            enabled = page.isEmpty() || page == QLatin1String("video") || page == QLatin1String("library") || page == QLatin1String("servers")
+            enabled = page.isEmpty() || page == QLatin1String("video") || page == QLatin1String("audio")
+                || page == QLatin1String("emulation") || page == QLatin1String("library") || page == QLatin1String("servers")
                 || page == QLatin1String("input") || page == QLatin1String("hotkeys"); // the Key Bindings page
         }
         EXPECT_EQ(a->isEnabled(), enabled) << command.toStdString() << " " << a->text().toStdString();

@@ -3,6 +3,7 @@
 
 add_executable(cutenes-gui-tests
     gui_main.cpp
+    test_audio.cpp
     test_battery.cpp
     test_gamepads.cpp
     test_input.cpp

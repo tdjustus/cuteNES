@@ -158,6 +158,9 @@ private:
     void bindingsChanged() override;
     QVector<Gamepad> gamepads() const override;
     void inputSettingsChanged() override;
+    void audioSettingsChanged() override;
+    void offerResume(const QString& autoState) override;
+    void recordingChanged(const QString& path) override;
     void openLibraryFolder() override;
     void exit() override;
     QVector<LibraryEntry> libraryEntries() const override;
@@ -190,6 +193,8 @@ private:
     void applyVideo(); // GUI thread: the video settings to the view, the window and the menus
     void resizeToScale();
     void applyInputSettings(); // GUI thread: the turbo rate and opposite directions
+    void applyAudioSettings(); // GUI thread: the device, volume, mute and latency
+    void followFocus();        // GUI thread: pause when inactive (FR-036)
     // Gamepads (GUI thread): the backend's events, one control of the pad
     // that drives `port`, and that pad going away.
     void pollGamepads();
@@ -246,6 +251,7 @@ private:
     std::unique_ptr<qt::FrameClock> m_clock;
     qt::InputMapper m_input;
     int m_turboRate = 15;
+    bool m_pausedByFocus = false; // the window paused the game when it lost focus
     std::optional<AppSettings::VideoSettings> m_video; // as applied last
     QTimer* m_menuEdgeTimer = nullptr; // fullscreen without a native menu bar
     std::shared_ptr<qt::GamepadBackend> m_padBackend;

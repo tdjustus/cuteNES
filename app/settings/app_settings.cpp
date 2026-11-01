@@ -238,6 +238,46 @@ void AppSettings::setVideo(const VideoSettings& v)
     set("alwaysOnTop", v.alwaysOnTop);
 }
 
+AppSettings::AudioSettings AppSettings::audio() const
+{
+    std::lock_guard lock(m_mutex);
+    AudioSettings a;
+    a.device = m_settings.value(QStringLiteral("audio/device"), a.device).toString();
+    a.volume = m_settings.value(QStringLiteral("audio/volume"), a.volume).toInt();
+    a.muted = m_settings.value(QStringLiteral("audio/muted"), a.muted).toBool();
+    a.latencyMs = m_settings.value(QStringLiteral("audio/latencyMs"), a.latencyMs).toInt();
+    a.fastForwardAudio = m_settings.value(QStringLiteral("audio/fastForwardAudio"), a.fastForwardAudio).toString();
+    return a;
+}
+
+void AppSettings::setAudio(const AudioSettings& a)
+{
+    std::lock_guard lock(m_mutex);
+    m_settings.setValue(QStringLiteral("audio/device"), a.device);
+    m_settings.setValue(QStringLiteral("audio/volume"), a.volume);
+    m_settings.setValue(QStringLiteral("audio/muted"), a.muted);
+    m_settings.setValue(QStringLiteral("audio/latencyMs"), a.latencyMs);
+    m_settings.setValue(QStringLiteral("audio/fastForwardAudio"), a.fastForwardAudio);
+}
+
+AppSettings::EmulationSettings AppSettings::emulation() const
+{
+    std::lock_guard lock(m_mutex);
+    EmulationSettings e;
+    e.pauseWhenInactive = m_settings.value(QStringLiteral("emulation/pauseWhenInactive"), e.pauseWhenInactive).toBool();
+    e.resumeOnOpen = m_settings.value(QStringLiteral("emulation/resumeOnOpen"), e.resumeOnOpen).toBool();
+    e.fastForwardSpeed = m_settings.value(QStringLiteral("emulation/fastForwardSpeed"), e.fastForwardSpeed).toInt();
+    return e;
+}
+
+void AppSettings::setEmulation(const EmulationSettings& e)
+{
+    std::lock_guard lock(m_mutex);
+    m_settings.setValue(QStringLiteral("emulation/pauseWhenInactive"), e.pauseWhenInactive);
+    m_settings.setValue(QStringLiteral("emulation/resumeOnOpen"), e.resumeOnOpen);
+    m_settings.setValue(QStringLiteral("emulation/fastForwardSpeed"), e.fastForwardSpeed);
+}
+
 AppSettings::InputSettings AppSettings::input() const
 {
     std::lock_guard lock(m_mutex);

@@ -5,6 +5,7 @@
 
 #include <cutenes/api/schema.hpp>
 #include <cutenes/api/session.hpp>
+#include <cutenes/qt/audio_output.hpp>
 
 #include <QByteArray>
 #include <QDateTime>
@@ -34,6 +35,8 @@ const std::vector<std::string> kSettingsPages = {
 // keys"); later phases add theirs.
 const std::vector<std::string> kSettingKeys = {"video.scale", "video.fullscreen", "video.integerScaling",
     "video.aspect", "video.overscan", "video.filter", "video.alwaysOnTop", "video.showFps", "video.showOsd",
+    "audio.device", "audio.volume", "audio.muted", "audio.latencyMs", "audio.fastForwardAudio",
+    "emulation.pauseWhenInactive", "emulation.resumeOnOpen", "emulation.fastForwardSpeed",
     "library.root", "servers.apiEnabled", "servers.apiPort",
     "servers.mcpEnabled", "servers.mcpPort", "input.turboRate", "input.allowOppositeDirections",
     "input.pauseOnGamepadDisconnect"};
@@ -264,8 +267,15 @@ GuiHost::GuiHost(Window& window, AppSettings& settings, BatterySaver& battery)
 {
 }
 
+IAudioSink* GuiHost::audioTap(IAudioSink* output)
+{
+    m_tap.output = output;
+    return &m_tap;
+}
+
 void GuiHost::attach(api::Session& session)
 {
+    m_fastForwardSpeed = m_settings.emulation().fastForwardSpeed;
     m_session = &session;
     session.setFrameRunner([this](Machine& machine) { runFrame(machine); });
 }
@@ -350,7 +360,8 @@ void GuiHost::updatePlayback()
     playback.rewinding = m_rewinding;
     // Sound is sped up (or slowed) with the game up to 2x and muted beyond
     // that, at Unlimited and while rewinding (R4, R6).
-    playback.muted = m_rewinding || percent == 0 || percent > 200;
+    playback.muted = m_rewinding || percent == 0 || percent > 200
+        || (m_fastForward && m_settings.audio().fastForwardAudio == QLatin1String("mute"));
     m_window.playbackChanged(playback);
 }
 
@@ -370,7 +381,23 @@ void GuiHost::onSessionEvent(const api::Event& event)
     m_window.sessionEvent(event);
 }
 
-Result GuiHost::openRom(CallContext& ctx, const QString& path)
+QString GuiHost::autoStatePath() const
+{
+    const Library library = m_window.library();
+    if (!m_gameOpen || m_identity.sha1.isEmpty() || !library.isUsable()) return {};
+    return QDir(library.gameFile(Library::Folder::States, m_identity, m_gameName, {})).filePath(QStringLiteral("auto.state"));
+}
+
+Result GuiHost::stopRecording()
+{
+    const QString path = m_tap.wav.path();
+    const std::uint64_t samples = m_tap.wav.close();
+    m_window.recordingChanged({});
+    m_window.showMessage(QObject::tr("Audio saved to %1").arg(QFileInfo(path).fileName()));
+    return Result::ok({{"recording", false}, {"path", str(path)}, {"seconds", double(samples) / 48000.0}});
+}
+
+Result GuiHost::openRom(CallContext& ctx, const QString& path, std::optional<bool> resume)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -424,16 +451,42 @@ Result GuiHost::openRom(CallContext& ctx, const QString& path)
     if (!id.sha1.isEmpty()) m_settings.setLastPlayed(id.sha1, QDateTime::currentDateTimeUtc());
     m_window.gameOpened(QFileInfo(path).absoluteFilePath(), id, battery);
 
-    Result resumed = call(ctx, "core.resume");
-    if (resumed.isError()) return resumed;
+    // Where the player left off (FR-037): loaded, ignored, or offered.
+    const QString autoState = m_settings.emulation().resumeOnOpen ? autoStatePath() : QString();
+    const bool hasAuto = !autoState.isEmpty() && QFile::exists(autoState);
+    bool resumedState = false;
+    if (hasAuto && resume.value_or(false)) {
+        QString error;
+        const std::optional<QByteArray> state = StateSlots::readFile(autoState, &error);
+        resumedState = state && !loadStateBytes(ctx, *state, false).isError();
+    }
     Json v = {{"cartridge", loaded.value["cartridge"]}, {"runState", "Running"},
         {"identity", str(id.sha1)}, {"batterySave", str(battery.path)}};
     if (!battery.warning.isEmpty()) v["warning"] = str(battery.warning);
+    if (hasAuto) {
+        v["autoState"] = str(autoState);
+        v["resumed"] = resumedState;
+    }
+    if (hasAuto && !resume) {
+        v["runState"] = "Paused"; // until the player answers
+        m_window.offerResume(autoState);
+        return Result::ok(v);
+    }
+    Result resumed = call(ctx, "core.resume");
+    if (resumed.isError()) return resumed;
     return Result::ok(v);
 }
 
 Result GuiHost::closeGame(CallContext& ctx)
 {
+    if (m_tap.wav.isOpen()) stopRecording();
+    // FR-037: where the player left off, for the next open.
+    if (m_settings.emulation().resumeOnOpen) {
+        if (const QString path = autoStatePath(); !path.isEmpty() && QDir().mkpath(QFileInfo(path).path())) {
+            const SaveStateBlob blob = ctx.session.machine().captureState();
+            StateSlots::writeFile(path, QByteArray(reinterpret_cast<const char*>(blob.data), qsizetype(blob.size)));
+        }
+    }
     // FR-012: the battery save is written before the cartridge goes.
     m_battery.close(ctx.session.machine());
     m_gameOpen = false;
@@ -633,18 +686,23 @@ void GuiHost::registerCommands(api::Registry& registry)
 {
     add(registry, "gui.open_rom",
         "Open a .nes file from any folder and play it; without path, show the file dialog",
-        s::object({{"path", s::string("a file path (not limited to the library)")}}),
+        s::object({{"path", s::string("a file path (not limited to the library)")},
+            {"resume", s::boolean("with emulation.resumeOnOpen: load the automatic state (true) or start afresh "
+                                  "(false); without it the window asks")}}),
         s::object({{"dialog", s::boolean("the file dialog was shown instead")},
             {"cartridge", Json{{"type", "object"}, {"description", "as core.load_rom"}}},
             {"runState", s::stringEnum({"Running"})}, {"identity", s::string()},
             {"batterySave", s::string("the battery save file, or empty")},
-            {"warning", s::string("a battery save set aside, or another instance holds the game")}}),
+            {"warning", s::string("a battery save set aside, or another instance holds the game")},
+            {"autoState", s::string("the automatic state the game has (emulation.resumeOnOpen)")},
+            {"resumed", s::boolean("the automatic state was loaded")}}),
         true, false, [this](CallContext& ctx, const Json& args) {
             if (!args.contains("path")) {
                 m_window.showOpenRomDialog();
                 return Result::ok({{"dialog", true}});
             }
-            return openRom(ctx, QString::fromStdString(args["path"].get<std::string>()));
+            return openRom(ctx, QString::fromStdString(args["path"].get<std::string>()),
+                args.contains("resume") ? std::optional<bool>(args["resume"].get<bool>()) : std::nullopt);
         });
 
     add(registry, "gui.close_game", "Close the game, writing its battery save", s::object({}),
@@ -972,7 +1030,35 @@ void GuiHost::registerCommands(api::Registry& registry)
     later("gui.play_movie", "Play a movie", fileArgs, true, "G7");
     later("gui.stop_movie", "Stop recording or playing the movie", none, true, "G7");
     later("gui.toggle_movie_read_only", "Play the movie without recording over it", none, true, "G7");
-    later("gui.toggle_audio_recording", "Start or stop recording the sound to a WAV file", fileArgs, true, "G5");
+    add(registry, "gui.toggle_audio_recording",
+        "Start or stop recording the game's sound to a WAV file (16-bit mono, 48 kHz); without path, into the "
+        "library's recordings folder",
+        s::object({{"path", s::string("an absolute .wav path")}}),
+        s::object({{"recording", s::boolean()}, {"path", s::string()}, {"seconds", Json{{"type", "number"}}}},
+            {"recording", "path"}),
+        true, true, [this](CallContext&, const Json& args) {
+            if (m_tap.wav.isOpen()) return stopRecording();
+            QString path;
+            if (args.contains("path")) {
+                path = QString::fromStdString(args["path"].get<std::string>());
+                if (QDir::isRelativePath(path)) return invalid("/path", "the path must be absolute");
+            } else {
+                const Library library = m_window.library();
+                if (m_identity.sha1.isEmpty() || !library.isUsable()) {
+                    return Result::fail("WriteError", "the library cannot be written; see Settings > Library");
+                }
+                const QDir folder(library.gameFile(Library::Folder::Recordings, m_identity, m_gameName, {}));
+                if (!folder.mkpath(QStringLiteral("."))) return Result::fail("WriteError", "cannot create " + str(folder.path()));
+                const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+                path = folder.filePath(stamp + QStringLiteral(".wav"));
+                for (int n = 2; QFile::exists(path); ++n) path = folder.filePath(QStringLiteral("%1-%2.wav").arg(stamp).arg(n));
+            }
+            QString error;
+            if (!m_tap.wav.open(path, &error)) return Result::fail("WriteError", "cannot write " + str(path) + ": " + str(error));
+            m_window.recordingChanged(path);
+            m_window.showMessage(QObject::tr("Recording audio"));
+            return Result::ok({{"recording", true}, {"path", str(path)}});
+        });
     later("gui.show_debugger", "Open the debugger", none, true, "G8");
     later("gui.show_memory_viewer", "Open the memory viewer", none, true, "G8");
     later("gui.show_ppu_viewer", "Open the PPU viewer",
@@ -1101,6 +1187,13 @@ void GuiHost::registerCommands(api::Registry& registry)
             return Result::ok({{"section", section}});
         });
 
+    add(registry, "gui.list_audio_devices", "The playback devices, by name (for audio.device)", s::object({}),
+        s::object({{"devices", s::array(s::string(), 100)}}, {"devices"}), false, false, [](CallContext&, const Json&) {
+            Json list = Json::array();
+            for (const std::string& name : qt::AudioOutput::devices()) list.push_back(name);
+            return Result::ok({{"devices", list}});
+        });
+
     add(registry, "gui.list_gamepads", "The gamepads plugged in, with the player each drives",
         s::object({}),
         s::object({{"gamepads", s::array(s::object({{"port", s::integer(1, 2)}, {"name", s::string()},
@@ -1169,25 +1262,26 @@ void GuiHost::registerCommands(api::Registry& registry)
                 m_window.showKeyBindings(page, paused);
                 return Result::ok({{"page", str(page)}});
             }
-            // Library, Servers, Input and Video are the other pages so far
-            // (G034: the others are in the menus, disabled, until their phase).
-            if (page != QLatin1String("library") && page != QLatin1String("servers") && page != QLatin1String("input")
-                && page != QLatin1String("video")) {
-                return Result::fail("NotImplemented", "the " + str(page) + " page is coming in a later update",
-                    {{"page", str(page)}});
-            }
+            // Every other page is in the Settings dialog.
             m_window.showSettings(page);
             return Result::ok({{"page", str(page)}});
         });
 
     add(registry, "gui.get_settings", "Every setting's value and schema, or one group's",
-        s::object({{"group", s::stringEnum({"video", "library", "servers", "hotkeys", "input"})}}),
+        s::object({{"group", s::stringEnum({"video", "audio", "emulation", "library", "servers", "hotkeys", "input"})}}),
         s::object({{"values", Json{{"type", "object"}}}, {"schema", Json{{"type", "object"}}}}, {"values", "schema"}),
         false, false, [this, edge](CallContext&, const Json&) {
             const Library library = m_window.library();
             const AppSettings::ServerSettings servers = m_settings.servers();
             const AppSettings::InputSettings input = m_settings.input();
+            const AppSettings::AudioSettings audio = m_settings.audio();
+            const AppSettings::EmulationSettings emulation = m_settings.emulation();
             const Json values = {{"video", videoJson(m_settings.video(), m_settings)},
+                {"audio", {{"device", str(audio.device)}, {"volume", audio.volume}, {"muted", audio.muted},
+                              {"latencyMs", audio.latencyMs}, {"fastForwardAudio", str(audio.fastForwardAudio)}}},
+                {"emulation", {{"pauseWhenInactive", emulation.pauseWhenInactive},
+                                  {"resumeOnOpen", emulation.resumeOnOpen},
+                                  {"fastForwardSpeed", emulation.fastForwardSpeed}}},
                 {"library", {{"root", str(library.root())},
                                      {"roms", str(library.folder(Library::Folder::Roms))},
                                      {"romFolders", romFoldersValue(m_settings)}}},
@@ -1206,6 +1300,14 @@ void GuiHost::registerCommands(api::Registry& registry)
                 {"video.alwaysOnTop", s::boolean("keep the window above others")},
                 {"video.showFps", s::boolean("the frame rate over the game (off)")},
                 {"video.showOsd", s::boolean("short on-screen messages (on)")},
+                {"audio.device", s::string("a name from gui.list_audio_devices, or default (the system's)")},
+                {"audio.volume", s::integer(0, 100, "percent (100)")},
+                {"audio.muted", s::boolean()},
+                {"audio.latencyMs", s::integer(32, 200, "the target audio latency (64)")},
+                {"audio.fastForwardAudio", s::stringEnum({"stretch", "mute"})},
+                {"emulation.pauseWhenInactive", s::boolean("pause while the window is in the background (on)")},
+                {"emulation.resumeOnOpen", s::boolean("keep an automatic state on close and offer it on open (off)")},
+                {"emulation.fastForwardSpeed", s::integer(150, 400, "percent (300)")},
                 {"library.root", s::string("absolute path of the library folder")},
                 {"library.roms", s::string("the library's own roms folder (always scanned)")},
                 {"library.romFolders", s::array(s::string("added with gui.add_rom_folder"), 1000)},
@@ -1227,12 +1329,58 @@ void GuiHost::registerCommands(api::Registry& registry)
         [this](CallContext& ctx, const Json& args) {
             const std::string key = args["key"];
             if (key.rfind("video.", 0) == 0) return setVideo(key, args["value"]);
+            const Json& value = args["value"];
+            if (key.rfind("audio.", 0) == 0) {
+                AppSettings::AudioSettings audio = m_settings.audio();
+                if (key == "audio.device") {
+                    if (!value.is_string()) return invalid("/value", "must be a device name, or default");
+                    const std::string name = value.get<std::string>();
+                    const auto devices = qt::AudioOutput::devices();
+                    if (name != "default" && std::find(devices.begin(), devices.end(), name) == devices.end()) {
+                        return invalid("/value", "no playback device is called " + name + " (gui.list_audio_devices)");
+                    }
+                    audio.device = QString::fromStdString(name);
+                } else if (key == "audio.volume" || key == "audio.latencyMs") {
+                    const bool volume = key == "audio.volume";
+                    const long long lo = volume ? 0 : 32, hi = volume ? 100 : 200;
+                    if (!value.is_number_integer() || value.get<long long>() < lo || value.get<long long>() > hi) {
+                        return invalid("/value", "must be " + std::to_string(lo) + " to " + std::to_string(hi));
+                    }
+                    (volume ? audio.volume : audio.latencyMs) = value.get<int>();
+                } else if (key == "audio.muted") {
+                    if (!value.is_boolean()) return invalid("/value", "must be true or false");
+                    audio.muted = value.get<bool>();
+                } else {
+                    if (value != "stretch" && value != "mute") return invalid("/value", "must be stretch or mute");
+                    audio.fastForwardAudio = QString::fromStdString(value.get<std::string>());
+                }
+                m_settings.setAudio(audio);
+                updatePlayback();
+                m_window.audioSettingsChanged();
+                return Result::ok({{"key", key}, {"value", value}});
+            }
+            if (key.rfind("emulation.", 0) == 0) {
+                AppSettings::EmulationSettings emulation = m_settings.emulation();
+                if (key == "emulation.fastForwardSpeed") {
+                    if (!value.is_number_integer() || value.get<long long>() < 150 || value.get<long long>() > 400) {
+                        return invalid("/value", "must be 150 to 400 percent");
+                    }
+                    emulation.fastForwardSpeed = m_fastForwardSpeed = value.get<int>();
+                } else {
+                    if (!value.is_boolean()) return invalid("/value", "must be true or false");
+                    (key == "emulation.pauseWhenInactive" ? emulation.pauseWhenInactive : emulation.resumeOnOpen) =
+                        value.get<bool>();
+                }
+                m_settings.setEmulation(emulation);
+                updatePlayback();
+                m_window.audioSettingsChanged();
+                return Result::ok({{"key", key}, {"value", value}});
+            }
             if (key == "library.root") {
                 if (!args["value"].is_string()) return invalid("/value", "must be a string");
                 return setLibraryRoot(ctx, QString::fromStdString(args["value"].get<std::string>()));
             }
             if (key.rfind("servers.", 0) == 0) {
-                const Json& value = args["value"];
                 AppSettings::ServerSettings servers = m_settings.servers();
                 if (key == "servers.apiEnabled" || key == "servers.mcpEnabled") {
                     if (!value.is_boolean()) return invalid("/value", "must be true or false");
@@ -1256,7 +1404,6 @@ void GuiHost::registerCommands(api::Registry& registry)
                 return Result::ok({{"key", key}, {"value", value}});
             }
             if (key.rfind("input.", 0) == 0) {
-                const Json& value = args["value"];
                 AppSettings::InputSettings input = m_settings.input();
                 if (key == "input.turboRate") {
                     if (!value.is_number_integer() || value.get<long long>() < 2 || value.get<long long>() > 30) {

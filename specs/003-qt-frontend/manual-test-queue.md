@@ -121,3 +121,29 @@ on the raster renderer; the GPU renderer (Metal here) needs your eyes.
    included.
 8. On a Retina screen at 2x, the pixels are sharp and even (no uneven
    rows), with Nearest and integer scaling on.
+
+### Sound, focus and resuming (G052-G053, #97)
+
+Checked through MCP: `gui.list_audio_devices` (it listed the MacBook
+speakers and Teams Audio), and Record Audio over 120 frames gave a WAV of
+1.9967 s, which `afinfo` reads as 48 kHz mono 16-bit. Settings, the WAV
+header and length, focus pausing and resuming are covered by `GuiAudio`
+tests.
+
+1. Settings > Audio: move the volume slider during a game: the sound
+   follows at once. Mute silences it; unmute brings it back.
+2. Pick another output device (headphones, AirPods): the sound moves to
+   it. Unplug or disconnect it during play: a message says so, the sound
+   goes to the speakers, and the game never stops.
+3. Set the latency to 32 ms, then 200 ms: both play without crackles (200
+   lags a little behind the picture).
+4. Fast-forward (Tab) at 200 % (Settings > Emulation): the sound speeds up.
+   Choose "Mute" for fast-forward sound: it goes silent while held.
+5. Tools > Record Audio, play for a while, Tools > Stop Recording: a WAV
+   in the library's recordings folder plays back what you heard.
+6. Click another application during a game: the game pauses. Click back:
+   it plays on. Pause it yourself, click away and back: it stays paused.
+   Open Settings from cuteNES during a game: it keeps playing.
+7. Turn on "Resume games where I left off", play a little, close the game,
+   and open it again: you are asked, and Yes goes on from where you were;
+   No starts afresh.

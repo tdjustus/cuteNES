@@ -2,13 +2,14 @@
 
 // Settings (contracts/menus-and-commands.md "Settings"): one page per
 // group. G2 fills the Library page, G3 the Servers page, G4 the Input page
-// and G5 the Video page; the others arrive with their phases. Hotkeys are on the Key
+// and G5 the Video, Audio and Emulation pages; the others arrive with their phases. Hotkeys are on the Key
 // Bindings page, which Input links to.
 
 #include <QDialog>
 
 class QCheckBox;
 class QComboBox;
+class QSlider;
 class QLabel;
 class QListWidget;
 class QSpinBox;
@@ -66,6 +67,23 @@ public:
     };
     void setVideo(const Video& video);
 
+    // Settings > Audio and Emulation (audio.*, emulation.*).
+    struct Audio {
+        QString device = QStringLiteral("default");
+        QStringList devices; // the playback devices now
+        int volume = 100;
+        bool muted = false;
+        int latencyMs = 64;
+        QString fastForwardAudio = QStringLiteral("stretch");
+    };
+    void setAudio(const Audio& audio);
+    struct Emulation {
+        bool pauseWhenInactive = true;
+        bool resumeOnOpen = false;
+        int fastForwardSpeed = 300;
+    };
+    void setEmulation(const Emulation& emulation);
+
 signals:
     void pageShown(const QString& page);
     void changeLibraryRequested();
@@ -96,6 +114,16 @@ private:
     QWidget* buildServersPage(QWidget* parent);
     QWidget* buildInputPage(QWidget* parent);
     QWidget* buildVideoPage(QWidget* parent);
+    QWidget* buildAudioPage(QWidget* parent);
+    QWidget* buildEmulationPage(QWidget* parent);
+    QComboBox* m_device = nullptr;
+    QSlider* m_volume = nullptr;
+    QCheckBox* m_muted = nullptr;
+    QSpinBox* m_latency = nullptr;
+    QComboBox* m_ffAudio = nullptr;
+    QCheckBox* m_pauseInactive = nullptr;
+    QCheckBox* m_resumeOnOpen = nullptr;
+    QComboBox* m_ffSpeed = nullptr;
     struct VideoControls {
         QSpinBox* scale = nullptr;
         QCheckBox* fullscreen = nullptr;
