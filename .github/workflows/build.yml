@@ -235,10 +235,13 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Ninja, SDL3 build dependencies and AppImage tools (Linux)
+      # 22.04's default compiler is GCC 11, older than the supported GCC 12
+      # (README), and its -Wstringop-overflow false positives break the
+      # -Werror build; GCC 12 still links 22.04's own libstdc++.
+      - name: Install Ninja, GCC 12, SDL3 build dependencies and AppImage tools (Linux)
         if: runner.os == 'Linux'
         run: >-
-          sudo apt-get update -q && sudo apt-get install -y -q ninja-build
+          sudo apt-get update -q && sudo apt-get install -y -q ninja-build g++-12
           libasound2-dev libpulse-dev libudev-dev libfuse2 xvfb
 
       - name: Install Ninja (macOS)
@@ -272,19 +275,23 @@ jobs:
         run: >-
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_CXX_COMPILER=${{ runner.os == 'Windows' && 'cl' || 'c++' }}
+          -DCMAKE_CXX_COMPILER=${{ runner.os == 'Windows' && 'cl' || runner.os == 'Linux' && 'g++-12' || 'c++' }}
           -DCUTENES_BUILD_GUI=ON
           -DCUTENES_BUILD_TESTS=OFF
 
       - name: Build
         run: cmake --build build --target cutenes cutenes-server
 
-      # The Linux AppDir needs the usr/ layout linuxdeploy expects.
+      # The Linux AppDir needs the usr/ layout linuxdeploy expects. The
+      # prefix is absolute: Qt's deploy script refuses a relative one, and
+      # Windows' CMake wants a Windows path, not Git Bash's /d/a/...
       - name: Install the app component
         shell: bash
         run: |
-          prefix=stage
-          if [ "$RUNNER_OS" = Linux ]; then prefix=AppDir/usr; fi
+          root=$(pwd)
+          if [ "$RUNNER_OS" = Windows ]; then root=$(cygpath -m "$root"); fi
+          prefix="$root/stage"
+          if [ "$RUNNER_OS" = Linux ]; then prefix="$root/AppDir/usr"; fi
           cmake --install build --component app --prefix "$prefix"
           version=$(sed -n 's/^CMAKE_PROJECT_VERSION:STATIC=//p' build/CMakeCache.txt)
           echo "VERSION=$version" >> "$GITHUB_ENV"

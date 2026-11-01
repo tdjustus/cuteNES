@@ -103,6 +103,10 @@ endforeach()
 # bundle on macOS. The licenses go with them.
 include(GNUInstallDirs)
 if(APPLE)
+    # A Qt from Qt's own installer (as CI uses) names its frameworks
+    # @rpath/..., and installing drops the build tree's rpath: the bundle
+    # looks in its own Frameworks folder, where macdeployqt puts them.
+    set_target_properties(cutenes PROPERTIES INSTALL_RPATH "@executable_path/../Frameworks")
     install(TARGETS cutenes BUNDLE DESTINATION . COMPONENT app)
     install(TARGETS cutenes-server RUNTIME DESTINATION cutenes.app/Contents/MacOS COMPONENT app)
     set(license_destination cutenes.app/Contents/Resources/licenses)
@@ -128,8 +132,15 @@ foreach(file alias IN ZIP_LISTS license_files license_aliases)
     install(FILES ${file} DESTINATION ${license_destination} RENAME ${alias} COMPONENT app)
 endforeach()
 if(APPLE OR WIN32)
+    # -libpath: with the build tree's rpath gone, macdeployqt is told where
+    # the @rpath frameworks it copies come from.
+    set(deploy_options "")
+    if(APPLE)
+        set(deploy_options DEPLOY_TOOL_OPTIONS "-libpath=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_LIBS}")
+    endif()
     qt_generate_deploy_app_script(TARGET cutenes
         OUTPUT_SCRIPT deploy_script
-        NO_UNSUPPORTED_PLATFORM_ERROR)
+        NO_UNSUPPORTED_PLATFORM_ERROR
+        ${deploy_options})
     install(SCRIPT ${deploy_script} COMPONENT app)
 endif()
