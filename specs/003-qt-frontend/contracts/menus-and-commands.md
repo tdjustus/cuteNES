@@ -82,9 +82,10 @@ status message.
 The hold items act while their key is held: on at the press, off at the
 release. Chosen from the menu, where nothing is held, they toggle. Speed
 scales the frame clock; sound is sped up or slowed with it up to 2x and
-muted above that, at Unlimited and while rewinding. A badge at the top
-right of the game shows "◀◀ Rewind", "▶▶ 300 %", or a speed other than
-100%. Frame Advance pauses a running game, then runs one frame. Rewind from
+muted above that, at Unlimited and while rewinding. The PAUSED indicator,
+in the middle of the picture, also shows "◀◀ REWIND", "◀◀ FAST REWIND"
+(rewind with fast-forward held), "▶▶ FAST FORWARD", "▶▶ UNLIMITED" or
+"SPEED 50%": one indicator in one style, rewind before pause before speed. Frame Advance pauses a running game, then runs one frame. Rewind from
 a paused game pauses again on release; with no history yet, it says so.
 
 ## View

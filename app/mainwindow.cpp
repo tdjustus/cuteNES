@@ -216,19 +216,13 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_osdTimer->setSingleShot(true);
     m_osdTimer->setInterval(2500);
     connect(m_osdTimer, &QTimer::timeout, m_osd, &QWidget::hide);
-    m_paused = new QLabel(tr("PAUSED"), m_view);
-    m_paused->setObjectName(QStringLiteral("pausedOverlay"));
-    m_paused->setAttribute(Qt::WA_TransparentForMouseEvents);
-    m_paused->setStyleSheet(QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150); border-radius: 10px;"
+    // One indicator for pause, rewind and speed, so they all look alike.
+    m_status = new QLabel(m_view);
+    m_status->setObjectName(QStringLiteral("statusOverlay"));
+    m_status->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_status->setStyleSheet(QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150); border-radius: 10px;"
                                            " padding: 10px 26px; font-size: 28px; font-weight: 800; letter-spacing: 4px; }"));
-    m_paused->adjustSize();
-    m_paused->hide();
-    m_speedBadge = new QLabel(m_view);
-    m_speedBadge->setObjectName(QStringLiteral("speedBadge"));
-    m_speedBadge->setAttribute(Qt::WA_TransparentForMouseEvents);
-    m_speedBadge->setStyleSheet(QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150); border-radius: 6px;"
-                                               " padding: 4px 10px; font-weight: 700; }"));
-    m_speedBadge->hide();
+    m_status->hide();
     m_audio = std::make_unique<qt::AudioOutput>();
     m_audio->open(); // silent if no device (spec US7-5)
 
@@ -753,11 +747,7 @@ void MainWindow::setRunState(const QString& runState)
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
         if (kNeedGame.contains(action->property("command").toString())) action->setEnabled(game);
     }
-    m_paused->setVisible(game && runState == QLatin1String("Paused"));
-    if (m_paused->isVisible()) {
-        placePaused();
-        m_paused->raise();
-    }
+    updateStatus();
     // The menu offers what the next press does.
     m_pauseAction->setText(runState == QLatin1String("Paused") ? tr("&Resume") : tr("&Pause"));
     if (game) {
@@ -827,12 +817,6 @@ void MainWindow::showOsd(const QString& text)
     emit messageShown(text);
 }
 
-void MainWindow::placePaused()
-{
-    m_paused->adjustSize();
-    m_paused->move(m_view->rect().center() - m_paused->rect().center());
-}
-
 void MainWindow::releaseHeld(int key)
 {
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
@@ -870,28 +854,31 @@ void MainWindow::playbackChanged(const Playback& playback)
     m_clock->setRate(playback.speed > 0 ? m_baseRate * playback.speed : kUnlimited);
     m_audio->setSpeed(playback.speed > 0 ? playback.speed : 1.0);
     m_audio->setMuted(playback.muted);
-    QMetaObject::invokeMethod(this, [this] { updateSpeedBadge(); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(this, [this] { updateStatus(); }, Qt::QueuedConnection);
 }
 
-void MainWindow::updateSpeedBadge()
+void MainWindow::updateStatus()
 {
+    // Rewind first (it runs a paused game), then pause, then speed.
     const Playback now = playback();
+    const bool faster = now.speed == 0 || now.speed > 1;
     QString text;
     if (now.rewinding) {
-        text = tr("◀◀ Rewind");
-    } else if (now.speed == 0) {
-        text = tr("▶▶ Unlimited");
+        text = faster ? tr("◀◀ FAST REWIND") : tr("◀◀ REWIND");
+    } else if (m_runState == QLatin1String("Paused")) {
+        text = tr("PAUSED");
     } else if (now.fastForward) {
-        text = tr("▶▶ %1 %").arg(qRound(now.speed * 100));
+        text = tr("▶▶ FAST FORWARD");
+    } else if (now.speed == 0) {
+        text = tr("▶▶ UNLIMITED");
     } else if (qRound(now.speed * 100) != 100) {
-        text = tr("%1 %").arg(qRound(now.speed * 100));
+        text = tr("SPEED %1%").arg(qRound(now.speed * 100));
     }
-    m_speedBadge->setText(text);
-    m_speedBadge->setVisible(!text.isEmpty() && hasGame());
-    m_speedBadge->adjustSize();
-    constexpr int kMargin = 12;
-    m_speedBadge->move(m_view->width() - m_speedBadge->width() - kMargin, kMargin);
-    m_speedBadge->raise();
+    m_status->setText(text);
+    m_status->setVisible(!text.isEmpty() && hasGame());
+    m_status->adjustSize();
+    m_status->move(m_view->rect().center() - m_status->rect().center());
+    m_status->raise();
 }
 
 void MainWindow::placeOsd()
@@ -1044,10 +1031,7 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
     switch (event->type()) {
     case QEvent::Resize: // the application's filter sees every widget's
         if (watched == m_pages) placeOsd();
-        if (watched == m_view) {
-            placePaused();
-            updateSpeedBadge();
-        }
+        if (watched == m_view) updateStatus();
         break;
     case QEvent::FileOpen: // macOS "Open With" and drops on the Dock icon
         if (watched == qApp) {

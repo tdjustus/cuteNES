@@ -138,19 +138,67 @@ TEST(GuiRewind, ANewTimelineHasNothingToRewind)
     EXPECT_EQ(call(w, "gui.set_rewind", {{"on", true}})["rewinding"], false);
 }
 
-TEST(GuiRewind, RewindMutesTheSoundAndShowsABadge)
+TEST(GuiRewind, RewindMutesTheSoundAndSaysRewind)
 {
     MainWindow w(windowOptions());
     play(w);
     ASSERT_TRUE(waitUntil([&] { return frame(w) >= 60; }, 15000));
     call(w, "gui.set_rewind", {{"on", true}});
     EXPECT_TRUE(w.audio()->muted());
-    auto* badge = w.findChild<QLabel*>(QStringLiteral("speedBadge"));
-    ASSERT_NE(badge, nullptr);
-    EXPECT_TRUE(waitUntil([&] { return badge->isVisible() && badge->text().contains(QStringLiteral("Rewind")); }));
+    auto* status = w.findChild<QLabel*>(QStringLiteral("statusOverlay"));
+    ASSERT_NE(status, nullptr);
+    EXPECT_TRUE(waitUntil([&] { return status->isVisible() && status->text() == QStringLiteral("◀◀ REWIND"); }));
     call(w, "gui.set_rewind", {{"on", false}});
     EXPECT_FALSE(w.audio()->muted());
-    EXPECT_TRUE(waitUntil([&] { return !badge->isVisible(); }));
+    EXPECT_TRUE(waitUntil([&] { return !status->isVisible(); }));
+}
+
+// Holding fast-forward with rewind rewinds at the fast-forward speed, and
+// says so.
+TEST(GuiRewind, RewindWithFastForwardShowsFastRewind)
+{
+    MainWindow w(windowOptions());
+    play(w);
+    ASSERT_TRUE(waitUntil([&] { return frame(w) >= 120; }, 15000));
+    call(w, "gui.set_rewind", {{"on", true}});
+    call(w, "gui.set_fast_forward", {{"on", true}});
+    EXPECT_NEAR(w.frameRate(), 3 * kNtsc, 0.05);
+    auto* status = w.findChild<QLabel*>(QStringLiteral("statusOverlay"));
+    EXPECT_TRUE(waitUntil([&] { return status->isVisible() && status->text() == QStringLiteral("◀◀ FAST REWIND"); }));
+    call(w, "gui.set_fast_forward", {{"on", false}});
+    EXPECT_TRUE(waitUntil([&] { return status->text() == QStringLiteral("◀◀ REWIND"); }));
+    call(w, "gui.set_rewind", {{"on", false}});
+}
+
+// Every indicator is the PAUSED one: one label, one style, over the
+// middle of the picture (the design is the same for all of them).
+TEST(GuiSpeed, EveryIndicatorIsTheOnePausedUses)
+{
+    MainWindow w(windowOptions());
+    play(w);
+    ASSERT_TRUE(waitUntil([&] { return frame(w) > 0; }));
+    auto* status = w.findChild<QLabel*>(QStringLiteral("statusOverlay"));
+    ASSERT_NE(status, nullptr);
+    EXPECT_EQ(status->parentWidget(), w.view());
+    const QString style = status->styleSheet();
+    auto shows = [&](const QString& text) {
+        return waitUntil([&] {
+            return status->isVisible() && status->text() == text && status->styleSheet() == style
+                && status->geometry().center() == w.view()->rect().center();
+        });
+    };
+    call(w, "gui.set_speed", {{"percent", 50}});
+    EXPECT_TRUE(shows(QStringLiteral("SPEED 50%")));
+    call(w, "gui.set_fast_forward", {{"on", true}});
+    EXPECT_TRUE(shows(QStringLiteral("▶▶ FAST FORWARD")));
+    call(w, "gui.set_fast_forward", {{"on", false}});
+    call(w, "gui.set_speed", {{"percent", "unlimited"}});
+    EXPECT_TRUE(shows(QStringLiteral("▶▶ UNLIMITED")));
+    call(w, "core.pause");
+    EXPECT_TRUE(shows(QStringLiteral("PAUSED"))) << "paused says paused, whatever the speed";
+    call(w, "core.resume");
+    call(w, "gui.set_speed", {{"percent", 100}});
+    EXPECT_TRUE(waitUntil([&] { return !status->isVisible(); })) << "nothing at normal speed";
 }
 
 TEST(GuiSpeed, FastForwardRunsAtThreeTimesAndMutesAboveTwo)
@@ -162,8 +210,8 @@ TEST(GuiSpeed, FastForwardRunsAtThreeTimesAndMutesAboveTwo)
     EXPECT_EQ(call(w, "gui.set_fast_forward", {{"on", true}})["fastForward"], true);
     EXPECT_NEAR(w.frameRate(), 3 * kNtsc, 0.05) << "data-model fastForwardSpeed 300";
     EXPECT_TRUE(w.audio()->muted()) << "R4: muted above 2x";
-    auto* badge = w.findChild<QLabel*>(QStringLiteral("speedBadge"));
-    EXPECT_TRUE(waitUntil([&] { return badge->isVisible() && badge->text().contains(QStringLiteral("300")); }));
+    auto* status = w.findChild<QLabel*>(QStringLiteral("statusOverlay"));
+    EXPECT_TRUE(waitUntil([&] { return status->isVisible() && status->text() == QStringLiteral("▶▶ FAST FORWARD"); }));
     call(w, "gui.set_fast_forward", {{"on", false}});
     EXPECT_NEAR(w.frameRate(), kNtsc, 0.01);
     EXPECT_FALSE(w.audio()->muted());

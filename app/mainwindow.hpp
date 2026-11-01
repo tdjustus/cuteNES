@@ -149,8 +149,7 @@ private:
     void updateSlotMenus(); // GUI thread: each slot's time and thumbnail
     void showOsd(const QString& text); // GUI thread
     void placeOsd();
-    void placePaused();
-    void updateSpeedBadge();
+    void updateStatus(); // GUI thread: the overlay for the run state and playback
     void releaseHeld(int key); // the release of a hold action's key
     void setRunState(const QString& runState);    // GUI thread
     void showGame();
@@ -176,9 +175,8 @@ private:
     QMenu* m_recentMenu = nullptr;
     QAction* m_pauseAction = nullptr;
     QLabel* m_osd = nullptr; // on-screen messages, over the page
-    QLabel* m_paused = nullptr; // "PAUSED", over the game
+    QLabel* m_status = nullptr; // "PAUSED", "◀◀ REWIND", "SPEED 50%"..., over the game
     QSet<int> m_keysDown; // keys held now, for the hold actions
-    QLabel* m_speedBadge = nullptr; // rewind, fast-forward or a speed other than 100%, top right
     mutable std::mutex m_playbackMutex;
     Playback m_playback; // under m_playbackMutex
     double m_baseRate = 60.0988; // the console's frame rate
