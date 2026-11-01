@@ -2,6 +2,15 @@ cmake_minimum_required(VERSION 3.21)
 
 project(cutenes VERSION 0.1.0 LANGUAGES CXX)
 
+if(WIN32)
+    # A Windows package is one flat folder: Windows finds DLLs beside the
+    # executable, not in a bin/ under it, and Qt's deploy script puts Qt,
+    # qt.conf and plugins/ relative to CMAKE_INSTALL_BINDIR. Set here, before
+    # any subdirectory includes GNUInstallDirs or Qt records the value for
+    # its deploy script (docs/packaging.md).
+    set(CMAKE_INSTALL_BINDIR . CACHE PATH "Executables, and on Windows Qt's DLLs" FORCE)
+endif()
+
 # Emulation core library (feature 001).
 add_subdirectory(core)
 

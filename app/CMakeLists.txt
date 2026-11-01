@@ -119,14 +119,7 @@ endforeach()
 # macdeployqt; on Linux linuxdeploy does that work. cutenes-server, for MCP
 # clients (`cutenes-server --attach`), goes beside the app: inside the
 # bundle on macOS. The licenses go with them.
-if(WIN32)
-    # One flat folder: Windows finds DLLs beside the executable (not in a
-    # bin/ under it), and Qt's deploy script puts Qt, qt.conf and plugins/
-    # relative to CMAKE_INSTALL_BINDIR. With the default bin/, Qt landed
-    # in bin/ and cutenes.exe at the top, and it started only where Qt was
-    # on PATH, as on the CI runner.
-    set(CMAKE_INSTALL_BINDIR . CACHE PATH "" FORCE)
-endif()
+# On Windows CMAKE_INSTALL_BINDIR is "." (the top-level CMakeLists.txt).
 include(GNUInstallDirs)
 if(APPLE)
     # A Qt from Qt's own installer (as CI uses) names its frameworks
