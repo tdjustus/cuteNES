@@ -525,3 +525,18 @@ This needs a real release above the installed version, so it waits for a 1.0 rel
    says why.
 5. Pull the network cable during a download: an error says what failed,
    and the installed version still starts.
+
+### Linux AppImage: the server (#134)
+
+Automated:
+- The CI package job runs `cuteNES-<v>.AppImage server --help` and, through a link named `cutenes-server`, `./cutenes-server --help`. Both must reach the server. `--version` still reaches the app.
+- The AppRun's choice was also checked locally with stand-in programs: an app argument, `server`, a `cutenes-server` link, and the image's own name.
+
+By hand, on Linux with the AppImage:
+1. `claude mcp add cutenes -- /path/to/cuteNES-<v>-linux-x86_64.AppImage server --attach`.
+   With cuteNES running and Settings > Servers > MCP server on, the
+   client lists cuteNES's tools and AUTOMATION shows in the window.
+2. `ln -s cuteNES-<v>-linux-x86_64.AppImage cutenes-server`, then
+   `./cutenes-server --help` prints the server's help.
+3. Double-clicking the AppImage, or opening a `.nes` with it, still starts
+   the app.

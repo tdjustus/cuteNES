@@ -203,6 +203,8 @@ client to it, and follows the GUI to a new token or port when the server or the 
 
 ```bash
 claude mcp add cuteNES -- /path/to/cutenes-server --attach
+# Linux AppImage: the server is inside the image
+claude mcp add cuteNES -- /path/to/cuteNES-<version>-linux-x86_64.AppImage server --attach
 ```
 
 ## Testing

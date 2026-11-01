@@ -1,0 +1,25 @@
+#!/bin/sh
+# The AppImage's entry point (docs/packaging.md "Linux AppRun"). An AppImage
+# runs one program, so this chooses between the two it carries:
+# - cutenes-server, for MCP clients, when the image is started through a
+#   link named cutenes-server (`ln -s cuteNES-<v>.AppImage cutenes-server`)
+#   or with `server` as its first argument (`cuteNES.AppImage server --attach`);
+# - cutenes, the app, otherwise, with every argument passed on.
+# The AppImage runtime sets ARGV0 to the name the image was started as.
+HERE="$(dirname "$(readlink -f "$0")")"
+
+# linuxdeploy's plugins (Qt's among them) leave environment hooks here.
+if [ -d "$HERE/apprun-hooks" ]; then
+    for hook in "$HERE"/apprun-hooks/*.sh; do
+        [ -f "$hook" ] && . "$hook"
+    done
+fi
+
+case "$(basename "${ARGV0:-$0}")" in
+    cutenes-server*) exec "$HERE/usr/bin/cutenes-server" "$@" ;;
+esac
+if [ "$1" = "server" ]; then
+    shift
+    exec "$HERE/usr/bin/cutenes-server" "$@"
+fi
+exec "$HERE/usr/bin/cutenes" "$@"

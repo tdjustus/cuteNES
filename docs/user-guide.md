@@ -264,6 +264,10 @@ sees the same game you do, and you can play while it watches or helps.
    macOS, inside `cutenes.app/Contents/MacOS`). For example, with Claude
    Code:
    `claude mcp add cutenes -- /path/to/cutenes-server --attach`.
+   With the Linux AppImage, the server is inside the image: run the
+   AppImage with `server` first,
+   `claude mcp add cutenes -- /path/to/cuteNES-<version>-linux-x86_64.AppImage server --attach`,
+   or make a link named `cutenes-server` to the AppImage and use that.
 3. While an agent is connected, **AUTOMATION** shows at the bottom right of
    the window. Click it to open Settings > Servers.
 
