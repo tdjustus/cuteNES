@@ -58,8 +58,8 @@ optional `name` and never ask. The slot menus show each state's name, with
 the time it was saved as the tooltip.
 
 Loading a slot or a state file keeps the state it replaced, for one level of
-Undo Load State. A game that was running keeps running after a load (the
-core leaves a loaded machine paused). A rejected state changes nothing, Undo included. An empty
+Undo Load State. A load leaves the game paused, as the core does, with
+"PAUSED" over the picture; Pause / Resume plays on. A rejected state changes nothing, Undo included. An empty
 slot, or nothing to undo, fails with `NotFound`, which the GUI shows as a
 status message rather than a dialog. Saving and loading confirm with a
 status message.

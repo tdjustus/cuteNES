@@ -7,7 +7,9 @@
 #include "mainwindow.hpp"
 #include "persistence/state_slots.hpp"
 
+#include <cutenes/qt/audio_output.hpp>
 #include <cutenes/qt/emulation_view.hpp>
+#include <cutenes/qt/media_runtime.hpp>
 
 #include <QAction>
 #include <QDir>
@@ -318,10 +320,13 @@ TEST(GuiStates, AMessageNeverResizesTheGameView)
     EXPECT_EQ(w.view()->size(), view);
 }
 
-// A bug the maintainer found: after loading, the picture froze and the game
-// could not be played. A loaded game keeps running in real time.
-TEST(GuiStates, ALoadedGameKeepsPlaying)
+// The maintainer's choice: a load leaves the game paused, with PAUSED over
+// it (the core does the same), and it plays on, with sound, once resumed.
+// The first build froze on the loaded picture, as nothing said it was
+// paused, and the maintainer heard no sound after a load.
+TEST(GuiStates, ALoadedGameWaitsPausedAndPlaysOnWithSound)
 {
+    const cutenes::qt::MediaRuntime media; // SDL audio (the dummy driver)
     MainWindow w(windowOptions());
     w.show();
     call(w, "gui.open_rom", {{"path", kRom.toStdString()}});
@@ -329,11 +334,20 @@ TEST(GuiStates, ALoadedGameKeepsPlaying)
     call(w, "gui.save_state", {{"slot", 1}});
     ASSERT_TRUE(waitUntil([&] { return frame(w) > 60; }));
     call(w, "gui.load_state", {{"slot", 1}});
-    EXPECT_EQ(call(w, "core.run_state")["runState"], "Running");
+    EXPECT_EQ(call(w, "core.run_state")["runState"], "Paused");
+    auto* paused = w.findChild<QLabel*>(QStringLiteral("pausedOverlay"));
+    ASSERT_NE(paused, nullptr);
+    EXPECT_TRUE(waitUntil([&] { return paused->isVisible(); }));
+
+    call(w, "gui.toggle_pause");
     const std::uint64_t loaded = frame(w);
-    EXPECT_TRUE(waitUntil([&] { return frame(w) > loaded + 30; })) << "frames run after the load";
+    EXPECT_TRUE(waitUntil([&] { return frame(w) > loaded + 30; })) << "frames run after the resume";
     const std::uint64_t shown = w.view()->shownFrameIndex();
     EXPECT_TRUE(waitUntil([&] { return w.view()->shownFrameIndex() > shown + 10; })) << "and the view shows them";
+    if (w.audio()->isOpen()) {
+        EXPECT_TRUE(waitUntil([&] { return w.audio()->stats().queuedMs > 0; })) << "and sound reaches the device";
+    }
+    EXPECT_FALSE(paused->isVisible());
 }
 
 // The maintainer's requests: saving from the menus asks for a name (the

@@ -374,8 +374,8 @@ Result GuiHost::loadState(CallContext& ctx, int slot)
 Result GuiHost::loadStateBytes(CallContext& ctx, const QByteArray& state, bool keepUndo)
 {
     // The core leaves a loaded machine paused (001 data-model "State
-    // transitions"); a game being played keeps playing.
-    const bool running = isRunning(ctx);
+    // transitions"), and so does the GUI: the player sees PAUSED and goes
+    // on when ready.
     const SaveStateBlob before = ctx.session.machine().captureState();
     QByteArray replaced(reinterpret_cast<const char*>(before.data), static_cast<qsizetype>(before.size));
     std::string blobId;
@@ -387,7 +387,6 @@ Result GuiHost::loadStateBytes(CallContext& ctx, const QByteArray& state, bool k
     // loads part of one).
     if (r.isError()) return r;
     if (keepUndo) m_undoState = std::move(replaced);
-    if (running) return plain(call(ctx, "core.resume"));
     return Result::ok();
 }
 
