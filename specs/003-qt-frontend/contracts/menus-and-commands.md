@@ -588,11 +588,12 @@ player 1's.
   `updates.skippedVersion`; See Details opens the release's page. Where
   this build cannot replace itself, there is no Install button and the
   prompt says why.
-- **Install** (G099; until then every build is shown as unable to install)
-  shows the download's progress with Cancel, checks it (R16
-  "Integrity"), then asks the usual quit questions (a recording, a movie),
-  quits and starts the new version with the same arguments. A failure says
-  what failed, removes the download and leaves this version as it was.
+- **Install** (offered by release packages with write access, R16) shows
+  the download's progress (object `updateProgress`) with Cancel, checks it
+  (R16 "Integrity"), swaps it in (R16 "Replacement"), then closes the
+  window as Exit does and starts the new version with the same arguments.
+  A failure (object `updateFailed`) says what failed, removes the download
+  and leaves this version as it was; Cancel does the same, silently.
 - `gui.get_settings` and `gui.set_setting` read and set the three keys. No
   command checks, prompts or installs: the network request follows only
   from `updates.check`, and the swap only from the user's click (FR-097).

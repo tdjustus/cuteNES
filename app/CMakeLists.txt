@@ -35,11 +35,19 @@ add_library(cutenes-app-lib STATIC
     settings/key_bindings.cpp
     update/update_feed.cpp
     update/update_check.cpp
-    update/update_prompt.cpp)
+    update/update_prompt.cpp
+    update/update_install.cpp
+    update/update_download.cpp)
 target_include_directories(cutenes-app-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(cutenes-app-lib PUBLIC cutenes-qt cutenes-mcp Qt6::Widgets Qt6::Concurrent Qt6::Network)
+# Which release package this build is (research R16): the CI package job
+# sets macos-zip, windows-zip or appimage, and only those can install
+# updates. Every other build (a developer's, a distribution's) is none.
+set(CUTENES_PACKAGE "none" CACHE STRING "Release package type: none, macos-zip, windows-zip or appimage")
+set_property(CACHE CUTENES_PACKAGE PROPERTY STRINGS none macos-zip windows-zip appimage)
 target_compile_definitions(cutenes-app-lib PUBLIC
-    CUTENES_APP_VERSION="${PROJECT_VERSION}")
+    CUTENES_APP_VERSION="${PROJECT_VERSION}"
+    CUTENES_PACKAGE="${CUTENES_PACKAGE}")
 set_target_properties(cutenes-app-lib PROPERTIES AUTOMOC ON)
 
 # The license texts About shows (constitution: Qt under LGPL-3.0 with its
@@ -111,6 +119,7 @@ endforeach()
 # macdeployqt; on Linux linuxdeploy does that work. cutenes-server, for MCP
 # clients (`cutenes-server --attach`), goes beside the app: inside the
 # bundle on macOS. The licenses go with them.
+# On Windows CMAKE_INSTALL_BINDIR is "." (the top-level CMakeLists.txt).
 include(GNUInstallDirs)
 if(APPLE)
     # A Qt from Qt's own installer (as CI uses) names its frameworks
@@ -121,10 +130,10 @@ if(APPLE)
     install(TARGETS cutenes-server RUNTIME DESTINATION cutenes.app/Contents/MacOS COMPONENT app)
     set(license_destination cutenes.app/Contents/Resources/licenses)
 elseif(WIN32)
-    install(TARGETS cutenes cutenes-server RUNTIME DESTINATION . COMPONENT app)
+    install(TARGETS cutenes cutenes-server RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT app)
     # The MSVC runtime DLLs beside the executables, so the zip runs on a
     # machine without the Visual C++ redistributable.
-    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT app)
     include(InstallRequiredSystemLibraries)
     set(license_destination licenses)
@@ -147,6 +156,10 @@ if(APPLE OR WIN32)
     set(deploy_options "")
     if(APPLE)
         set(deploy_options DEPLOY_TOOL_OPTIONS "-libpath=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_LIBS}")
+    else()
+        # The runtime DLLs are installed above; windeployqt would add the
+        # 18 MB vc_redist installer as well.
+        set(deploy_options DEPLOY_TOOL_OPTIONS "--no-compiler-runtime")
     endif()
     qt_generate_deploy_app_script(TARGET cutenes
         OUTPUT_SCRIPT deploy_script

@@ -289,8 +289,9 @@ logger and memory dump (G084).
   arguments carried to the relaunch.
 - [x] G098 [US10] The first-launch question, the setting, the background
   check and the prompt (FR-090 to FR-093, FR-096, FR-097).
-- [ ] G099 [US10] Download, verify, replace and relaunch per platform
-  (FR-094, FR-095), with a manual check on all three OSes.
+- [x] G099 [US10] Download, verify, replace and relaunch per platform
+  (FR-094, FR-095). The manual check on all three OSes is in the manual
+  test queue ("Updates: Install"), run with M9 (G095).
 - [ ] G095 Manual checklist **M9** (after G096-G099). If every FR and SC is met, the PR uses
   `Fixes #32`; otherwise it uses `Refs #32`, and issues are filed for the
   remainder.

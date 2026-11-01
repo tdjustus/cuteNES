@@ -6,21 +6,6 @@
 
 namespace cutenes::app::update {
 
-#ifndef CUTENES_PACKAGE
-#define CUTENES_PACKAGE "none"
-#endif
-
-InstallSupport installSupport()
-{
-    if (QLatin1String(CUTENES_PACKAGE) == QLatin1String("none")) {
-        return {false, QObject::tr("This copy of cuteNES was not installed from a cuteNES release package, so it "
-                                   "cannot replace itself. See Details opens the release page.")};
-    }
-    // Release packages install in G099.
-    return {false, QObject::tr("Installing updates from within cuteNES is coming in a later update. See Details "
-                               "opens the release page.")};
-}
-
 UpdateCheck::UpdateCheck(QObject* parent) : QObject(parent), m_network(new QNetworkAccessManager(this)) {}
 
 UpdateCheck::~UpdateCheck()
@@ -35,6 +20,7 @@ void UpdateCheck::start(const QUrl& feed, bool allowLoopbackHttp, const Version&
         emit failed(tr("the release feed %1 is not HTTPS").arg(feed.toString()));
         return;
     }
+    m_allowLoopback = allowLoopbackHttp;
     QNetworkRequest request(feed);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("cuteNES/%1").arg(QStringLiteral(CUTENES_APP_VERSION)));
     request.setRawHeader("Accept", "application/vnd.github+json");
@@ -48,7 +34,7 @@ void UpdateCheck::start(const QUrl& feed, bool allowLoopbackHttp, const Version&
         reply->deleteLater();
         const QByteArray body = reply->readAll();
         QString why;
-        const std::optional<Release> release = chooseRelease(body, running, suffix, skipped, &why);
+        const std::optional<Release> release = chooseRelease(body, running, suffix, skipped, &why, m_allowLoopback);
         if (release) {
             emit found(*release);
         } else if (!why.isEmpty()) {

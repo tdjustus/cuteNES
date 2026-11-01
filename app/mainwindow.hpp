@@ -9,6 +9,7 @@
 // through that queue (R11). It shows the library browser when no game is
 // open, and the game otherwise.
 
+#include "update/update_install.hpp"
 #include "dialogs/cheats_window.hpp" // CommandRunner
 #include "host/gui_host.hpp"
 #include "library/library.hpp"
@@ -60,7 +61,6 @@ class TraceLoggerWindow;
 class UserGuideWindow;
 namespace update {
 class UpdateCheck;
-struct Release;
 } // namespace update
 class CheatsWindow;
 class KeyBindings;
@@ -91,6 +91,15 @@ struct MainWindowOptions {
     bool allowLoopbackFeed = false;
     // The first-launch question (updates.asked); tests turn it off.
     bool askAboutUpdates = true;
+    // The install Install replaces; empty: this build's own
+    // (update::currentTarget()). Tests give a temporary one.
+    std::optional<update::Target> updateTarget;
+    // After an update is installed, start it and quit; tests only get
+    // updateInstalled.
+    bool relaunchAfterUpdate = true;
+    // The arguments this launch was given, which the new version gets;
+    // empty: QCoreApplication::arguments() after the program name.
+    std::optional<QStringList> arguments;
     // The gamepads; null: SDL's (tests give a fake).
     std::shared_ptr<qt::GamepadBackend> gamepads;
 };
@@ -167,6 +176,10 @@ signals:
     void logFolderOpened(const QString& path);
     // A web page was opened (the release page); with openExternally, in the browser.
     void externalUrlOpened(const QUrl& url);
+    // An update replaced this version: `program` with `arguments` is the
+    // new one to start (with relaunchAfterUpdate, it is started as the
+    // window closes).
+    void updateInstalled(const QString& program, const QStringList& arguments);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -256,6 +269,8 @@ private:
     void askAboutUpdates();
     void checkForUpdates();
     void offerUpdate(const update::Release& release);
+    void installUpdate(const update::Release& release);
+    update::Target updateTarget() const;
     void openExternal(const QUrl& url);
     void useLibrary(const Library& library);       // GUI thread
     void updateSettingsDialog();

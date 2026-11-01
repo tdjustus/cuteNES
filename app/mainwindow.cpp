@@ -9,6 +9,7 @@
 #include "dialogs/user_guide.hpp"
 #include "log/app_log.hpp"
 #include "update/update_check.hpp"
+#include "update/update_download.hpp"
 #include "update/update_prompt.hpp"
 #include "dialogs/key_bindings_page.hpp"
 #include "dialogs/settings_dialog.hpp"
@@ -42,6 +43,8 @@
 #include <QKeyEvent>
 #include <QMenu>
 #include <QMenuBar>
+#include <QProgressDialog>
+#include <QProcess>
 #include <QMessageBox>
 #include <QStandardPaths>
 #include <QDialog>
@@ -1329,7 +1332,7 @@ void MainWindow::updateSettingsDialog()
     const AppSettings::EmulationSettings e = m_settings.emulation();
     m_settingsDialog->setEmulation({e.pauseWhenInactive, e.resumeOnOpen, e.fastForwardSpeed});
     const AppSettings::UpdateSettings u = m_settings.updates();
-    const update::InstallSupport support = update::installSupport();
+    const update::InstallSupport support = update::supportFor(updateTarget());
     m_settingsDialog->setUpdates({u.check, u.skippedVersion,
         support.possible ? tr("This copy of cuteNES can install updates itself.") : support.why});
 }
@@ -1395,16 +1398,17 @@ void MainWindow::checkForUpdates()
         [] { qCInfo(lcApp) << "Update check: this is the newest version"; });
     connect(m_updateCheck, &update::UpdateCheck::failed, this,
         [](const QString& why) { qCWarning(lcApp).noquote() << "Update check failed:" << why; });
-    m_updateCheck->start(m_options.updateFeed, m_options.allowLoopbackFeed, *running, update::platformSuffix(),
-        settings.skippedVersion);
+    m_updateCheck->start(m_options.updateFeed, m_options.allowLoopbackFeed, *running,
+        update::suffixFor(updateTarget().package), settings.skippedVersion);
 }
 
 void MainWindow::offerUpdate(const update::Release& release)
 {
-    const update::InstallSupport support = update::installSupport();
+    const update::InstallSupport support = update::supportFor(updateTarget());
     auto* prompt = new UpdatePrompt(release, *update::Version::parse(QStringLiteral(CUTENES_APP_VERSION)),
         support.possible, support.why, this);
     prompt->setAttribute(Qt::WA_DeleteOnClose);
+    connect(prompt, &UpdatePrompt::installRequested, this, [this, release] { installUpdate(release); });
     connect(prompt, &UpdatePrompt::skipRequested, this, [this, version = release.version.toString()] {
         AppSettings::UpdateSettings updates = m_settings.updates();
         updates.skippedVersion = version;
@@ -1413,6 +1417,69 @@ void MainWindow::offerUpdate(const update::Release& release)
     });
     connect(prompt, &UpdatePrompt::detailsRequested, this, [this, page = release.page] { openExternal(page); });
     prompt->open();
+}
+
+update::Target MainWindow::updateTarget() const
+{
+    return m_options.updateTarget ? *m_options.updateTarget : update::currentTarget();
+}
+
+void MainWindow::installUpdate(const update::Release& release)
+{
+    // Only from the prompt's Install button: no command reaches here (FR-097).
+    const update::Target target = updateTarget();
+    auto* progress = new QProgressDialog(tr("Downloading cuteNES %1…").arg(release.version.toString()), tr("Cancel"),
+        0, 0, this);
+    progress->setObjectName(QStringLiteral("updateProgress"));
+    progress->setWindowTitle(tr("cuteNES Update"));
+    progress->setAttribute(Qt::WA_DeleteOnClose);
+    progress->setMinimumDuration(0);
+    auto* download = new update::UpdateDownload(progress);
+    const auto failed = [this, progress](const QString& why) {
+        qCWarning(lcApp).noquote() << "Update not installed:" << why;
+        progress->close();
+        auto* box = new QMessageBox(QMessageBox::Warning, QStringLiteral("cuteNES"),
+            tr("The update could not be installed: %1.").arg(why), QMessageBox::Ok, this);
+        box->setObjectName(QStringLiteral("updateFailed"));
+        box->setInformativeText(tr("Nothing was changed; this version is as it was."));
+        box->setAttribute(Qt::WA_DeleteOnClose);
+        box->open();
+    };
+    connect(download, &update::UpdateDownload::progress, progress, [progress](qint64 received, qint64 total) {
+        if (total > 0) {
+            progress->setMaximum(static_cast<int>(total / 1024));
+            progress->setValue(static_cast<int>(received / 1024));
+        }
+    });
+    connect(download, &update::UpdateDownload::failed, this, failed);
+    connect(progress, &QProgressDialog::canceled, download, [download] {
+        qCInfo(lcApp) << "Update download cancelled";
+        download->cancel();
+    });
+    connect(download, &update::UpdateDownload::finished, this,
+        [this, target, progress, failed, version = release.version.toString()](const QString& path) {
+            progress->setLabelText(tr("Installing cuteNES %1…").arg(version));
+            QString program;
+            QString why;
+            if (!update::install(target, path, &program, &why)) {
+                failed(why);
+                return;
+            }
+            progress->close();
+            const QStringList arguments =
+                m_options.arguments ? *m_options.arguments : QCoreApplication::arguments().mid(1);
+            qCInfo(lcApp).noquote() << "Installed cuteNES" << version << "; starting" << QDir::toNativeSeparators(program);
+            emit updateInstalled(program, arguments);
+            if (!m_options.relaunchAfterUpdate) return;
+            // The new version starts once this one has quit as usual
+            // (battery save, automatic state, servers stopped).
+            connect(qApp, &QCoreApplication::aboutToQuit, [program, arguments] {
+                QProcess::startDetached(program, arguments);
+            });
+            close();
+        });
+    progress->show();
+    download->start(release, update::downloadFolder(target), m_options.allowLoopbackFeed);
 }
 
 void MainWindow::openExternal(const QUrl& url)

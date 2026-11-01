@@ -3,6 +3,7 @@
 
 #include "cli.hpp"
 #include "log/app_log.hpp"
+#include "update/update_install.hpp"
 #include "mainwindow.hpp"
 
 #include <cutenes/qt/media_runtime.hpp>
@@ -34,6 +35,10 @@ int main(int argc, char* argv[])
 
     // After the command line: --help and --version leave the log alone.
     cutenes::app::AppLog::start(cutenes::app::AppLog::defaultDirectory());
+    // What the last update kept aside, now that the old version has quit.
+    if (const auto target = cutenes::app::update::currentTarget(); target.package != QLatin1String("none")) {
+        cutenes::app::update::removeOldVersion(target.path);
+    }
 
     const cutenes::qt::MediaRuntime media;
 

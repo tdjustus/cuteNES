@@ -6,8 +6,8 @@
 // cuteNES and its version, and the JSON Accept type): no identifier, no
 // settings, no cookies.
 //
-// installSupport() says whether this build can replace itself (FR-096):
-// only a release package (CUTENES_PACKAGE, set by the CI package job) can.
+// update_install's supportFor() says whether this build can replace itself
+// (FR-096).
 
 #include "update/update_feed.hpp"
 
@@ -23,7 +23,6 @@ struct InstallSupport {
     bool possible = false;
     QString why; // when not possible: a sentence for the user
 };
-InstallSupport installSupport();
 
 class UpdateCheck final : public QObject {
     Q_OBJECT
@@ -45,6 +44,7 @@ signals:
 private:
     QNetworkAccessManager* m_network;
     QPointer<QNetworkReply> m_reply;
+    bool m_allowLoopback = false;
 };
 
 } // namespace cutenes::app::update

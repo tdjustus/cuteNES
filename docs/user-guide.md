@@ -279,6 +279,11 @@ say yes, it asks GitHub for its list of releases once each time it starts,
 and nothing else is sent. When a newer version is out, and you are not in
 the middle of a game, it says so:
 
+- **Install** downloads the new version, checks it against the checksum
+  published with the release, puts it in place of this one, and restarts
+  cuteNES. If anything goes wrong, this version stays as it was. Install is
+  offered only by the packages from the GitHub releases page, and only
+  where cuteNES can write to its own folder.
 - **See Details** opens the release's page, with what is new and the
   downloads.
 - **Ask Again Later** asks next time.
