@@ -96,9 +96,10 @@ TEST(ApiJsonRpc, MixedBatchKeepsOrderAndSkipsNotifications)
 TEST(ApiJsonRpc, CommandErrorsUseTheReservedRange)
 {
     EXPECT_EQ(jsonrpc::errorCode("InvalidArguments"), -32602);
+    EXPECT_EQ(jsonrpc::errorCode("NotImplemented"), -32012) << "transports.md";
     for (const char* name : {"NoCartridge", "LoadError", "LoadStateError", "WriteError",
              "PathOutsideLibrary", "LimitExceeded", "UnknownHandle", "Cancelled",
-             "ShuttingDown", "NotFound", "NoBattery"}) {
+             "ShuttingDown", "NotFound", "NoBattery", "NotImplemented"}) {
         const int code = jsonrpc::errorCode(name);
         // -32000..-32019: implementation-defined; MCP 2026-07-28 reserves
         // -32020..-32099 (command-catalog.md "Errors").

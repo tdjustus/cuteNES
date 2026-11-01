@@ -113,6 +113,7 @@ failures are returned as a tool result with `isError: true` and the same
 | `UnknownHandle` | Expired, evicted or unknown `blobId`, or an unknown slot |
 | `NotFound` | A library path that is not a file, or a missing library root |
 | `NoBattery` | `core.read_sram`/`core.load_sram` on a cartridge without the battery flag |
+| `NotImplemented` | A GUI-mode `gui.*` command whose feature lands in a later phase (003 G034) |
 | `Cancelled` | A run interrupted at a frame boundary (disconnect or GUI stop) |
 | `ShuttingDown` | The API was disabled while the call was queued (FR-020) |
 | `InternalError` | A handler fault, or (with output validation on, as in the tests) a result that breaks its output schema |

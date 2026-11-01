@@ -179,6 +179,15 @@ Each group's keys are an enum in its schema (data-model.md "Settings").
 | Open Log Folder | `gui.open_log_folder` | | | |
 | About cuteNES † | `gui.show_about` | | | |
 
+## Items from later phases
+
+Every item above is in the menus from G034 on. An item whose feature lands
+in a later phase is disabled, with the tooltip "Coming in a later update",
+and its command is in the catalog with these arguments but returns
+`NotImplemented` (002 command catalog), with `data.phase` naming the phase.
+Settings pages that do not exist yet do the same through
+`gui.show_settings`.
+
 ## Window commands
 
 | Command | Purpose |

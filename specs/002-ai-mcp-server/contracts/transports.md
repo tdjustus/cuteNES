@@ -90,7 +90,8 @@ cutenes-server [--library DIR] [--debug-dir DIR]
   `-32603`; the rest are `NoCartridge -32001`, `LoadError -32002`,
   `LoadStateError -32003`, `WriteError -32004`, `PathOutsideLibrary -32005`,
   `LimitExceeded -32006`, `UnknownHandle -32007`, `Cancelled -32008`,
-  `ShuttingDown -32009`, `NotFound -32010`, `NoBattery -32011`.
+  `ShuttingDown -32009`, `NotFound -32010`, `NoBattery -32011`,
+  `NotImplemented -32012`.
 - **Disconnect**: a client that closes its connection mid-call cancels it at
   the next frame boundary (FR-013), as for MCP.
 - **Events**: `GET /api/v1/events` is a Server-Sent Events stream. Events are
