@@ -237,10 +237,11 @@ TEST(GuiMovies, AMovieFromAStateReplaysToTheSameFinalFrame)
     EXPECT_EQ(cnm.header.value(QStringLiteral("start")).toString(), QStringLiteral("state"));
     EXPECT_FALSE(QByteArray::fromBase64(cnm.header.value(QStringLiteral("state")).toString().toLatin1()).isEmpty());
 
-    // The game goes on somewhere else first.
-    call(w, "gui.toggle_pause");
+    // The game goes on somewhere else first: exactly 3 frames of Up+A, which
+    // read as $88 and add 24 (mod 64) to the colour. A count of frames by
+    // the clock could land on a multiple of 8, the same colour again.
     hold(w, {"Up", "A"});
-    runFor(w, 30);
+    call(w, "core.run_frames", {{"frames", 3}});
     EXPECT_NE(hash(w), recorded);
     call(w, "gui.play_movie", {{"path", path.toStdString()}});
     playToTheEnd(w);
