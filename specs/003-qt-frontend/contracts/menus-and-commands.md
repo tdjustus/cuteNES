@@ -127,10 +127,33 @@ working.
 |---|---|---|---|---|
 | Cheats… | `gui.show_cheats` | | | ✓ |
 | Cheat Search… | `gui.show_cheat_search` | | | ✓ |
-| Movie ▸ Record… | `gui.record_movie` | `path` (optional), `from`: `power_on` or `state` | | ✓ |
+| Movie ▸ Record from Power-On… | `gui.record_movie` | `from`: `power_on`, `path` (optional) | | ✓ |
+| Movie ▸ Record from Current State… | `gui.record_movie` | `from`: `state`, `path` (optional) | | ✓ |
 | Movie ▸ Play… | `gui.play_movie` | `path` (optional) | | ✓ |
-| Movie ▸ Stop | `gui.stop_movie` | | | ✓ |
-| Movie ▸ Read-Only | `gui.toggle_movie_read_only` | | | ✓ |
+| Movie ▸ Stop | `gui.stop_movie` | | | movie |
+| Movie ▸ Read-Only | `gui.toggle_movie_read_only` | | | movie |
+
+Movies (FR-052, data-model "Movie"):
+- **Record** writes the file at once, so a folder that cannot take it is
+  found before play starts. From power-on, the console is power-cycled
+  first; from the current state, the state is embedded. Each frame's input
+  (both ports) is kept, and so are Reset and Power Cycle, as events.
+- **Play** is refused for another game or another region's timing
+  (`MovieMismatch`), before anything changes. A movie from another core
+  version plays with a warning. Playback is read-only: the player's buttons
+  are ignored. At the last frame the game pauses, so the final picture
+  stays on screen; the movie is then closed.
+- **Read-Only**, checked while a movie plays. Unchecking it takes over: the
+  rest of the movie is dropped, the rerecord count goes up, and the
+  player's input records on from that frame.
+- While a movie plays, Reset, Power Cycle, every state load (slots, files,
+  Undo Load State) and Rewind are refused (`MoviePlaying`). While one
+  records, the state loads and Rewind are refused (`MovieRecording`):
+  they would break the movie's timeline. Frame Advance records a frame
+  like play does.
+- Closing the game, or opening another, stops the movie and writes it.
+- Not in the movie: cheats, and the battery save a power-on starts from.
+  Either can make a replay differ (#121).
 | Record Audio… / Stop Recording | `gui.toggle_audio_recording` | `path` (optional) | | ✓ |
 
 The cheat and movie windows' contents have their own commands:
@@ -141,7 +164,7 @@ The cheat and movie windows' contents have their own commands:
 - `gui.add_watch`, `gui.remove_watch`, `gui.list_watches` (the per-game
   watch list, with live values); a value is edited with `core.write_memory`,
   which runs at the next frame boundary;
-- `gui.add_watch`, `gui.remove_watch`, `gui.list_watches`.
+- `gui.movie_status`.
 
 They are listed under "Window commands".
 
@@ -214,6 +237,7 @@ Settings pages that do not exist yet do the same through
 | `gui.add_cheat` / `gui.remove_cheat` / `gui.set_cheat_enabled` / `gui.list_cheats` | Cheat list (data-model "Cheat") |
 | `gui.cheat_search_reset` / `gui.cheat_search_filter` / `gui.cheat_search_results` | `filter`: `equal`/`not_equal`/`greater`/`less`/`changed`/`unchanged`, optional `value`; `size` 1 or 2 bytes (reset). Works while the game runs; each snapshot is taken at a frame boundary |
 | `gui.add_watch` / `gui.remove_watch` / `gui.list_watches` | The per-game watch list (`address`, `size`, `label`) with current values (FR-053). A value is edited with `core.write_memory`, applied at the next frame boundary |
+| `gui.movie_status` | The movie: `mode` (`none`, `recording`, `playing`), `readOnly`, `movieFrame` (frames recorded or played so far; the result's own `frame` is the core's), `frames`, `rerecords`, `path` |
 | `gui.debug_*`, `gui.*_breakpoint`, `gui.trace_*` | Debugger, above |
 
 ## Queries
@@ -235,7 +259,8 @@ Settings pages that do not exist yet do the same through
   On-Screen Messages off, the confirmations are not shown.
 - There is no status bar (it took room from the game). The **automation
   indicator**, "AUTOMATION", sits at the bottom right of the window in the
-  same style, and the movie state (G7) will join the overlays.
+  same style. A movie shows under the FPS (or in its place): "● REC 1234"
+  while recording, "▶ 120 / 900" while playing.
 - The indicator appears while an API or MCP client is there: an event or
   `subscriptions/listen` stream open (an attached `cutenes-server --attach`
   keeps one), a call running, or a call in the last 5 seconds. It reads

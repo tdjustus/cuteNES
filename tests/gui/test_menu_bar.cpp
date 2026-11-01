@@ -93,8 +93,10 @@ TEST(GuiMenuBar, LaterItemsAreDisabledSayWhyAndReturnNotImplemented)
     ASSERT_FALSE(w.session().call("gui.open_rom", {{"path", kRom.toStdString()}}).isError());
     ASSERT_TRUE(waitUntil([&] { return w.findChild<QAction*>(QStringLiteral("gui.take_screenshot"))->isEnabled(); }));
     int later = 0;
+    // Movie > Stop and Read-Only wait for a movie, not a later phase.
+    const QStringList needMovie = {QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only")};
     for (QAction* a : menuActions(w)) {
-        if (a->isEnabled()) continue;
+        if (a->isEnabled() || needMovie.contains(a->property("command").toString())) continue;
         ++later;
         const std::string command = a->property("command").toString().toStdString();
         EXPECT_EQ(a->toolTip(), QStringLiteral("Coming in a later update")) << command;

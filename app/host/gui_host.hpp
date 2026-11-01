@@ -9,6 +9,7 @@
 
 #include "library/library.hpp"
 #include "library/library_index.hpp"
+#include "media/movie.hpp"
 #include "media/wav_writer.hpp"
 #include "persistence/battery_saver.hpp"
 #include "cheats/cheat_list.hpp"
@@ -105,6 +106,11 @@ public:
         // Tools > Cheats… (search: Cheat Search…), and the list changed.
         virtual void showCheats(bool search) = 0;
         virtual void cheatsChanged() = 0;
+        // Movie > Record… (`from`: power_on or state) or Play…: the file
+        // dialog, starting in `folder` (the game's movies folder, or empty).
+        virtual void showMovieDialog(bool record, const QString& from, const QString& folder) = 0;
+        // A movie started, stopped or changed mode; movieStatus() has it.
+        virtual void movieChanged() = 0;
         virtual void showAbout() = 0;
         virtual void openLibraryFolder() = 0;
         virtual void exit() = 0;
@@ -131,6 +137,17 @@ public:
     // The open game's save-state slots (any thread; empty without a game).
     StateSlots stateSlots() const;
     int selectedSlot() const { return m_selectedSlot.load(); }
+
+    // The movie recording or playing (any thread), for the overlay.
+    struct MovieStatus {
+        enum class Mode { None, Recording, Playing };
+        Mode mode = Mode::None;
+        qint64 frame = 0;  // frames recorded or played so far
+        qint64 frames = 0; // in the movie
+        qint64 rerecords = 0;
+        QString path;
+    };
+    MovieStatus movieStatus() const;
 
     // The session's sound passes through here (emulation thread), so Record
     // Audio hears exactly what plays; it goes on to `output`.
@@ -172,6 +189,19 @@ private:
     static CheatSearch::Snapshot snapshot(Machine& machine);
     api::Result saveCheats();
     api::Json cheatsJson() const;
+    // Movies (FR-052), emulation thread. A playing movie sets the input of
+    // each frame and refuses what would leave its timeline; a recording one
+    // keeps each frame's input and the reset and power buttons.
+    api::Result recordMovie(api::CallContext& ctx, const QString& path, bool fromPowerOn);
+    api::Result playMovie(api::CallContext& ctx, const QString& path);
+    api::Result stopMovie(bool finished = false);
+    api::Result takeOverMovie();
+    // Fails while a movie plays, and while one records too when `recording`:
+    // for the commands that would leave its timeline.
+    api::Result movieBusy(bool recording) const;
+    bool playMovieFrame(Machine& machine); // false: the movie ended, no frame runs
+    void publishMovie(bool changed);
+    api::Json movieJson() const;
 
     Window& m_window;
     AppSettings& m_settings;
@@ -187,6 +217,14 @@ private:
     StateSlots m_slots; // under m_slotsMutex
     std::atomic<int> m_selectedSlot{1};
     std::optional<QByteArray> m_undoState; // emulation thread; one level (data-model "StateSlot")
+
+    // Emulation thread: the movie (FR-052), with a copy for the window.
+    MovieStatus::Mode m_movieMode = MovieStatus::Mode::None;
+    Movie m_movie;
+    QString m_moviePath;
+    qint64 m_movieFrame = 0;
+    mutable std::mutex m_movieMutex;
+    MovieStatus m_movieStatus; // under m_movieMutex
 
     // Emulation thread: rewind (R6) and speed (FR-035).
     RewindBuffer m_rewind;

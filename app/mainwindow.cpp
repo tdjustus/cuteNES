@@ -25,6 +25,7 @@
 #include <QStackedWidget>
 #include <QTreeView>
 #include <QUrl>
+#include <QDateTime>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -138,7 +139,8 @@ const QStringList kImplemented = {
     QStringLiteral("gui.show_shortcuts"), QStringLiteral("gui.set_scale"), QStringLiteral("gui.toggle_fullscreen"),
     QStringLiteral("gui.toggle_integer_scaling"), QStringLiteral("gui.set_aspect"), QStringLiteral("gui.set_overscan"),
     QStringLiteral("gui.set_filter"), QStringLiteral("gui.toggle_always_on_top"),
-    QStringLiteral("gui.toggle_audio_recording"),
+    QStringLiteral("gui.toggle_audio_recording"), QStringLiteral("gui.record_movie"), QStringLiteral("gui.play_movie"),
+    QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only"),
 };
 // Settings > Hotkeys opens the Key Bindings page (#108).
 const QStringList kSettingsPages = {QStringLiteral("video"), QStringLiteral("audio"), QStringLiteral("emulation"),
@@ -153,8 +155,10 @@ const QStringList kNeedGame = {
     QStringLiteral("gui.set_fast_forward"), QStringLiteral("gui.toggle_fast_forward"),
     QStringLiteral("gui.frame_advance"), QStringLiteral("gui.import_battery_save"),
     QStringLiteral("gui.export_battery_save"), QStringLiteral("gui.take_screenshot"),
-    QStringLiteral("gui.toggle_audio_recording"),
+    QStringLiteral("gui.toggle_audio_recording"), QStringLiteral("gui.record_movie"), QStringLiteral("gui.play_movie"),
 };
+// Movie > Stop and Read-Only: only while a movie records or plays.
+const QStringList kNeedMovie = {QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only")};
 // Actions that act while their key is held: on at the press, off at the
 // release (contract "Fast Forward (hold)", "Rewind (hold)").
 const QStringList kHeld = {QStringLiteral("gui.set_fast_forward"), QStringLiteral("gui.set_rewind")};
@@ -265,7 +269,10 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_fpsTimer = new QTimer(this);
     m_fpsTimer->setInterval(1000);
     connect(m_fpsTimer, &QTimer::timeout, this, &MainWindow::updateFps);
-    for (QLabel* overlay : {m_paused, m_speed, m_fps}) {
+    m_movie = new QLabel(m_view);
+    m_movie->setObjectName(QStringLiteral("movieOverlay"));
+    m_movie->setStyleSheet(overlayStyle(2));
+    for (QLabel* overlay : {m_paused, m_speed, m_fps, m_movie}) {
         overlay->setAttribute(Qt::WA_TransparentForMouseEvents);
         overlay->hide();
     }
@@ -563,10 +570,11 @@ void MainWindow::createMenus()
     tools.item(tr("Cheat &Search…"), "gui.show_cheat_search");
     tools.separator();
     MenuBuilder movie = tools.submenu(tr("&Movie"));
-    movie.item(tr("&Record…"), "gui.record_movie");
+    movie.item(tr("&Record from Power-On…"), "gui.record_movie", {}, {{QStringLiteral("from"), QStringLiteral("power_on")}});
+    movie.item(tr("Record from Current &State…"), "gui.record_movie", {}, {{QStringLiteral("from"), QStringLiteral("state")}});
     movie.item(tr("&Play…"), "gui.play_movie");
     movie.item(tr("&Stop"), "gui.stop_movie");
-    movie.item(tr("Read-&Only"), "gui.toggle_movie_read_only");
+    movie.item(tr("Read-&Only"), "gui.toggle_movie_read_only")->setCheckable(true);
     tools.separator();
     tools.item(tr("Record &Audio…"), "gui.toggle_audio_recording");
 
@@ -1219,6 +1227,10 @@ void MainWindow::sessionEvent(const api::Event& event)
         // Show FPS counts the game's frames, not the window's paints.
         std::lock_guard lock(m_playbackMutex);
         m_lastFrameEvent = {event.frame, std::chrono::steady_clock::now()};
+        // The movie's frame count moves with play.
+        if (m_host && m_host->movieStatus().mode != GuiHost::MovieStatus::Mode::None) {
+            QMetaObject::invokeMethod(this, [this] { updateOverlays(); }, Qt::QueuedConnection);
+        }
         return;
     }
     if (event.type != "run_state_changed") return;
@@ -1342,7 +1354,11 @@ void MainWindow::setRunState(const QString& runState)
     m_runState = runState;
     const bool game = hasGame();
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
-        if (kNeedGame.contains(action->property("command").toString())) action->setEnabled(game);
+        const QString command = action->property("command").toString();
+        if (kNeedGame.contains(command)) action->setEnabled(game);
+        if (kNeedMovie.contains(command)) {
+            action->setEnabled(game && m_host && m_host->movieStatus().mode != GuiHost::MovieStatus::Mode::None);
+        }
     }
     updateOverlays();
     // The menu offers what the next press does.
@@ -1630,6 +1646,42 @@ void MainWindow::showCheats(bool search)
     }, Qt::QueuedConnection);
 }
 
+void MainWindow::showMovieDialog(bool record, const QString& from, const QString& folder)
+{
+    QMetaObject::invokeMethod(this, [this, record, from, folder] {
+        const QString start = folder.isEmpty() ? library().folder(Library::Folder::Movies) : folder;
+        const QString filter = tr("cuteNES movies (*.cnm)");
+        if (record) {
+            if (!folder.isEmpty()) QDir().mkpath(folder);
+            const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+            const QString path = QFileDialog::getSaveFileName(this,
+                from == QLatin1String("state") ? tr("Record Movie from Current State") : tr("Record Movie from Power-On"),
+                QDir(start).filePath(stamp + QStringLiteral(".cnm")), filter);
+            if (!path.isEmpty()) {
+                runCommand(QStringLiteral("gui.record_movie"), {{QStringLiteral("path"), path}, {QStringLiteral("from"), from}});
+            }
+            return;
+        }
+        const QString path = QFileDialog::getOpenFileName(this, tr("Play Movie"), start, filter);
+        if (!path.isEmpty()) runCommand(QStringLiteral("gui.play_movie"), {{QStringLiteral("path"), path}});
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::movieChanged()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        const GuiHost::MovieStatus movie = m_host->movieStatus();
+        using Mode = GuiHost::MovieStatus::Mode;
+        for (QAction* action : menuBar()->findChildren<QAction*>()) {
+            const QString command = action->property("command").toString();
+            if (!kNeedMovie.contains(command)) continue;
+            action->setEnabled(hasGame() && movie.mode != Mode::None);
+            if (action->isCheckable()) action->setChecked(movie.mode == Mode::Playing);
+        }
+        updateOverlays();
+    }, Qt::QueuedConnection);
+}
+
 void MainWindow::cheatsChanged()
 {
     QMetaObject::invokeMethod(this, [this] {
@@ -1722,6 +1774,15 @@ void MainWindow::updateOverlays()
     m_fps->adjustSize();
     m_fps->move(kMargin, kMargin);
     m_fps->raise();
+
+    const GuiHost::MovieStatus movie = m_host ? m_host->movieStatus() : GuiHost::MovieStatus();
+    using Mode = GuiHost::MovieStatus::Mode;
+    m_movie->setText(movie.mode == Mode::Recording ? tr("● REC %1").arg(movie.frame)
+                                                   : tr("▶ %1 / %2").arg(movie.frame).arg(movie.frames));
+    m_movie->setVisible(game && movie.mode != Mode::None);
+    m_movie->adjustSize();
+    m_movie->move(kMargin, fps ? kMargin + m_fps->height() + kMargin / 2 : kMargin);
+    m_movie->raise();
 }
 
 void MainWindow::updateFps()

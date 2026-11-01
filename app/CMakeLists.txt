@@ -18,6 +18,7 @@ add_library(cutenes-app-lib STATIC
     library/library_index.cpp
     media/wav_writer.cpp
     media/palettes.cpp
+    media/movie.cpp
     cheats/cheat_list.cpp
     cheats/cheat_search.cpp
     persistence/battery_saver.cpp

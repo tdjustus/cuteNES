@@ -89,7 +89,11 @@ The header is:
 - `start`: `"power_on"`, or `"state"` with `state` holding a base64 core
   state;
 - `frames` and `rerecords`;
-- `events`: a list of `{frame, "reset"|"power"}`.
+- `events`: a list of `{"frame": n, "event": "reset"|"power"}`, the
+  console button pressed before frame `n` (counted from 0) ran.
+
+The body has `frames` × 2 bytes, so a file whose body is shorter or
+longer is refused as damaged.
 
 The bit order of each `ButtonSet` byte is the core's serial order (001
 core-api "Input"). Playback refuses a file whose `identity` differs from the

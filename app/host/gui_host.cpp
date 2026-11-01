@@ -8,6 +8,7 @@
 #include <cutenes/api/schema.hpp>
 #include <cutenes/api/session.hpp>
 #include <cutenes/qt/audio_output.hpp>
+#include <cutenes/version.hpp>
 
 #include <QByteArray>
 #include <QDateTime>
@@ -315,13 +316,198 @@ void GuiHost::runFrame(Machine& machine)
         m_rewind.push(m_rewound->state.data(), m_rewound->state.size(), m_rewound->input[0], m_rewound->input[1]);
         m_rewound.reset();
     }
+    if (m_movieMode == MovieStatus::Mode::Playing && !playMovieFrame(machine)) return;
     const SaveStateBlob state = machine.captureState();
     m_rewind.push(state.data, state.size, machine.controller(Port::One), machine.controller(Port::Two));
     // Freeze cheats write before every frame (data-model "Cheat").
     for (const Cheat& cheat : m_cheats.cheats) {
         if (cheat.enabled && cheat.kind == Cheat::Kind::Freeze) machine.writeMemory(cheat.address, &cheat.value, 1);
     }
+    if (m_movieMode == MovieStatus::Mode::Recording) {
+        m_movie.input.append(static_cast<char>(machine.controller(Port::One).to_ulong()));
+        m_movie.input.append(static_cast<char>(machine.controller(Port::Two).to_ulong()));
+    }
     machine.runFrames(1);
+    if (m_movieMode != MovieStatus::Mode::None) {
+        ++m_movieFrame;
+        publishMovie(false);
+    }
+}
+
+bool GuiHost::playMovieFrame(Machine& machine)
+{
+    // The console's buttons pressed before this frame, as recorded.
+    api::Session* session = m_session.load();
+    for (const Movie::Event& e : m_movie.events) {
+        if (e.frame != m_movieFrame || !session) continue;
+        if (e.kind == Movie::Event::Kind::Reset) {
+            session->call("core.reset");
+        } else {
+            session->call("core.power_on");
+            session->call("core.resume");
+        }
+    }
+    if (m_movieFrame >= m_movie.frames()) {
+        // The end: the last frame stays on screen, paused, so it can be
+        // looked at (and compared).
+        if (session) session->call("core.pause");
+        stopMovie(true);
+        return false;
+    }
+    const auto byte = [&](qint64 i) { return ButtonSet(static_cast<unsigned char>(m_movie.input[i])); };
+    machine.setController(Port::One, byte(m_movieFrame * 2));
+    machine.setController(Port::Two, byte(m_movieFrame * 2 + 1));
+    return true;
+}
+
+GuiHost::MovieStatus GuiHost::movieStatus() const
+{
+    std::lock_guard lock(m_movieMutex);
+    return m_movieStatus;
+}
+
+void GuiHost::publishMovie(bool changed)
+{
+    {
+        std::lock_guard lock(m_movieMutex);
+        m_movieStatus.mode = m_movieMode;
+        m_movieStatus.frame = m_movieFrame;
+        m_movieStatus.frames = m_movie.frames();
+        m_movieStatus.rerecords = m_movie.rerecords;
+        m_movieStatus.path = m_moviePath;
+    }
+    if (changed) m_window.movieChanged();
+}
+
+Json GuiHost::movieJson() const
+{
+    const char* mode = m_movieMode == MovieStatus::Mode::Recording ? "recording"
+        : m_movieMode == MovieStatus::Mode::Playing                ? "playing"
+                                                                   : "none";
+    return {{"mode", mode}, {"readOnly", m_movieMode == MovieStatus::Mode::Playing}, {"movieFrame", m_movieFrame},
+        {"frames", m_movie.frames()}, {"rerecords", m_movie.rerecords}, {"path", str(m_moviePath)}};
+}
+
+Result GuiHost::movieBusy(bool recording) const
+{
+    if (m_movieMode == MovieStatus::Mode::Playing) {
+        return Result::fail("MoviePlaying", "a movie is playing; stop it, or take over with Read-Only, first");
+    }
+    if (recording && m_movieMode == MovieStatus::Mode::Recording) {
+        return Result::fail("MovieRecording", "a movie is recording; stop it first");
+    }
+    return Result::ok();
+}
+
+Result GuiHost::recordMovie(CallContext& ctx, const QString& path, bool fromPowerOn)
+{
+    if (QDir::isRelativePath(path)) return invalid("/path", "the path must be absolute");
+    if (m_movieMode != MovieStatus::Mode::None) stopMovie();
+    Machine& machine = ctx.session.machine();
+    Movie movie;
+    movie.identity = m_identity.sha1;
+    movie.core = QString::fromLatin1(coreVersionString());
+    movie.region = machine.region() == Region::Pal ? QStringLiteral("pal") : QStringLiteral("ntsc");
+    if (fromPowerOn) {
+        movie.start = Movie::Start::PowerOn;
+    } else {
+        movie.start = Movie::Start::State;
+        const SaveStateBlob blob = machine.captureState();
+        movie.state = QByteArray(reinterpret_cast<const char*>(blob.data), static_cast<qsizetype>(blob.size));
+    }
+    // Written at once, so a folder that cannot take it is found now.
+    QString error;
+    if (!movie.write(path, &error)) return Result::fail("WriteError", str(error), {{"path", str(path)}});
+    if (fromPowerOn) {
+        Result r = call(ctx, "core.power_on");
+        if (!r.isError()) r = call(ctx, "core.resume");
+        if (r.isError()) return r;
+    }
+    m_movie = std::move(movie);
+    m_moviePath = path;
+    m_movieFrame = 0;
+    m_movieMode = MovieStatus::Mode::Recording;
+    m_rewind.clear(); // the history before the movie is another timeline
+    m_rewound.reset();
+    publishMovie(true);
+    m_window.showMessage(QObject::tr("Recording movie"));
+    return Result::ok(movieJson());
+}
+
+Result GuiHost::playMovie(CallContext& ctx, const QString& path)
+{
+    QString error;
+    std::optional<Movie> movie = Movie::read(path, &error);
+    if (!movie) return invalid("/path", str(error));
+    // Refused before anything changes (spec edge case "A movie that does
+    // not match the loaded game").
+    if (movie->identity != m_identity.sha1) {
+        return Result::fail("MovieMismatch", "the movie was recorded on another game",
+            {{"movie", str(movie->identity)}, {"game", str(m_identity.sha1)}});
+    }
+    const QString region = ctx.session.machine().region() == Region::Pal ? QStringLiteral("pal") : QStringLiteral("ntsc");
+    if (!movie->region.isEmpty() && movie->region != region) {
+        return Result::fail("MovieMismatch",
+            "the movie was recorded with " + str(movie->region.toUpper()) + " timing; set Emulation > Region to match",
+            {{"movie", str(movie->region)}, {"game", str(region)}});
+    }
+    if (m_movieMode != MovieStatus::Mode::None) stopMovie();
+    Result r = movie->start == Movie::Start::State ? loadStateBytes(ctx, movie->state, false) : call(ctx, "core.power_on");
+    if (!r.isError()) r = call(ctx, "core.resume");
+    if (r.isError()) return r;
+    m_movie = std::move(*movie);
+    m_moviePath = path;
+    m_movieFrame = 0;
+    m_movieMode = MovieStatus::Mode::Playing;
+    m_rewind.clear();
+    m_rewound.reset();
+    m_rewinding = false;
+    updatePlayback();
+    publishMovie(true);
+    Json v = movieJson();
+    if (m_movie.core != QLatin1String(coreVersionString())) {
+        // Another core may run the same input differently.
+        v["warning"] = "recorded with core " + str(m_movie.core) + "; it may not play back the same";
+        m_window.showMessage(QObject::tr("Movie from core %1: it may not play back the same").arg(m_movie.core));
+    } else {
+        m_window.showMessage(QObject::tr("Playing movie"));
+    }
+    return Result::ok(v);
+}
+
+Result GuiHost::stopMovie(bool finished)
+{
+    if (m_movieMode == MovieStatus::Mode::None) return Result::fail("NoMovie", "no movie is recording or playing");
+    Json v = {{"path", str(m_moviePath)}, {"frames", m_movie.frames()}};
+    QString error;
+    const bool written = m_movieMode != MovieStatus::Mode::Recording || m_movie.write(m_moviePath, &error);
+    if (m_movieMode == MovieStatus::Mode::Recording) {
+        m_window.showMessage(written ? QObject::tr("Movie saved (%1 frames)").arg(m_movie.frames())
+                                     : QObject::tr("The movie could not be saved"));
+    } else {
+        m_window.showMessage(finished ? QObject::tr("Movie finished") : QObject::tr("Movie stopped"));
+    }
+    m_movieMode = MovieStatus::Mode::None;
+    m_movie = Movie();
+    m_moviePath.clear();
+    m_movieFrame = 0;
+    publishMovie(true);
+    if (!written) return Result::fail("WriteError", str(error), {{"path", v["path"]}});
+    return Result::ok(v);
+}
+
+Result GuiHost::takeOverMovie()
+{
+    // Read-write from here (spec US8-7): the rest of the movie goes, and
+    // the player's input records on from this frame.
+    m_movie.truncate(m_movieFrame);
+    ++m_movie.rerecords;
+    m_movieMode = MovieStatus::Mode::Recording;
+    QString error;
+    if (!m_movie.write(m_moviePath, &error)) return Result::fail("WriteError", str(error), {{"path", str(m_moviePath)}});
+    publishMovie(true);
+    m_window.showMessage(QObject::tr("Recording from frame %1").arg(m_movieFrame));
+    return Result::ok(movieJson());
 }
 
 void GuiHost::applyGameGenie(Machine& machine)
@@ -597,6 +783,7 @@ Result GuiHost::openRom(CallContext& ctx, const QString& path, std::optional<boo
 Result GuiHost::closeGame(CallContext& ctx)
 {
     if (m_tap.wav.isOpen()) stopRecording();
+    if (m_movieMode != MovieStatus::Mode::None) stopMovie();
     // FR-037: where the player left off, for the next open.
     if (m_settings.emulation().resumeOnOpen) {
         if (const QString path = autoStatePath(); !path.isEmpty() && QDir().mkpath(QFileInfo(path).path())) {
@@ -838,14 +1025,25 @@ void GuiHost::registerCommands(api::Registry& registry)
         });
 
     add(registry, "gui.reset", "Press the console's reset button", s::object({}), s::object({}),
-        true, true, [](CallContext& ctx, const Json&) { return plain(call(ctx, "core.reset")); });
+        true, true, [this](CallContext& ctx, const Json&) {
+            if (Result busy = movieBusy(false); busy.isError()) return busy;
+            Result r = plain(call(ctx, "core.reset"));
+            if (!r.isError() && m_movieMode == MovieStatus::Mode::Recording) {
+                m_movie.events.push_back({m_movieFrame, Movie::Event::Kind::Reset});
+            }
+            return r;
+        });
 
     add(registry, "gui.power_cycle", "Turn the console off and on again", s::object({}),
-        s::object({}), true, true, [](CallContext& ctx, const Json&) {
+        s::object({}), true, true, [this](CallContext& ctx, const Json&) {
+            if (Result busy = movieBusy(false); busy.isError()) return busy;
             const bool running = isRunning(ctx);
             Result r = call(ctx, "core.power_on");
             // Power-on pauses the machine; a game being played keeps playing.
             if (!r.isError() && running) r = call(ctx, "core.resume");
+            if (!r.isError() && m_movieMode == MovieStatus::Mode::Recording) {
+                m_movie.events.push_back({m_movieFrame, Movie::Event::Kind::Power});
+            }
             return plain(r);
         });
 
@@ -857,14 +1055,20 @@ void GuiHost::registerCommands(api::Registry& registry)
 
     add(registry, "gui.load_state", "Load a slot (Undo Load State brings back what it replaced)",
         s::object({{"slot", slotSchema()}}, {"slot"}), s::object({{"slot", slotSchema()}}), true, true,
-        [this](CallContext& ctx, const Json& args) { return loadState(ctx, args["slot"].get<int>()); });
+        [this](CallContext& ctx, const Json& args) {
+            if (Result busy = movieBusy(true); busy.isError()) return busy;
+            return loadState(ctx, args["slot"].get<int>());
+        });
 
     add(registry, "gui.quick_save", "Save into the selected slot (replacing what it holds)",
         s::object({{"name", nameSchema()}}), slotInfoSchema(), true, true,
         [this](CallContext& ctx, const Json& args) { return saveState(ctx, m_selectedSlot.load(), stateName(args)); });
 
     add(registry, "gui.quick_load", "Load the selected slot", s::object({}), s::object({{"slot", slotSchema()}}),
-        true, true, [this](CallContext& ctx, const Json&) { return loadState(ctx, m_selectedSlot.load()); });
+        true, true, [this](CallContext& ctx, const Json&) {
+            if (Result busy = movieBusy(true); busy.isError()) return busy;
+            return loadState(ctx, m_selectedSlot.load());
+        });
 
     add(registry, "gui.select_slot", "Choose the slot Quick Save and Quick Load use (per game)",
         s::object({{"slot", slotSchema()}}, {"slot"}), s::object({{"slot", slotSchema()}}), true, false,
@@ -872,6 +1076,7 @@ void GuiHost::registerCommands(api::Registry& registry)
 
     add(registry, "gui.undo_load_state", "Go back to the state the last load replaced (one level)",
         s::object({}), s::object({}), true, true, [this](CallContext& ctx, const Json&) {
+            if (Result busy = movieBusy(true); busy.isError()) return busy;
             if (!m_undoState) return Result::fail("NotFound", "no state load to undo");
             const QByteArray state = *m_undoState;
             Result r = loadStateBytes(ctx, state, false);
@@ -1096,6 +1301,7 @@ void GuiHost::registerCommands(api::Registry& registry)
                 m_window.showFileDialog(Window::FileDialog::LoadState);
                 return Result::ok({{"dialog", true}});
             }
+            if (Result busy = movieBusy(true); busy.isError()) return busy;
             const QString path = QString::fromStdString(args["path"].get<std::string>());
             QString error;
             const std::optional<QByteArray> state = StateSlots::readFile(path, &error);
@@ -1209,7 +1415,11 @@ void GuiHost::registerCommands(api::Registry& registry)
 
     add(registry, "gui.set_rewind", "Hold rewind: play runs backwards while on (the history is the last 30 s or more)",
         s::object({{"on", s::boolean()}}, {"on"}), s::object({{"rewinding", s::boolean()}}, {"rewinding"}), true, true,
-        [this](CallContext& ctx, const Json& args) { return setRewind(ctx, args["on"].get<bool>()); });
+        [this](CallContext& ctx, const Json& args) {
+            const bool on = args["on"].get<bool>();
+            if (Result busy = movieBusy(true); on && busy.isError()) return busy;
+            return setRewind(ctx, on);
+        });
 
     add(registry, "gui.set_fast_forward", "Hold fast-forward: the game runs at the fast-forward speed while on",
         s::object({{"on", s::boolean()}}, {"on"}), s::object({{"fastForward", s::boolean()}}, {"fastForward"}), true,
@@ -1264,6 +1474,10 @@ void GuiHost::registerCommands(api::Registry& registry)
                 if (r.isError()) return r;
             }
             Machine& machine = ctx.session.machine();
+            if (!m_rewinding) {
+                runFrame(machine); // as in play: rewind history, cheats and the movie
+                return Result::ok();
+            }
             const SaveStateBlob state = machine.captureState();
             m_rewind.push(state.data, state.size, machine.controller(Port::One), machine.controller(Port::Two));
             machine.frameAdvance();
@@ -1332,11 +1546,56 @@ void GuiHost::registerCommands(api::Registry& registry)
     };
     const Json none = s::object({});
     const Json fileArgs = s::object({{"path", s::string("a file path; without it, a file dialog")}});
-    later("gui.record_movie", "Record a movie from power-on or the current state",
-        s::object({{"path", s::string()}, {"from", s::stringEnum({"power_on", "state"})}}), true, "G7");
-    later("gui.play_movie", "Play a movie", fileArgs, true, "G7");
-    later("gui.stop_movie", "Stop recording or playing the movie", none, true, "G7");
-    later("gui.toggle_movie_read_only", "Play the movie without recording over it", none, true, "G7");
+    const Json movieStatusSchema = s::object(
+        {{"mode", s::stringEnum({"none", "recording", "playing"})}, {"readOnly", s::boolean("playing: input is the movie's")},
+            {"movieFrame", s::u64("frames recorded or played so far (the envelope's frame is the core's)")}, {"frames", s::u64("in the movie")},
+            {"rerecords", s::u64()}, {"path", s::string()}, {"dialog", s::boolean("the file dialog was shown instead")},
+            {"warning", s::string("recorded by another core version")}});
+    add(registry, "gui.record_movie",
+        "Record a movie (.cnm): each frame's input from power-on (a power cycle first) or from the current state; "
+        "without path, show the file dialog",
+        s::object({{"path", s::string("an absolute .cnm path")}, {"from", s::stringEnum({"power_on", "state"})}},
+            {"from"}),
+        movieStatusSchema, true, true, [this](CallContext& ctx, const Json& args) {
+            const bool fromPowerOn = args["from"] == "power_on";
+            if (!args.contains("path")) {
+                const Library library = m_window.library();
+                const QString folder = m_identity.sha1.isEmpty() || !library.isUsable()
+                    ? QString()
+                    : library.gameFile(Library::Folder::Movies, m_identity, m_gameName, {});
+                m_window.showMovieDialog(true, fromPowerOn ? QStringLiteral("power_on") : QStringLiteral("state"), folder);
+                return Result::ok({{"dialog", true}});
+            }
+            return recordMovie(ctx, QString::fromStdString(args["path"].get<std::string>()), fromPowerOn);
+        });
+    add(registry, "gui.play_movie",
+        "Play a movie read-only (refused for another game); it pauses on its last frame. Without path, show the "
+        "file dialog",
+        fileArgs, movieStatusSchema, true, true, [this](CallContext& ctx, const Json& args) {
+            if (!args.contains("path")) {
+                const Library library = m_window.library();
+                const QString folder = m_identity.sha1.isEmpty() || !library.isUsable()
+                    ? QString()
+                    : library.gameFile(Library::Folder::Movies, m_identity, m_gameName, {});
+                m_window.showMovieDialog(false, {}, folder);
+                return Result::ok({{"dialog", true}});
+            }
+            return playMovie(ctx, QString::fromStdString(args["path"].get<std::string>()));
+        });
+    add(registry, "gui.stop_movie", "Stop recording (writing the file) or playing the movie", none,
+        s::object({{"path", s::string()}, {"frames", s::u64()}}, {"path", "frames"}), true, true,
+        [this](CallContext&, const Json&) { return stopMovie(); });
+    add(registry, "gui.toggle_movie_read_only",
+        "Take over a playing movie: the rest of it is dropped and the player's input records on from this frame",
+        none, movieStatusSchema, true, true, [this](CallContext&, const Json&) {
+            if (m_movieMode == MovieStatus::Mode::None) return Result::fail("NoMovie", "no movie is recording or playing");
+            if (m_movieMode == MovieStatus::Mode::Recording) {
+                return Result::fail("MovieRecording", "the movie is recording already; stop it and play it to watch it");
+            }
+            return takeOverMovie();
+        });
+    add(registry, "gui.movie_status", "The movie recording or playing, if any", none, movieStatusSchema, false,
+        false, [this](CallContext&, const Json&) { return Result::ok(movieJson()); });
     add(registry, "gui.toggle_audio_recording",
         "Start or stop recording the game's sound to a WAV file (16-bit mono, 48 kHz); without path, into the "
         "library's recordings folder",
