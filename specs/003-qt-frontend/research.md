@@ -157,6 +157,20 @@ screen or the rate changes, and `gui.get_settings` reports the choice as
   never. Phase-locking to presentation timestamps is a later refinement if
   the manual pass shows judder.
 
+**As tested (G092).** The rate control's decisions live in `AudioPacer`
+(plain arithmetic on queue depths); `AudioOutput` only applies them to the
+SDL stream. That lets the pacing soak (`GuiPacing`, quickstart A15) run ten
+minutes per display on a simulated clock: the real core's sound per frame,
+the real `choosePacing`, `AudioPacer` and `FrameMailbox`, with simulated
+timer slack, vsyncs, and a sound card whose crystal is a few hundredths of
+a percent off. Results it checks: no underrun once playing, the queue
+between one card block and twice the target, the rate within ±0.5% and
+settled on the clocks' ratio, and, synced to the display, every due vsync
+showing the next frame. With the rate control disabled it finds thousands
+of underruns. Simulating time is what makes a ten-minute property testable
+in a minute and deterministic; the same harness fits any emulator that
+pairs a frame clock with a sound queue.
+
 **Rejected.**
 - Audio-master pacing alone: it drops or repeats a video frame about every 10
   seconds at 60 Hz, which breaks SC-004.

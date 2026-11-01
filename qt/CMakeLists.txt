@@ -28,6 +28,7 @@ FetchContent_MakeAvailable(SDL3)
 
 add_library(cutenes-qt STATIC
     src/audio_output.cpp
+    src/audio_pacer.cpp
     src/emulation_view.cpp
     src/frame_clock.cpp
     src/frame_mailbox.cpp
