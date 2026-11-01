@@ -257,11 +257,11 @@ logger and memory dump (G084).
     log's `$C000` with a PC edit, as the log does);
   - [x] 10 steps match nestest's log;
   - [x] the memory viewer reads change no state;
-  - the pattern table equals the CHR data.
+  - [x] the pattern table equals the CHR data.
 - [x] G081 [US9] Debugger: registers and flags, disassembly, step, run,
   breakpoints by stepping, and register edits.
 - [x] G082 [P] [US9] Memory viewer and editor: CPU, PPU, OAM and palette.
-- [ ] G083 [P] [US9] PPU viewers: patterns, nametables with the scroll
+- [x] G083 [P] [US9] PPU viewers: patterns, nametables with the scroll
   position, sprites and palette, refreshed at up to 30 Hz.
 - [ ] G084 [US9] Trace logger and Write Memory Dump into `debug/`.
 - [ ] G085 Manual checklist **M8**.

@@ -95,6 +95,7 @@ public:
 
     // Side-effect-free PPU debug access (FR-015).
     void readPpuRegisters(std::uint8_t dst[8]) const; // reconstructed views
+    PpuScroll readPpuScroll() const;                    // t, v, fine X, toggle (003)
     void readVram(std::uint16_t addr, std::size_t len, std::uint8_t* dst) const;
     void writeVram(std::uint16_t addr, const std::uint8_t* src,
                    std::size_t len);

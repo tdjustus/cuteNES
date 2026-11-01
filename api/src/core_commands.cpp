@@ -608,6 +608,21 @@ void registerPpu(Registry& r)
             return Result::ok(bytesResult(v));
         });
 
+    addCommand(r, "core.read_ppu_scroll",
+        "The PPU's scroll registers (t, v, fine X, write toggle) and the scroll in pixels, without side effects",
+        noArguments(),
+        resultSchema({{"t", s::u16("the next frame's start address: fine Y, nametable, coarse Y, coarse X")},
+                         {"v", s::u16("the current VRAM address")}, {"fineX", s::integer(0, 7)},
+                         {"writeToggle", s::boolean("the $2005/$2006 second-write toggle")},
+                         {"scrollX", s::integer(0, 511, "pixels across the four nametables")},
+                         {"scrollY", s::integer(0, 479, "pixels down them")}},
+            {"t", "v", "fineX", "writeToggle", "scrollX", "scrollY"}),
+        false, false, [](CallContext& ctx, const Json&) {
+            const PpuScroll p = state(ctx).machine.readPpuScroll();
+            return Result::ok({{"t", p.t}, {"v", p.v}, {"fineX", p.fineX}, {"writeToggle", p.writeToggle},
+                {"scrollX", p.scrollX()}, {"scrollY", p.scrollY()}});
+        });
+
     addCommand(r, "core.read_vram", "Read the PPU bus ($0000-$3FFF, mirroring resolved)",
         s::object({{"addr", s::integer(0, 0x3FFF)}, {"length", s::integer(1, 0x4000)}},
             {"addr", "length"}),

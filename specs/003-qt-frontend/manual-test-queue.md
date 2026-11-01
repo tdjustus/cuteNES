@@ -291,3 +291,27 @@ test variant that read with side effects failed, as it should.
 4. Type 1FF or ZZ into a cell: it is refused and shows the memory again.
 5. Scroll through CPU memory with the scroll bar while the game runs: the
    game never stutters or changes.
+
+### PPU viewer (G083, #100)
+
+Checked through MCP: the viewer opened on Super Mario Bros. at the
+nametables while it ran, and `core.read_ppu_scroll` gave the title screen's
+scroll (0, 0). The pictures are checked pixel by pixel by the
+`GuiPpuViewer` tests against a test ROM's CHR decoded independently; a
+variant with the two bit planes swapped failed them, as it should.
+
+1. Super Mario Bros.: Debug > PPU Viewer > Pattern Tables (Ctrl+P). The
+   left table ($0000) is the sprites (Mario, Goombas, Koopas), the right
+   ($1000) the background (letters, blocks, pipes). Change the palette in
+   the list: the colours change, the shapes do not.
+2. Nametables tab: the title screen, with the red rectangle round it and
+   "Scroll: X 0, Y 0 (nametable 0)". Start a game and walk right: the
+   level appears in the nametables and the rectangle moves right with
+   the scroll, wrapping from the right half to the left.
+3. Sprites tab: Mario's tiles in the first cells, and the list's X and Y
+   change as he moves. Jump: his Y gets smaller.
+4. Palette tab: two rows of 16, each cell in its colour; the sky blue is
+   the first cell ($3F00 = 22).
+5. View > Palette, choose another palette: the viewer's colours follow.
+6. With the viewer open the game runs at full speed and plays as before.
+

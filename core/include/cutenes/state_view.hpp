@@ -16,6 +16,20 @@ struct CpuState {
     std::uint64_t masterCycle = 0;
 };
 
+// The PPU's scroll registers (nesdev "PPU scrolling"): t, the address the
+// next frame starts from (yyy NN YYYYY XXXXX: fine Y, nametable, coarse Y,
+// coarse X), v, the current address, the fine X scroll, and the $2005/$2006
+// write toggle. The scroll in pixels counts across the four nametables.
+struct PpuScroll {
+    std::uint16_t t = 0;
+    std::uint16_t v = 0;
+    std::uint8_t fineX = 0;
+    bool writeToggle = false;
+
+    int scrollX() const { return (((t & 0x1F) << 3) | fineX) + ((t >> 10) & 1) * 256; }
+    int scrollY() const { return ((((t >> 5) & 0x1F) << 3) | ((t >> 12) & 7)) + ((t >> 11) & 1) * 240; }
+};
+
 enum class WriteError : std::uint8_t {
     Ok,
     InvalidAddress,

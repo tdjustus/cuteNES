@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -757,4 +758,89 @@ TEST(Sram, BatteryCartridgeExposesItsRam)
     EXPECT_EQ(sram.data[0], 0x12);
     EXPECT_EQ(sram.data[2], 0x56);
     EXPECT_EQ(machine.peek(0x6001), 0x34); // the CPU sees the loaded save
+}
+
+// PPU scroll (core-additions.md "PPU scroll", for the PPU viewer). The
+// expectations are nesdev "PPU scrolling", "Register controls":
+//   $2000 write:        t: ...GH.. ........ <- d: ......GH
+//   $2005 first write:  t: ....... ...ABCDE <- d: ABCDE...; x <- d: .....FGH; w = 1
+//   $2005 second write: t: FGH..AB CDE..... <- d: ABCDEFGH;                 w = 0
+//   $2002 read:         w = 0
+// t is yyy NN YYYYY XXXXX: fine Y, nametable, coarse Y, coarse X.
+namespace {
+
+cutenes::Machine& scrollMachine(cutenes::Machine& machine)
+{
+    auto rom = makeEchoRom();
+    EXPECT_EQ(machine.loadCartridge(rom.data(), rom.size()).error, cutenes::LoadError::Ok);
+    machine.powerOn();
+    machine.runFrames(2); // past the post-reset write-ignore window
+    return machine;
+}
+
+} // namespace
+
+TEST(PpuScroll, TheWritesBuildTFineXAndTheToggle)
+{
+    cutenes::Machine machine;
+    scrollMachine(machine);
+    ASSERT_EQ(machine.writeCpuRegister(0x2000, 0x03), cutenes::WriteError::Ok); // nametable 3
+    ASSERT_EQ(machine.writeCpuRegister(0x2005, 0x7D), cutenes::WriteError::Ok); // X: coarse 15, fine 5
+    cutenes::PpuScroll s = machine.readPpuScroll();
+    EXPECT_EQ(s.fineX, 5);
+    EXPECT_TRUE(s.writeToggle) << "after one $2005 write";
+    EXPECT_EQ(s.t & 0x001F, 15) << "coarse X";
+    ASSERT_EQ(machine.writeCpuRegister(0x2005, 0x5E), cutenes::WriteError::Ok); // Y: coarse 11, fine 6
+    s = machine.readPpuScroll();
+    EXPECT_FALSE(s.writeToggle);
+    EXPECT_EQ(s.t, (6u << 12) | (3u << 10) | (11u << 5) | 15u);
+    EXPECT_EQ(s.fineX, 5);
+
+    // The scroll in pixels: X = coarse * 8 + fine plus 256 for the right-
+    // hand nametables, Y = coarse * 8 + fine plus 240 for the lower ones.
+    EXPECT_EQ(s.scrollX(), 15 * 8 + 5 + 256);
+    EXPECT_EQ(s.scrollY(), 11 * 8 + 6 + 240);
+}
+
+TEST(PpuScroll, ReadingStatusResetsTheToggleAndReadingTheScrollChangesNothing)
+{
+    cutenes::Machine machine;
+    scrollMachine(machine);
+    ASSERT_EQ(machine.writeCpuRegister(0x2005, 0x10), cutenes::WriteError::Ok);
+    ASSERT_TRUE(machine.readPpuScroll().writeToggle);
+    std::uint8_t status = 0;
+    machine.readMemory(0x2002, 1, &status); // a CPU read, with its effect
+    EXPECT_FALSE(machine.readPpuScroll().writeToggle);
+
+    // readPpuScroll is a debug read: the same twice, and the next $2005
+    // write is still a first write.
+    const cutenes::PpuScroll a = machine.readPpuScroll();
+    const cutenes::PpuScroll b = machine.readPpuScroll();
+    EXPECT_EQ(a.t, b.t);
+    EXPECT_EQ(a.v, b.v);
+    ASSERT_EQ(machine.writeCpuRegister(0x2005, 0x08), cutenes::WriteError::Ok);
+    EXPECT_EQ(machine.readPpuScroll().t & 0x001F, 1) << "coarse X from a first write";
+}
+
+TEST(PpuScroll, TheDefaultPaletteIsTheColoursThePpuOutputs)
+{
+    // defaultPalette() is the table the PPU colours with when no palette is
+    // set: a backdrop of colour i fills the frame with defaultPalette()[i].
+    const std::array<std::uint32_t, 64>& colours = cutenes::defaultPalette();
+    for (std::uint8_t i : {std::uint8_t{0x00}, std::uint8_t{0x0F}, std::uint8_t{0x16}, std::uint8_t{0x2A},
+             std::uint8_t{0x30}}) {
+        cutenes::Machine machine;
+        auto rom = makeEchoRom();
+        LastFrame sink;
+        machine.setVideoSink(&sink);
+        ASSERT_EQ(machine.loadCartridge(rom.data(), rom.size()).error, cutenes::LoadError::Ok);
+        machine.powerOn();
+        machine.runFrames(2);
+        std::uint8_t entries[32];
+        std::fill(std::begin(entries), std::end(entries), i);
+        machine.writePalette(entries);
+        machine.runFrames(1);
+        machine.setVideoSink(nullptr);
+        EXPECT_TRUE(all(sink.pixels, colours[i] & 0xFFFFFF)) << "colour " << int(i);
+    }
 }

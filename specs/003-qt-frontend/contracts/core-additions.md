@@ -99,8 +99,30 @@ void Machine::setGameGenieCodes(std::span<const GameGenieCode> codes); // replac
   debugger agree. Codes live in the bus, which survives a region rebuild,
   and are not serialized. The GUI's cheat list (FR-051) arrives in G7.
 
+## PPU scroll and the default colours (G083)
+
+The PPU viewer (FR-062) marks the scroll position on the nametables, and
+draws tiles in the colours the game shows. Neither was readable:
+- `core.read_ppu_registers` holds `v`, the address the PPU is using now.
+  At a frame boundary rendering has moved it on, so it is not the scroll.
+  The scroll the game set is in `t` and fine X (nesdev "PPU scrolling").
+- The default palette lived only inside the PPU.
+
+So, test-first against nesdev "PPU scrolling" ("Register controls"):
+- `PpuScroll Machine::readPpuScroll() const` returns `t`, `v`, fine X and
+  the write toggle, read without side effects. `scrollX()` is coarse X × 8
+  + fine X, plus 256 for the right-hand nametables. `scrollY()` is coarse
+  Y × 8 + fine Y, plus 240 for the lower ones. The command is
+  `core.read_ppu_scroll`.
+- `defaultPalette()` returns the 64 colours the PPU outputs with no palette
+  set. Its test checks it against the frames the PPU produces.
+
+`t` at a frame boundary is the scroll the next frame starts from. A game
+that splits the screen (a status bar, say) changes it mid-frame, so the
+viewer shows the scroll as the game last set it.
+
 ## Surface version
 
 The new `core.*` commands are a MINOR bump of the API surface (002 R9), from
 0.x to 0.(x+1). They are also added to the golden catalog. As built: 0.1 to
-0.2.
+0.2 (G060-G063), then 0.3 (`core.read_ppu_scroll`, G083).

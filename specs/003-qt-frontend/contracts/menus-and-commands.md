@@ -225,6 +225,33 @@ The memory viewer (G082, FR-061):
 - Like the debugger it reads ten times a second while shown; its repeated
   reads report no errors.
 
+The PPU viewer (G083, FR-062), one window with four tabs; `view` picks the
+tab:
+- `patterns`: both pattern tables ($0000 and $1000), 16 x 16 tiles each,
+  in a palette chosen from the eight (colour 0 is always the backdrop,
+  $3F00). A tile's pixel is bit 7-x of its low-plane byte y plus twice that
+  bit of the high-plane byte y + 8 (nesdev "PPU pattern tables").
+- `nametables`: the four nametables as the PPU sees them ($2000-$2FFF,
+  mirroring resolved), 512 x 480, with the background pattern table from
+  PPUCTRL bit 4 and each 2 x 2 tile block's palette from its attribute
+  byte. A red rectangle marks the 256 x 240 screen the scroll points at,
+  wrapping round, and a label gives the scroll: X and Y within a
+  nametable, and which one. The scroll is the PPU's `t` register and fine
+  X, read with `core.read_ppu_scroll` (`t` is what the next frame starts
+  from; a game that changes the scroll part way down the screen, for a
+  status bar, shows its last write).
+- `sprites`: the 64 sprites in OAM order, each in an 8 x 16 cell, flipped
+  and coloured as their attribute byte says, colour 0 shown as the
+  backdrop; 8 x 16 sprites (PPUCTRL bit 5) take their table from bit 0 of
+  the tile number. Beside them a table of each sprite's X, Y, tile and
+  attributes.
+- `palette`: palette RAM's 32 bytes, each cell in its colour.
+- Viewing has no side effects: it reads only through `core.read_vram`,
+  `core.read_oam`, `core.read_palette`, `core.read_ppu_registers` and
+  `core.read_ppu_scroll`, and only what the tab shown needs. Colours are
+  those of View > Palette. It refreshes up to 30 times a second while
+  shown, and a refresh waits for the one before to finish.
+
 ## Settings
 
 | Item | Command | Arguments | Shortcut | Game |

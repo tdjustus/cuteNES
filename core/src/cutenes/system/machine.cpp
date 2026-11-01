@@ -261,6 +261,18 @@ void Machine::readPpuRegisters(std::uint8_t dst[8]) const
     m_impl->ppu->debugReadRegisters(dst);
 }
 
+PpuScroll Machine::readPpuScroll() const
+{
+    PpuScroll s;
+    m_impl->ppu->debugReadScroll(s.t, s.v, s.fineX, s.writeToggle);
+    return s;
+}
+
+const std::array<std::uint32_t, 64>& defaultPalette()
+{
+    return Ppu::defaultPalette();
+}
+
 void Machine::readVram(std::uint16_t addr, std::size_t len,
     std::uint8_t* dst) const
 {

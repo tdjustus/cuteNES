@@ -272,6 +272,13 @@ bool Machine::setPalette(std::span<const std::uint32_t> xrgb);
 // codes, a convenience beyond the accessory's three. Not saved in states.
 std::optional<GameGenieCode> decodeGameGenie(std::string_view code);
 void Machine::setGameGenieCodes(std::span<const GameGenieCode> codes);
+
+// PPU scroll, for the PPU viewer (nesdev "PPU scrolling"): t, v, fine X and
+// the write toggle, read without side effects; scrollX()/scrollY() give the
+// pixels across the four nametables.
+PpuScroll Machine::readPpuScroll() const;
+// The default output colours, indexed by palette entry, no emphasis.
+const std::array<std::uint32_t, 64>& defaultPalette();
 ```
 
 ## Configuration
@@ -312,6 +319,7 @@ table is therefore part of the contract:
 | SRAM persistence (FR-006) | `sram()` / `loadSram` |
 | CPU state write (002 FR-002) | `writeCpu` |
 | PPU debug access (002 FR-015) | `readPpuRegisters` `readVram` `writeVram` `readOam` `writeOam` `readPalette` `writePalette` |
+| PPU scroll (003 FR-062) | `readPpuScroll` (+ `defaultPalette` for the viewer's colours) |
 | Side-effect-free peek (002 FR-002) | `peek` / `disassemble` |
 | Scripted input runs (002 FR-019) | `runFrames(n, InputScript*)` |
 | Memory dump (debugging) | `memoryDump` / `dumpMemory` |
