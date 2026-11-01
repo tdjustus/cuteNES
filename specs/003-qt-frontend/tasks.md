@@ -146,7 +146,7 @@ Real-time mode in `cutenes-api` (R3), test-first:
   hash, and Undo Load works.
 - [x] G031 [US4] Slots with thumbnails, Select Slot, Quick Save and Load,
   Undo Load State, and states to and from files.
-- [ ] G032 [US4] Tests first (A6): rewind 120 frames lands on the matching
+- [x] G032 [US4] Tests first (A6): rewind 120 frames lands on the matching
   hash, and delta and RLE round trips. Then rewind (hold), fast-forward
   (hold and toggle), speed, Frame Advance, and the audio policy during
   fast-forward. Measure state sizes and set the rewind budget so the default

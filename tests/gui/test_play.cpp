@@ -78,7 +78,7 @@ TEST(GuiPlay, WithoutAGameOnlyTheImplementedNonGameActionsAreEnabled)
     MainWindow w(windowOptions());
     const QStringList noGame = {QStringLiteral("gui.open_rom"), QStringLiteral("gui.exit"),
         QStringLiteral("gui.show_about"), QStringLiteral("gui.show_library"),
-        QStringLiteral("gui.open_library_folder"), QStringLiteral("gui.select_slot")};
+        QStringLiteral("gui.open_library_folder"), QStringLiteral("gui.select_slot"), QStringLiteral("gui.set_speed")};
     for (QAction* a : w.menuBar()->findChildren<QAction*>()) {
         const QString command = a->property("command").toString();
         if (command.isEmpty()) continue;

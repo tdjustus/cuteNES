@@ -206,8 +206,105 @@ GuiHost::GuiHost(Window& window, AppSettings& settings, BatterySaver& battery)
 {
 }
 
+void GuiHost::attach(api::Session& session)
+{
+    m_session = &session;
+    session.setFrameRunner([this](Machine& machine) { runFrame(machine); });
+}
+
+void GuiHost::detach()
+{
+    if (api::Session* session = m_session.exchange(nullptr)) session->setFrameRunner({});
+}
+
+const std::vector<int>& GuiHost::speeds()
+{
+    static const std::vector<int> list = {25, 50, 75, 100, 150, 200, 300, 400};
+    return list;
+}
+
+void GuiHost::runFrame(Machine& machine)
+{
+    if (m_rewinding) {
+        // Back one frame: the stored state, run with its own input, shows
+        // the frame before the one on screen (R6). With no history left the
+        // picture holds.
+        std::optional<RewindBuffer::Entry> entry = m_rewind.pop();
+        if (!entry) return;
+        if (machine.loadState(entry->state.data(), entry->state.size()) != LoadStateError::Ok) return;
+        machine.resume(); // a load leaves the core paused; rewinding plays on
+        machine.setController(Port::One, entry->input[0]);
+        machine.setController(Port::Two, entry->input[1]);
+        machine.runFrames(1);
+        m_rewound = std::move(entry);
+        return;
+    }
+    if (m_rewound) {
+        // Play goes on from the last frame shown, which is history again.
+        m_rewind.push(m_rewound->state.data(), m_rewound->state.size(), m_rewound->input[0], m_rewound->input[1]);
+        m_rewound.reset();
+    }
+    const SaveStateBlob state = machine.captureState();
+    m_rewind.push(state.data, state.size, machine.controller(Port::One), machine.controller(Port::Two));
+    machine.runFrames(1);
+}
+
+Result GuiHost::setRewind(CallContext& ctx, bool on)
+{
+    if (on == m_rewinding) return Result::ok({{"rewinding", on}});
+    if (on) {
+        if (m_rewind.empty() && !m_rewound) {
+            m_window.showMessage(QObject::tr("Nothing to rewind yet"));
+            return Result::ok({{"rewinding", false}});
+        }
+        m_pauseAfterRewind = !isRunning(ctx);
+        m_rewinding = true;
+        updatePlayback();
+        if (m_pauseAfterRewind) {
+            Result r = call(ctx, "core.resume");
+            if (r.isError()) return r;
+        }
+    } else {
+        m_rewinding = false;
+        updatePlayback();
+        if (m_pauseAfterRewind) {
+            m_pauseAfterRewind = false;
+            Result r = call(ctx, "core.pause");
+            if (r.isError()) return r;
+        }
+    }
+    return Result::ok({{"rewinding", m_rewinding}});
+}
+
+Result GuiHost::setSpeed(int percent)
+{
+    m_speed = percent;
+    updatePlayback();
+    m_window.showMessage(percent == 0 ? QObject::tr("Speed: Unlimited") : QObject::tr("Speed: %1 %").arg(percent));
+    return Result::ok({{"speed", percent == 0 ? Json("unlimited") : Json(percent)}});
+}
+
+void GuiHost::updatePlayback()
+{
+    GuiHost::Window::Playback playback;
+    const int percent = m_fastForward ? m_fastForwardSpeed : m_speed;
+    playback.speed = percent / 100.0;
+    playback.fastForward = m_fastForward;
+    playback.rewinding = m_rewinding;
+    // Sound is sped up (or slowed) with the game up to 2x and muted beyond
+    // that, at Unlimited and while rewinding (R4, R6).
+    playback.muted = m_rewinding || percent == 0 || percent > 200;
+    m_window.playbackChanged(playback);
+}
+
 void GuiHost::onSessionEvent(const api::Event& event)
 {
+    // A load, reset, power cycle or new game makes the history a different
+    // timeline (data-model "RewindBuffer").
+    if (event.type == "state_changed") {
+        m_rewind.clear();
+        m_rewound.reset();
+    }
     // Battery RAM is checked as frames run (frame events come at most 10
     // times a second, on the emulation thread, which owns the machine).
     if (api::Session* session = m_session.load(); event.type == "frame" && session) {
@@ -283,6 +380,12 @@ Result GuiHost::closeGame(CallContext& ctx)
     m_battery.close(ctx.session.machine());
     m_gameOpen = false;
     m_identity = {};
+    m_rewind.clear();
+    m_rewound.reset();
+    m_rewinding = false;
+    m_pauseAfterRewind = false;
+    m_fastForward = false;
+    updatePlayback();
     m_undoState.reset();
     {
         std::lock_guard lock(m_slotsMutex);
@@ -512,6 +615,70 @@ void GuiHost::registerCommands(api::Registry& registry)
             Json list = Json::array();
             for (int slot = 1; slot <= StateSlots::kSlots; ++slot) list.push_back(slotInfoJson(gameSlots.info(slot)));
             return Result::ok({{"slots", list}, {"selectedSlot", m_selectedSlot.load()}});
+        });
+
+    add(registry, "gui.set_rewind", "Hold rewind: play runs backwards while on (the history is the last 30 s or more)",
+        s::object({{"on", s::boolean()}}, {"on"}), s::object({{"rewinding", s::boolean()}}, {"rewinding"}), true, true,
+        [this](CallContext& ctx, const Json& args) { return setRewind(ctx, args["on"].get<bool>()); });
+
+    add(registry, "gui.set_fast_forward", "Hold fast-forward: the game runs at the fast-forward speed while on",
+        s::object({{"on", s::boolean()}}, {"on"}), s::object({{"fastForward", s::boolean()}}, {"fastForward"}), true,
+        true, [this](CallContext&, const Json& args) {
+            m_fastForward = args["on"].get<bool>();
+            updatePlayback();
+            return Result::ok({{"fastForward", m_fastForward}});
+        });
+
+    add(registry, "gui.toggle_fast_forward", "Turn fast-forward on or off", s::object({}),
+        s::object({{"fastForward", s::boolean()}}, {"fastForward"}), true, true, [this](CallContext&, const Json&) {
+            m_fastForward = !m_fastForward;
+            updatePlayback();
+            m_window.showMessage(m_fastForward ? QObject::tr("Fast-forward on") : QObject::tr("Fast-forward off"));
+            return Result::ok({{"fastForward", m_fastForward}});
+        });
+
+    add(registry, "gui.set_speed", "Set the game's speed: a percent, unlimited, or a step to the next listed speed",
+        s::object({{"percent", Json{{"type", Json::array({"integer", "string"})},
+                       {"description", "25, 50, 75, 100, 150, 200, 300, 400, or \"unlimited\""}}},
+            {"step", s::stringEnum({"slower", "faster"})}}),
+        s::object({{"speed", Json{{"type", Json::array({"integer", "string"})}, {"description", "percent, or \"unlimited\""}}}},
+            {"speed"}), true, false,
+        [this](CallContext&, const Json& args) {
+            const std::vector<int>& list = speeds();
+            if (args.contains("step")) {
+                const bool faster = args["step"] == "faster";
+                if (m_speed == 0) return setSpeed(faster ? 0 : list.back());
+                const auto it = std::find(list.begin(), list.end(), m_speed);
+                const auto index = it == list.end() ? 3 : static_cast<int>(it - list.begin());
+                if (faster) return setSpeed(index + 1 < static_cast<int>(list.size()) ? list[static_cast<std::size_t>(index + 1)] : 0);
+                return setSpeed(list[static_cast<std::size_t>(std::max(0, index - 1))]);
+            }
+            if (!args.contains("percent")) return Result::fail("InvalidArguments", "give percent or step");
+            if (args["percent"].is_string()) {
+                if (args["percent"] != "unlimited") {
+                    return Result::fail("InvalidArguments", "percent is a number or \"unlimited\"", {{"path", "/percent"}});
+                }
+                return setSpeed(0);
+            }
+            const int percent = args["percent"].get<int>();
+            if (std::find(list.begin(), list.end(), percent) == list.end()) {
+                return Result::fail("InvalidArguments", "the speeds are 25, 50, 75, 100, 150, 200, 300 and 400 %",
+                    {{"path", "/percent"}});
+            }
+            return setSpeed(percent);
+        });
+
+    add(registry, "gui.frame_advance", "Pause and run exactly one frame", s::object({}), s::object({}), true, true,
+        [this](CallContext& ctx, const Json&) {
+            if (isRunning(ctx)) {
+                Result r = call(ctx, "core.pause");
+                if (r.isError()) return r;
+            }
+            Machine& machine = ctx.session.machine();
+            const SaveStateBlob state = machine.captureState();
+            m_rewind.push(state.data, state.size, machine.controller(Port::One), machine.controller(Port::Two));
+            machine.frameAdvance();
+            return Result::ok();
         });
 
     add(registry, "gui.exit", "Quit cuteNES (the battery save is written first)", s::object({}),

@@ -167,12 +167,21 @@ supplies the resampler.
 ## R6. Rewind and save states
 
 **Decision.**
-- **Rewind** captures a state every frame into a ring buffer. Each
-  sixtieth state is a keyframe. Every other state is stored as an XOR
-  against the previous state, run-length encoded, because most bytes do not
-  change between frames.
-- The default budget is 64 MiB, which holds at least 30 s (FR-034). G3
-  measures the real number and adjusts the budget.
+- **Rewind** captures a state at the start of every frame, with that
+  frame's input, into a ring buffer. The oldest state is kept whole and
+  every later one as an XOR against the state before it, run-length
+  encoded, because most bytes do not change between frames. Rewinding pops
+  one XOR at a time and dropping the oldest folds one into it, so no
+  keyframes are needed (the first plan had one every 60 states, which only
+  random access would need).
+- The default budget is 64 MiB, which holds at least 30 s (FR-034).
+  Measured in G3: a 5 KB state of a running test ROM costs about 4.5 KiB of
+  history per second, so 30 s uses about 140 KiB and the default holds
+  hours. The budget stays at 64 MiB for games with larger states.
+- Each rewind step loads the stored state and runs its frame with its
+  input, so the picture is the real frame and the machine is exactly where
+  a fresh run would be. Rewind works from a paused game too, which pauses
+  again on release.
 - Rewinding plays the ring backwards, one state per displayed frame. While
   it does, audio is muted.
 - **Slots** are files in `states/` with a PNG thumbnail

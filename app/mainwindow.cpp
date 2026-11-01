@@ -114,7 +114,9 @@ const QStringList kImplemented = {
     QStringLiteral("gui.load_state"), QStringLiteral("gui.quick_save"),
     QStringLiteral("gui.quick_load"), QStringLiteral("gui.select_slot"),
     QStringLiteral("gui.undo_load_state"), QStringLiteral("gui.save_state_file"),
-    QStringLiteral("gui.load_state_file"),
+    QStringLiteral("gui.load_state_file"), QStringLiteral("gui.set_rewind"),
+    QStringLiteral("gui.set_fast_forward"), QStringLiteral("gui.toggle_fast_forward"),
+    QStringLiteral("gui.set_speed"), QStringLiteral("gui.frame_advance"),
 };
 const QStringList kSettingsPages = {QStringLiteral("library")};
 const QStringList kNeedGame = {
@@ -123,8 +125,13 @@ const QStringList kNeedGame = {
     QStringLiteral("gui.save_state"), QStringLiteral("gui.load_state"),
     QStringLiteral("gui.quick_save"), QStringLiteral("gui.quick_load"),
     QStringLiteral("gui.undo_load_state"), QStringLiteral("gui.save_state_file"),
-    QStringLiteral("gui.load_state_file"),
+    QStringLiteral("gui.load_state_file"), QStringLiteral("gui.set_rewind"),
+    QStringLiteral("gui.set_fast_forward"), QStringLiteral("gui.toggle_fast_forward"),
+    QStringLiteral("gui.frame_advance"),
 };
+// Actions that act while their key is held: on at the press, off at the
+// release (contract "Fast Forward (hold)", "Rewind (hold)").
+const QStringList kHeld = {QStringLiteral("gui.set_fast_forward"), QStringLiteral("gui.set_rewind")};
 
 api::Json toJson(const QVariantMap& map)
 {
@@ -216,6 +223,12 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
                                            " padding: 10px 26px; font-size: 28px; font-weight: 800; letter-spacing: 4px; }"));
     m_paused->adjustSize();
     m_paused->hide();
+    m_speedBadge = new QLabel(m_view);
+    m_speedBadge->setObjectName(QStringLiteral("speedBadge"));
+    m_speedBadge->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_speedBadge->setStyleSheet(QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150); border-radius: 6px;"
+                                               " padding: 4px 10px; font-weight: 700; }"));
+    m_speedBadge->hide();
     m_audio = std::make_unique<qt::AudioOutput>();
     m_audio->open(); // silent if no device (spec US7-5)
 
@@ -267,6 +280,7 @@ MainWindow::~MainWindow()
 {
     qApp->removeEventFilter(this);
     m_clock->stop();
+    m_host->detach(); // its frame runner must not outlive it
     // FR-012: the battery save is on disk before the window goes (a closed
     // window already did this; without a game the call just fails).
     m_session->call("gui.close_game");
@@ -478,8 +492,20 @@ void MainWindow::wireActions()
         }
         action->setToolTip({});
         action->setEnabled(true);
+        if (kHeld.contains(command)) action->setAutoRepeat(false);
         connect(action, &QAction::triggered, this, [this, action, command] {
-            const QVariantMap args = action->property("commandArgs").toMap();
+            QVariantMap args = action->property("commandArgs").toMap();
+            if (kHeld.contains(command)) {
+                // Held by its key: on now, off at the release (eventFilter).
+                // Chosen from the menu, nothing is held: it toggles.
+                bool held = false;
+                for (const QKeySequence& key : action->shortcuts()) held = held || (!key.isEmpty() && m_keysDown.contains(key[0].key()));
+                if (!held) {
+                    const Playback now = playback();
+                    const bool on = command == QLatin1String("gui.set_rewind") ? now.rewinding : now.fastForward;
+                    args.insert(QStringLiteral("on"), !on);
+                }
+            }
             if (command == QLatin1String("gui.save_state")) return askSaveState(args.value(QStringLiteral("slot")).toInt());
             if (command == QLatin1String("gui.quick_save")) return askSaveState(m_host->selectedSlot());
             runCommand(command, args);
@@ -629,7 +655,8 @@ QVector<LibraryEntry> MainWindow::libraryEntries() const
 
 void MainWindow::gameOpened(const QString& path, const GameIdentity&, const BatterySaver::Opened&)
 {
-    m_clock->setRate(m_session->machine().region() == Region::Pal ? kPalFps : kNtscFps);
+    m_baseRate = m_session->machine().region() == Region::Pal ? kPalFps : kNtscFps;
+    playbackChanged(playback()); // the speed applies to the new game's rate
     QMetaObject::invokeMethod(this, [this, path] {
         m_romName = QFileInfo(path).fileName();
         setWindowTitle(tr("%1 — cuteNES").arg(m_romName));
@@ -806,6 +833,67 @@ void MainWindow::placePaused()
     m_paused->move(m_view->rect().center() - m_paused->rect().center());
 }
 
+void MainWindow::releaseHeld(int key)
+{
+    for (QAction* action : menuBar()->findChildren<QAction*>()) {
+        const QString command = action->property("command").toString();
+        if (!kHeld.contains(command) || !action->isEnabled()) continue;
+        for (const QKeySequence& shortcut : action->shortcuts()) {
+            if (!shortcut.isEmpty() && shortcut[0].key() == key) {
+                runCommand(command, {{QStringLiteral("on"), false}}, true);
+            }
+        }
+    }
+}
+
+double MainWindow::frameRate() const
+{
+    return m_clock->rate();
+}
+
+MainWindow::Playback MainWindow::playback() const
+{
+    std::lock_guard lock(m_playbackMutex);
+    return m_playback;
+}
+
+void MainWindow::playbackChanged(const Playback& playback)
+{
+    // Any thread (the host calls it on the emulation thread). Unlimited
+    // asks for frames far faster than they can run; the session keeps at
+    // most two pending, so they run back to back (R4).
+    {
+        std::lock_guard lock(m_playbackMutex);
+        m_playback = playback;
+    }
+    constexpr double kUnlimited = 1000.0;
+    m_clock->setRate(playback.speed > 0 ? m_baseRate * playback.speed : kUnlimited);
+    m_audio->setSpeed(playback.speed > 0 ? playback.speed : 1.0);
+    m_audio->setMuted(playback.muted);
+    QMetaObject::invokeMethod(this, [this] { updateSpeedBadge(); }, Qt::QueuedConnection);
+}
+
+void MainWindow::updateSpeedBadge()
+{
+    const Playback now = playback();
+    QString text;
+    if (now.rewinding) {
+        text = tr("◀◀ Rewind");
+    } else if (now.speed == 0) {
+        text = tr("▶▶ Unlimited");
+    } else if (now.fastForward) {
+        text = tr("▶▶ %1 %").arg(qRound(now.speed * 100));
+    } else if (qRound(now.speed * 100) != 100) {
+        text = tr("%1 %").arg(qRound(now.speed * 100));
+    }
+    m_speedBadge->setText(text);
+    m_speedBadge->setVisible(!text.isEmpty() && hasGame());
+    m_speedBadge->adjustSize();
+    constexpr int kMargin = 12;
+    m_speedBadge->move(m_view->width() - m_speedBadge->width() - kMargin, kMargin);
+    m_speedBadge->raise();
+}
+
 void MainWindow::placeOsd()
 {
     constexpr int kMargin = 12;
@@ -956,7 +1044,10 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
     switch (event->type()) {
     case QEvent::Resize: // the application's filter sees every widget's
         if (watched == m_pages) placeOsd();
-        if (watched == m_view) placePaused();
+        if (watched == m_view) {
+            placePaused();
+            updateSpeedBadge();
+        }
         break;
     case QEvent::FileOpen: // macOS "Open With" and drops on the Dock icon
         if (watched == qApp) {
@@ -964,11 +1055,21 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
             return true;
         }
         break;
+    case QEvent::ShortcutOverride: { // a shortcut's key, before the action fires
+        auto* key = static_cast<QKeyEvent*>(event);
+        if (!key->isAutoRepeat()) m_keysDown.insert(key->key());
+        break;
+    }
     case QEvent::KeyPress:
     case QEvent::KeyRelease: {
         // Game keys while the game shows in this window and no menu or
         // dialog has the keyboard. Auto-repeats change nothing.
         auto* key = static_cast<QKeyEvent*>(event);
+        if (!key->isAutoRepeat() && event->type() == QEvent::KeyRelease && m_keysDown.remove(key->key())) {
+            releaseHeld(key->key());
+        } else if (!key->isAutoRepeat() && event->type() == QEvent::KeyPress) {
+            m_keysDown.insert(key->key());
+        }
         if (QApplication::activeWindow() != this || QApplication::activePopupWidget()
             || QApplication::activeModalWidget() || m_pages->currentWidget() != m_view) {
             break;

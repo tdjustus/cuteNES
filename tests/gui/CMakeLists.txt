@@ -9,6 +9,8 @@ add_executable(cutenes-gui-tests
     test_library_window.cpp
     test_play.cpp
     test_qt_parts.cpp
+    test_rewind.cpp
+    test_rewind_buffer.cpp
     test_skeleton.cpp
     test_states.cpp)
 target_link_libraries(cutenes-gui-tests PRIVATE cutenes-app-lib gtest)

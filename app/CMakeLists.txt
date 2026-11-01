@@ -14,6 +14,7 @@ add_library(cutenes-app-lib STATIC
     library/library_browser.cpp
     library/library_index.cpp
     persistence/battery_saver.cpp
+    persistence/rewind_buffer.cpp
     persistence/state_slots.cpp
     settings/app_settings.cpp)
 target_include_directories(cutenes-app-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

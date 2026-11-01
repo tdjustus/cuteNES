@@ -42,6 +42,14 @@ public:
     // on pause, load, reset and seek, so stale sound never plays.
     void clear();
 
+    // The game's speed (1 = the console's): sound plays that much faster or
+    // slower, pitch included (spec FR-035).
+    void setSpeed(double speed);
+    double speed() const { return m_speed.load(); }
+    // Muted output drops what it is given (fast-forward above 2x, rewind).
+    void setMuted(bool muted);
+    bool muted() const { return m_muted.load(); }
+
     void setTargetLatencyMs(int ms); // default 64 (data-model "audio.latencyMs")
     int targetLatencyMs() const { return m_targetMs.load(); }
 
@@ -63,6 +71,8 @@ private:
     double m_rate = 1.0;
     std::uint64_t m_underruns = 0;
     std::atomic<int> m_targetMs{64};
+    std::atomic<double> m_speed{1.0};
+    std::atomic<bool> m_muted{false};
 };
 
 } // namespace cutenes::qt

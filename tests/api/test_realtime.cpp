@@ -236,3 +236,34 @@ TEST(ApiRealtime, LeavingRealtimeStopsPlay)
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     EXPECT_EQ(frameOf(s), 0u);
 }
+
+// Feature 003 R6: the GUI's rewind runs each real-time frame itself, after
+// live input is applied, to capture a state first or to play one back.
+TEST(ApiRealtime, AFrameRunnerRunsEachRealtimeFrameInstead)
+{
+    Session s(testConfig());
+    startRunning(s);
+    std::atomic<int> calls{0};
+    std::atomic<bool> inputSeen{false};
+    s.setLiveInput(Port::One, buttons({cutenes::Button::A}));
+    s.setFrameRunner([&](cutenes::Machine& machine) {
+        ++calls;
+        if (machine.controller(Port::One).test(static_cast<std::size_t>(cutenes::Button::A))) inputSeen = true;
+        machine.runFrames(1);
+    });
+    s.requestFrames(3);
+    ASSERT_TRUE(reachFrame(s, 3));
+    EXPECT_EQ(calls.load(), 3);
+    EXPECT_TRUE(inputSeen.load()) << "live input is applied before the runner";
+
+    // A runner that runs nothing (rewind with no history) costs a frame of
+    // time but advances nothing.
+    s.setFrameRunner([&](cutenes::Machine&) { ++calls; });
+    s.requestFrames(2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_EQ(frameOf(s), 3u);
+
+    s.setFrameRunner({}); // back to one plain frame
+    s.requestFrames(2);
+    ASSERT_TRUE(reachFrame(s, 5));
+}

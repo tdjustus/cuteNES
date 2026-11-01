@@ -132,7 +132,11 @@ void Session::Impl::runRealtimeFrame()
     }
     applyInput(Port::One);
     applyInput(Port::Two);
-    machine.runFrames(1);
+    if (frameRunner) {
+        frameRunner(machine);
+    } else {
+        machine.runFrames(1);
+    }
     emitFrame();
 }
 
@@ -368,6 +372,18 @@ void Session::shutdown()
 }
 
 Machine& Session::machine() { return m_impl->machine; }
+
+void Session::setFrameRunner(FrameRunner runner)
+{
+    if (onEmulationThread()) {
+        m_impl->frameRunner = std::move(runner);
+        return;
+    }
+    m_impl->post([impl = m_impl.get(), r = std::move(runner)]() mutable {
+        impl->frameRunner = std::move(r);
+        return Result::ok();
+    }).wait();
+}
 
 void Session::setLibraryRoot(const std::string& root)
 {

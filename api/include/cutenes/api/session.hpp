@@ -73,6 +73,13 @@ public:
     // real-time frame, combined (OR) with the last core.set_controller
     // value. A scripted core.run_frames ignores them (002 FR-019).
     void setLiveInput(Port port, ButtonSet buttons);
+    // Real-time play runs `runner` for each frame instead of one plain
+    // frame, on the emulation thread, after live input is applied. The GUI's
+    // rewind uses it to capture a state before each frame and to play stored
+    // states back (feature 003, research R6). Empty restores the default.
+    // Safe from any thread; it takes effect before the next frame.
+    using FrameRunner = std::function<void(Machine&)>;
+    void setFrameRunner(FrameRunner runner);
     // Extra sinks that receive every frame and every audio chunk the
     // machine produces, after the session's own capture. They run on the
     // emulation thread and must not block; null removes them.
