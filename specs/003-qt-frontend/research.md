@@ -359,25 +359,88 @@ expects.
 
 ## R16. Self-update (#105)
 
-**Decision, to be settled before G096.**
-- **Feed.** The GitHub Releases API for this repository
-  (`/repos/<owner>/cuteNES/releases/latest`), over HTTPS with Qt Network.
-  Tests point it at a local fake feed.
-- **Assets.** Release builds follow a fixed naming scheme, one per OS,
-  architecture and package type (for example
-  `cuteNES-<version>-macos-arm64.zip`), each with a `SHA256SUMS` entry. G093
-  packaging produces them.
-- **Replacement.**
-  - macOS: unpack beside the bundle, swap the `.app` atomically (rename),
-    keeping its signature valid.
-  - Windows: a running `.exe` cannot be overwritten. A small updater
-    process waits for cuteNES to exit, swaps the folder, and starts the new
-    version.
-  - Linux: the AppImage replaces its own file. Distro packages are not
-    replaced (FR-096).
-- **Relaunch.** The new process gets the original `argv`.
-- **Open questions.** Signing the checksum list (not only the checksums),
-  and whether Help gets a manual "Check for Updates…" item.
+**Decision (settled in G096).** The general shape, any desktop application
+shipped as GitHub Release assets could use it: a once-per-launch check of a
+public release feed, a download checked against the release's own
+checksums, a swap that leaves the old version whole until the new one is in
+place, and a relaunch with the same arguments. Only the asset names and the
+install layouts below are this project's.
+
+- **Feed.** One HTTPS GET of
+  `https://api.github.com/repos/tdjustus/cuteNES/releases?per_page=30`,
+  with `Accept: application/vnd.github+json` and
+  `User-Agent: cuteNES/<version>` (GitHub refuses requests without one),
+  through Qt Network. Nothing else is sent: no identifier, no settings, no
+  telemetry (FR-092). The list, not `/releases/latest`, because the newest
+  release may lack this platform's build while an older one above the
+  running version has it. Unauthenticated, so 60 requests an hour per
+  address, far above once per launch.
+- **Choosing a release.** Drafts and prereleases (GitHub's `prerelease`, or
+  a version with a `-` suffix) are ignored. A tag is `v<major>.<minor>.<patch>`;
+  versions compare numerically, part by part. The choice is the highest
+  version above the running one that has this platform's asset and a
+  `SHA256SUMS` asset, unless it is the skipped version
+  (`updates.skippedVersion`); a newer one than the skipped version is still
+  offered.
+- **Assets** (G093's names): `cuteNES-<version>-macos-<arch>.zip`
+  (`arm64`, `x86_64`), `cuteNES-<version>-windows-x64.zip`,
+  `cuteNES-<version>-linux-x86_64.AppImage`, and `SHA256SUMS` listing them
+  (`<sha256>  <name>`, or `*<name>` from Windows' tool).
+- **Which package is running.** The CI package job builds with
+  `CUTENES_PACKAGE` set to `macos-zip`, `windows-zip` or `appimage`; any
+  other build (a developer's, a distribution's) is `none` and never offers
+  Install, only See Details (FR-096). At run time Install also needs write
+  access where the swap happens: the bundle's folder (macOS), the
+  application folder's parent (Windows), the AppImage's folder (Linux, the
+  path in `$APPIMAGE`). Without it, See Details only.
+- **Integrity.** Every URL must be HTTPS, redirects included (Qt's
+  `NoLessSafeRedirectPolicy`), with Qt's normal certificate checks. The
+  build is downloaded to a temporary file beside the install location (the
+  same file system, so the swap is a rename), its SHA-256 compared with its
+  `SHA256SUMS` line, and only a match goes on; any failure deletes the
+  download and changes nothing (FR-094). Tests point the feed at a local
+  plain-HTTP server; plain HTTP is accepted only for a loopback feed set
+  through the test options, never from settings.
+- **Not signed (for 1.0).** HTTPS and the release's own checksums protect
+  against a damaged or intercepted download, not against someone who can
+  publish releases to the repository: they could change the checksums too.
+  A signature over `SHA256SUMS`, checked against a public key built into
+  the application, would cover that, but needs a private key kept outside
+  GitHub and a signing step in every release. Deferred to after 1.0 (#138).
+- **Replacement**, the old version kept until the new one is in place:
+  - **macOS**: unpack with `ditto -x -k` into a hidden folder beside the
+    bundle, check the new bundle's `CFBundleShortVersionString` is the
+    expected version, rename the running bundle aside
+    (`.cutenes-old.app`), rename the new one into place, and delete the old
+    one at the next start. A running bundle can be renamed; its process
+    keeps its files. If the second rename fails, the first is undone. The
+    download is made by the application, not a browser, so it carries no
+    quarantine attribute; the new bundle is ad-hoc signed as the release
+    built it.
+  - **Windows**: a running `.exe` and its DLLs cannot be replaced or
+    renamed while loaded. The application unpacks the zip (Windows' own
+    `tar -xf`) into a folder beside its own, then writes and starts a small
+    PowerShell script (Windows PowerShell 5.1 ships with every supported
+    Windows) and quits. The script waits for the process to end, renames
+    the old folder aside, moves the new one into place (and back on
+    failure), starts the new `cutenes.exe` with the arguments, and deletes
+    the old folder.
+  - **Linux**: the AppImage is one file. The download is made executable
+    and renamed over `$APPIMAGE`; the running copy keeps its mounted image.
+    Distribution packages and builds from source are `none` (above).
+- **Relaunch.** The new version starts with the running one's arguments
+  (`QCoreApplication::arguments()` after the program name), after the usual
+  quit: battery save, automatic state, servers stopped. The swap happens
+  only after the user's Install click; no automation command starts it
+  (FR-097).
+- **First launch.** Once the window is shown and the library is checked, if
+  `updates.asked` is false a question asks whether to check for updates at
+  each start; either answer sets `updates.asked`, and Yes sets
+  `updates.check`. A launch with a ROM on the command line asks later.
+- **Not in 1.0:** a Help > Check for Updates… item. Automation can run any
+  menu command, so a manual check would make an update request possible
+  with checks off, against FR-090's guarantee. Deferred with the signature
+  (#138).
 
 ## R14. Movie format
 

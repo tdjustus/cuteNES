@@ -313,7 +313,7 @@ Every setting can be read and changed without the dialog:
 - `gui.set_setting` (`key`, `value`) validates and applies a value.
 
 Update checks (US10, #105) are the setting `updates.check` (off until the
-user says yes). No command installs an update.
+user says yes). No command installs an update. See "Updates" below.
 
 Each group's keys are an enum in its schema (data-model.md "Settings").
 
@@ -562,6 +562,38 @@ Key Bindings button. Turbo toggles on the frame counter while held.
 
 Player 2 has no keyboard defaults. Its gamepad defaults are the same as
 player 1's.
+
+## Updates (US10, FR-090 to FR-097; research R16)
+
+- **Settings > Updates** (`gui.show_settings` `page` `updates`): "Check for
+  updates when cuteNES starts" (`updates.check`), and the skipped version
+  with a button to forget it (`updates.skippedVersion`, `""`). It says
+  whether this build can install updates itself or only show them
+  (R16 "Which package is running").
+- **First launch** (`updates.asked` false): once the window is shown, a
+  question (object `updatesQuestion`) asks "Check for updates when cuteNES
+  starts?" with Yes and No. Either sets `updates.asked`; Yes sets
+  `updates.check`. With a ROM on the command line it waits for a later
+  launch.
+- **The check**, with `updates.check` on: once per launch, after the window
+  is shown, in the background (R16 "Feed"). It never delays the window or a
+  game. Its result is used only if no game is running when it arrives and
+  none was started from the command line; otherwise nothing is shown this
+  launch. A failed check (no network, a bad answer) is logged and shown
+  nowhere else.
+- **The prompt** (object `updatePrompt`): "cuteNES <version> is available
+  (you have <version>)", the release's notes, and the buttons **Install**,
+  **Ask Again Later**, **Skip This Version** and **See Details**. Skip sets
+  `updates.skippedVersion`; See Details opens the release's page. Where
+  this build cannot replace itself, there is no Install button and the
+  prompt says why.
+- **Install** shows the download's progress with Cancel, checks it (R16
+  "Integrity"), then asks the usual quit questions (a recording, a movie),
+  quits and starts the new version with the same arguments. A failure says
+  what failed, removes the download and leaves this version as it was.
+- `gui.get_settings` and `gui.set_setting` read and set the three keys. No
+  command checks, prompts or installs: the network request follows only
+  from `updates.check`, and the swap only from the user's click (FR-097).
 
 ## Errors
 

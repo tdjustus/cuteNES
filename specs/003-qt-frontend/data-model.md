@@ -17,7 +17,7 @@
 | **Breakpoint** | `address`, `enabled` | Execution breakpoints only (spec assumption). Any number |
 | **InputBinding** | `port` 1-2, `button` (A, B, Select, Start, Up, Down, Left, Right, TurboA, TurboB), `device` (keyboard or a gamepad GUID), `control` | Conflicts are reported (FR-022). A gamepad binding follows the device's GUID, so a re-plugged pad keeps its port |
 | **Hotkey** | `action` (a `gui.*` command plus fixed arguments), `bindings` (up to two: key combination or gamepad button/combination) | Every menu action can be rebound, cleared or reset to its default (contract "Key Bindings page"). One binding cannot serve two actions |
-| **Settings** | groups `video`, `audio`, `input`, `hotkeys`, `emulation`, `library`, `servers` | Persisted in INI (R8). Every key has a schema, and `gui.set_setting` validates against it |
+| **Settings** | groups `video`, `audio`, `input`, `hotkeys`, `emulation`, `library`, `servers`, `updates` | Persisted in INI (R8). Every key has a schema, and `gui.set_setting` validates against it |
 | **ServerSettings** | `apiEnabled` (false), `apiPort` (8765), `mcpEnabled` (false), `mcpPort` (8766) | MCP on implies API on, and API off implies MCP off (FR-071, 002 FR-020). Tokens are per launch and never stored in settings |
 
 ## Settings keys
@@ -31,6 +31,7 @@
 | `emulation` | `pauseWhenInactive` (true), `rewindEnabled` (true), `rewindBudgetMiB` (64), `fastForwardSpeed` (300), `resumeOnOpen` (false), `region` (`auto`) |
 | `library` | `root` (`<Documents>/cuteNES`), `romFolders` (empty; changed with `gui.add_rom_folder` / `gui.remove_rom_folder`) |
 | `servers` | ServerSettings |
+| `updates` | `check` (false: no update request at all, FR-090), `asked` (false: the first-launch question is still to come), `skippedVersion` (`""`: a version Skip This Version set, never offered again; a newer one is) |
 
 ## State transitions (window)
 
