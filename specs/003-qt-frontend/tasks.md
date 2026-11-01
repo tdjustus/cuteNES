@@ -276,7 +276,7 @@ logger and memory dump (G084).
 - [x] G092 Pacing soak `gui-pacing` (A15) in Release.
 - [x] G093 Packaging per R13 (windeployqt, macdeployqt, AppImage with
   `.desktop`/MIME), with license files, on tags and weekly.
-- [ ] G094 Docs: README "Using the GUI", a user guide reachable from Help, and
+- [x] G094 Docs: README "Using the GUI", a user guide reachable from Help, and
   a keyboard shortcut list from the contract.
 - [ ] G096 [US10] Spec R16 settled: feed, asset names, checksums and the
   per-platform swap (#105). Release assets get the naming scheme (G093).

@@ -326,6 +326,12 @@ Each group's keys are an enum in its schema (data-model.md "Settings").
 | Open Log Folder | `gui.open_log_folder` | | | |
 | About cuteNES † | `gui.show_about` | | | |
 
+User Guide shows `docs/user-guide.md` in a window, built into the
+application so it works offline and matches the version. Its keyboard
+shortcut list is this file's: the `GuiUserGuide` test checks that the
+guide lists every shortcut the tables above give, and the game input
+defaults below, and nothing else.
+
 ## Items from later phases
 
 Every item above is in the menus from G034 on. An item whose feature lands
@@ -339,7 +345,7 @@ Settings pages that do not exist yet do the same through
 
 | Command | Purpose |
 |---|---|
-| `gui.close_window` | `window`: `about`, `settings`, `cheats`, `cheat_search`, `debugger`, `memory_viewer`, `ppu_viewer`, `trace_logger`, or `all`. Returns `closed`, the windows it closes; one not open is refused (`InvalidArguments`). The windows close on the GUI thread, so `gui.list_windows` drops them a moment later |
+| `gui.close_window` | `window`: `about`, `settings`, `cheats`, `cheat_search`, `debugger`, `memory_viewer`, `ppu_viewer`, `trace_logger`, `user_guide`, or `all`. Returns `closed`, the windows it closes; one not open is refused (`InvalidArguments`). The windows close on the GUI thread, so `gui.list_windows` drops them a moment later |
 | `gui.list_windows` | `windows`: the windows above that are shown now, in name order. A window a `gui.show_*` just opened is listed a moment later: the window opens on the GUI thread after the command returns (R11). The library and Key Bindings are pages of the main window, not windows (`gui.state` `page`) |
 | `gui.library_select` | `path` or `identity`: select a game in the browser |
 | `gui.add_rom_folder` / `gui.remove_rom_folder` | `path`: scan another folder of ROMs in place, or stop scanning it (FR-002). Overlapping folders and the library's own `roms/` are refused. Returns `romFolders` |

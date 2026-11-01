@@ -56,6 +56,7 @@ class DebuggerWindow;
 class MemoryViewerWindow;
 class PpuViewerWindow;
 class TraceLoggerWindow;
+class UserGuideWindow;
 class CheatsWindow;
 class KeyBindings;
 class KeyBindingsPage;
@@ -170,6 +171,7 @@ private:
     void showMemoryViewer() override;
     void showPpuViewer(const QString& view) override;
     void showTraceLogger() override;
+    void showUserGuide() override;
     QStringList openWindows() const override;
     void closeWindows(const QStringList& names) override;
     QString currentPage() const override;
@@ -265,6 +267,7 @@ private:
     QPointer<MemoryViewerWindow> m_memoryViewer;
     QPointer<PpuViewerWindow> m_ppuViewer;
     QPointer<TraceLoggerWindow> m_traceLogger;
+    QPointer<UserGuideWindow> m_userGuide;
     // What openWindows() and currentPage() report, kept by the GUI thread
     // as windows show and hide and pages change (updateWindowList).
     void updateWindowList();

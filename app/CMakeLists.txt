@@ -14,6 +14,7 @@ add_library(cutenes-app-lib STATIC
     dialogs/memory_viewer.cpp
     dialogs/ppu_viewer.cpp
     dialogs/trace_logger.cpp
+    dialogs/user_guide.cpp
     debug/ppu_render.cpp
     host/gui_host.cpp
     host/servers.cpp
@@ -55,6 +56,11 @@ foreach(file alias IN ZIP_LISTS license_files license_aliases)
     set_source_files_properties(${file} PROPERTIES QT_RESOURCE_ALIAS ${alias})
 endforeach()
 qt_add_resources(cutenes-app-lib licenses PREFIX /licenses FILES ${license_files})
+
+# Help > User Guide shows docs/user-guide.md, built in so it works offline
+# and always matches the version that shows it.
+set_source_files_properties(${PROJECT_SOURCE_DIR}/docs/user-guide.md PROPERTIES QT_RESOURCE_ALIAS user-guide.md)
+qt_add_resources(cutenes-app-lib docs PREFIX /docs FILES ${PROJECT_SOURCE_DIR}/docs/user-guide.md)
 
 # The icon (packaging/icons, from cutenes.svg by make-icons.sh): the window's
 # from a resource, the bundle's (.icns) on macOS, the executable's (.ico)
