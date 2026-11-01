@@ -355,11 +355,18 @@ jobs:
             --executable AppDir/usr/bin/cutenes \
             --executable AppDir/usr/bin/cutenes-server \
             --desktop-file AppDir/usr/share/applications/io.github.tdjustus.cutenes.desktop \
-            --icon-file AppDir/usr/share/icons/hicolor/512x512/apps/cutenes.png
+            --icon-file AppDir/usr/share/icons/hicolor/512x512/apps/cutenes.png \
+            --custom-apprun packaging/linux/AppRun
           chmod +x "$name"
           # The update check needs a TLS backend (R16; docs/packaging.md).
           ls AppDir/usr/plugins/tls/*.so
           xvfb-run -a "./$name" --version
+          # The server is reachable both ways AppRun offers (#134), and
+          # without them the app still starts.
+          "./$name" server --help | grep -- --attach >/dev/null
+          ln -s "$name" cutenes-server
+          ./cutenes-server --help | grep -- --attach >/dev/null
+          rm cutenes-server
           echo "PACKAGE=$name" >> "$GITHUB_ENV"
 
       - name: Checksum

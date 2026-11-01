@@ -36,7 +36,8 @@ steps:
 | Linux | `cuteNES-<version>-linux-x86_64.AppImage` | linuxdeploy with its Qt plugin | Built on the oldest supported Ubuntu (22.04), because an AppImage runs only on systems with at least the glibc it was built with. It carries the `.desktop` entry and a MIME type for `.nes`. |
 
 Every package carries `cutenes-server` (for MCP clients,
-`cutenes-server --attach`) and the license texts that About shows: cuteNES's
+`cutenes-server --attach`; in the AppImage, `<AppImage> server --attach`,
+see "Linux AppRun" below) and the license texts that About shows: cuteNES's
 own, Qt's LGPL-3.0 and GPL-3.0, SDL3's, nlohmann/json's and cpp-httplib's.
 An AppImage starts only its main program, so on Linux `cutenes-server` is
 inside the image but cannot yet be started from it (#134).
@@ -89,6 +90,27 @@ packaging a CMake and Qt program, not to this emulator:
   the supported GCC 12 and its `-Wstringop-overflow` false positives break
   the `-Werror` build. The job installs `g++-12`, which still links the
   system's own libstdc++, so the result runs where 22.04 runs.
+
+## Linux AppRun
+
+An AppImage starts one program, the one its `AppRun` runs, so on its own it
+could not reach the second program it carries, `cutenes-server` (#134).
+`packaging/linux/AppRun`, passed to linuxdeploy with `--custom-apprun`,
+chooses between them:
+
+- **Started through a link named `cutenes-server`**, it runs the server.
+  The AppImage runtime puts the name the image was started as in `ARGV0`, the
+  way one multi-call binary serves several commands.
+- **Started with `server` as its first argument**, it runs the server with
+  the remaining arguments. MCP client settings take a command line, so
+  this form needs no file of the user's.
+- **Otherwise** it runs `cutenes` with every argument, as before.
+
+It first sources the hooks linuxdeploy's plugins leave in `apprun-hooks/`,
+as linuxdeploy's own AppRun would. The package job runs the server both
+ways. The approach is general: any AppImage that ships more than one
+program can choose between them this way, instead of shipping a second
+image.
 
 ## When it runs
 
