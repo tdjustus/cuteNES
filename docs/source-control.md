@@ -121,15 +121,21 @@ each has its own users:
   minor version, and a release with fixes only raises the patch version.
   From 1.0 on, an incompatible change raises the major version.
 - **Alphas, betas and release candidates.** Each is tagged with the
-  `-<kind>.<n>` suffix on the version it leads to. Until 1.0 it is published
+  `-<kind>.<n>` suffix on the version it leads to. **`<n>` counts that kind
+  across the whole project, not within one version**: the alphas so far are
+  alpha 1 (0.1.0) and alpha 2 (0.2.0), so the next alpha is alpha 3, whatever
+  its version. Before tagging, check the last release's number
+  (`gh release list`), and use the same number in the tag, the release's
+  title and its notes. Until 1.0 it is published
   as a normal GitHub release marked **Latest**, not as a GitHub prerelease,
   because every pre-1.0 build is a test build. GitHub never shows a
   prerelease as Latest, so the newest build would otherwise be hidden behind
   an older one. The self-update still never offers it: it skips any tag with
   a `-` suffix as well as GitHub's prerelease flag (R16), so testers download
   it by hand.
-- History: the first app alpha predates this scheme and is tagged
-  `core-v0.1.0-alpha.1`.
+- History: alpha 1 predates this scheme and is tagged
+  `core-v0.1.0-alpha.1`. Alpha 2 is `v0.2.0-alpha.2`. It was first tagged
+  `v0.2.0-alpha.1`, counted within its version, and corrected.
 
 ## Publishing a release
 
