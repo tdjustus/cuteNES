@@ -204,7 +204,7 @@ TEST(GuiVideo, TheSettingsPersistAndTheVideoPageShowsThem)
         defaults.erase("pacingNow"); // what the pacing does, not a setting
         EXPECT_EQ(defaults, Json({{"scale", 3}, {"fullscreen", false}, {"integerScaling", true}, {"aspect", "8:7"},
                                 {"overscan", {{"top", 8}, {"bottom", 8}, {"left", 0}, {"right", 0}}},
-                                {"filter", "nearest"}, {"alwaysOnTop", false}, {"pacing", "auto"},
+                                {"filter", "nearest"}, {"alwaysOnTop", false}, {"pacing", "auto"}, {"palette", "default"},
                                 {"showFps", false}, {"showOsd", true}}))
             << defaults.dump();
         call(w, "gui.set_setting", {{"key", "video.scale"}, {"value", 4}});

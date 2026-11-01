@@ -1,5 +1,6 @@
 #include "host/gui_host.hpp"
 
+#include "media/palettes.hpp"
 #include "settings/app_settings.hpp"
 #include "settings/key_bindings.hpp"
 
@@ -34,9 +35,10 @@ const std::vector<std::string> kSettingsPages = {
 // The settings groups and keys implemented so far (data-model "Settings
 // keys"); later phases add theirs.
 const std::vector<std::string> kSettingKeys = {"video.scale", "video.fullscreen", "video.integerScaling",
-    "video.aspect", "video.overscan", "video.filter", "video.alwaysOnTop", "video.pacing", "video.showFps", "video.showOsd",
+    "video.aspect", "video.overscan", "video.filter", "video.alwaysOnTop", "video.pacing", "video.palette",
+    "video.showFps", "video.showOsd",
     "audio.device", "audio.volume", "audio.muted", "audio.latencyMs", "audio.fastForwardAudio",
-    "emulation.pauseWhenInactive", "emulation.resumeOnOpen", "emulation.fastForwardSpeed",
+    "emulation.pauseWhenInactive", "emulation.resumeOnOpen", "emulation.fastForwardSpeed", "emulation.region",
     "library.root", "servers.apiEnabled", "servers.apiPort",
     "servers.mcpEnabled", "servers.mcpPort", "input.turboRate", "input.allowOppositeDirections",
     "input.pauseOnGamepadDisconnect"};
@@ -397,6 +399,56 @@ Result GuiHost::stopRecording()
     return Result::ok({{"recording", false}, {"path", str(path)}, {"seconds", double(samples) / 48000.0}});
 }
 
+void GuiHost::applyCoreSettings(CallContext& ctx)
+{
+    call(ctx, "core.set_region_override", {{"region", str(m_settings.emulation().region)}});
+    const QString palette = m_settings.video().palette;
+    std::optional<std::vector<std::uint32_t>> entries = builtinPalette(palette);
+    if (!entries) entries = readPalFile(palette, nullptr); // a file since moved: the default
+    call(ctx, "core.set_palette", {{"entries", entries.value_or(std::vector<std::uint32_t>{})}});
+}
+
+Result GuiHost::setRegion(CallContext& ctx, const Json& value)
+{
+    if (value != "auto" && value != "ntsc" && value != "pal") return invalid("/value", "must be auto, ntsc or pal");
+    AppSettings::EmulationSettings emulation = m_settings.emulation();
+    emulation.region = QString::fromStdString(value.get<std::string>());
+    m_settings.setEmulation(emulation);
+    call(ctx, "core.set_region_override", {{"region", value}});
+    m_window.videoChanged(false); // the menu's check
+    // What the next power-on chooses: the override, else the header.
+    Machine& machine = ctx.session.machine();
+    const Region header = machine.cartridgeInfo().region == Region::Pal ? Region::Pal : Region::Ntsc;
+    const Region next = value == "pal" ? Region::Pal : value == "ntsc" ? Region::Ntsc : header;
+    const bool pending = m_gameOpen && next != machine.region();
+    if (pending) {
+        m_window.showMessage(next == Region::Pal ? QObject::tr("PAL timing from the next power cycle")
+                                                 : QObject::tr("NTSC timing from the next power cycle"));
+    }
+    return Result::ok({{"region", machine.region() == Region::Pal ? "PAL" : "NTSC"}, {"pending", pending}});
+}
+
+Result GuiHost::setPalette(CallContext& ctx, const QString& name, const QString& path)
+{
+    std::optional<std::vector<std::uint32_t>> entries;
+    if (!path.isEmpty()) {
+        if (QDir::isRelativePath(path)) return invalid("/path", "the path must be absolute");
+        QString error;
+        entries = readPalFile(path, &error);
+        if (!entries) return invalid("/path", str(error));
+    } else {
+        entries = builtinPalette(name);
+        if (!entries) return invalid("/name", "must be one of " + str(builtinPalettes().join(QStringLiteral(", "))));
+    }
+    Result r = call(ctx, "core.set_palette", {{"entries", *entries}});
+    if (r.isError()) return r;
+    AppSettings::VideoSettings video = m_settings.video();
+    video.palette = path.isEmpty() ? name : path;
+    m_settings.setVideo(video);
+    m_window.videoChanged(false);
+    return Result::ok({{"palette", str(video.palette)}});
+}
+
 Result GuiHost::openRom(CallContext& ctx, const QString& path, std::optional<bool> resume)
 {
     QFile file(path);
@@ -422,6 +474,8 @@ Result GuiHost::openRom(CallContext& ctx, const QString& path, std::optional<boo
     }
     if (m_gameOpen) closeGame(ctx);
 
+    // Emulation > Region and View > Palette apply to every game opened.
+    applyCoreSettings(ctx);
     std::string blobId;
     Result r = upload(ctx, bytes, blobId);
     if (r.isError()) return r;
@@ -623,7 +677,7 @@ Json videoJson(const AppSettings::VideoSettings& v, const AppSettings& settings)
 {
     return {{"scale", v.scale}, {"fullscreen", v.fullscreen}, {"integerScaling", v.integerScaling},
         {"aspect", str(v.aspect)}, {"overscan", overscanJson(v)}, {"filter", str(v.filter)},
-        {"alwaysOnTop", v.alwaysOnTop}, {"pacing", str(v.pacing)}, {"showFps", settings.showFps()}, {"showOsd", settings.showOsd()}};
+        {"alwaysOnTop", v.alwaysOnTop}, {"pacing", str(v.pacing)}, {"palette", str(v.palette)}, {"showFps", settings.showFps()}, {"showOsd", settings.showOsd()}};
 }
 
 } // namespace
@@ -758,6 +812,27 @@ void GuiHost::registerCommands(api::Registry& registry)
             m_undoState.reset();
             m_window.showMessage(QObject::tr("Load undone"));
             return Result::ok();
+        });
+
+    add(registry, "gui.set_region",
+        "Force NTSC or PAL timing, or follow the header (auto); a running game changes at its next power cycle",
+        s::object({{"region", s::stringEnum({"auto", "ntsc", "pal"})}}, {"region"}),
+        s::object({{"region", s::string("the region in effect")}, {"pending", s::boolean("changes at the power cycle")}},
+            {"region", "pending"}),
+        true, false, [this](CallContext& ctx, const Json& args) { return setRegion(ctx, args["region"]); });
+
+    add(registry, "gui.set_palette",
+        "The picture's colours: a built-in palette (default, rgb), or a .pal file; with neither, a file dialog",
+        s::object({{"name", s::stringEnum({"default", "rgb"})}, {"path", s::string("a .pal file (192 or 1536 bytes)")}}),
+        s::object({{"palette", s::string()}, {"dialog", s::boolean()}}), true, false,
+        [this](CallContext& ctx, const Json& args) {
+            if (args.contains("name") && args.contains("path")) return invalid("", "give name or path, not both");
+            if (!args.contains("name") && !args.contains("path")) {
+                m_window.showFileDialog(Window::FileDialog::Palette);
+                return Result::ok({{"dialog", true}});
+            }
+            return setPalette(ctx, QString::fromStdString(args.value("name", "")),
+                QString::fromStdString(args.value("path", "")));
         });
 
     add(registry, "gui.save_state_file", "Save the state to a file; without path, show the file dialog",
@@ -1022,10 +1097,6 @@ void GuiHost::registerCommands(api::Registry& registry)
     };
     const Json none = s::object({});
     const Json fileArgs = s::object({{"path", s::string("a file path; without it, a file dialog")}});
-    later("gui.set_region", "Force NTSC or PAL, or follow the header",
-        s::object({{"region", s::stringEnum({"auto", "ntsc", "pal"})}}, {"region"}), false, "G6");
-    later("gui.set_palette", "A built-in palette by name, or a .pal file",
-        s::object({{"name", s::string()}, {"path", s::string()}}), false, "G6");
     later("gui.show_cheats", "Open the cheats window", none, true, "G7");
     later("gui.show_cheat_search", "Open the cheat search", none, true, "G7");
     later("gui.record_movie", "Record a movie from power-on or the current state",
@@ -1288,7 +1359,8 @@ void GuiHost::registerCommands(api::Registry& registry)
                               {"latencyMs", audio.latencyMs}, {"fastForwardAudio", str(audio.fastForwardAudio)}}},
                 {"emulation", {{"pauseWhenInactive", emulation.pauseWhenInactive},
                                   {"resumeOnOpen", emulation.resumeOnOpen},
-                                  {"fastForwardSpeed", emulation.fastForwardSpeed}}},
+                                  {"fastForwardSpeed", emulation.fastForwardSpeed},
+                                  {"region", str(emulation.region)}}},
                 {"library", {{"root", str(library.root())},
                                      {"roms", str(library.folder(Library::Folder::Roms))},
                                      {"romFolders", romFoldersValue(m_settings)}}},
@@ -1306,6 +1378,7 @@ void GuiHost::registerCommands(api::Registry& registry)
                 {"video.filter", s::stringEnum({"nearest", "smooth", "scanlines"})},
                 {"video.alwaysOnTop", s::boolean("keep the window above others")},
                 {"video.pacing", s::stringEnum({"auto", "display", "audio"})},
+                {"video.palette", s::string("a built-in palette (default, rgb) or a .pal file's path; gui.set_palette")},
                 {"video.showFps", s::boolean("the frame rate over the game (off)")},
                 {"video.showOsd", s::boolean("short on-screen messages (on)")},
                 {"audio.device", s::string("a name from gui.list_audio_devices, or default (the system's)")},
@@ -1316,6 +1389,7 @@ void GuiHost::registerCommands(api::Registry& registry)
                 {"emulation.pauseWhenInactive", s::boolean("pause while the window is in the background (on)")},
                 {"emulation.resumeOnOpen", s::boolean("keep an automatic state on close and offer it on open (off)")},
                 {"emulation.fastForwardSpeed", s::integer(150, 400, "percent (300)")},
+                {"emulation.region", s::stringEnum({"auto", "ntsc", "pal"})},
                 {"library.root", s::string("absolute path of the library folder")},
                 {"library.roms", s::string("the library's own roms folder (always scanned)")},
                 {"library.romFolders", s::array(s::string("added with gui.add_rom_folder"), 1000)},
@@ -1336,6 +1410,12 @@ void GuiHost::registerCommands(api::Registry& registry)
         s::object({{"key", s::string()}, {"value", Json::object()}}, {"key", "value"}), true, false,
         [this](CallContext& ctx, const Json& args) {
             const std::string key = args["key"];
+            if (key == "video.palette") {
+                if (!args["value"].is_string()) return invalid("/value", "must be a palette name or a .pal path");
+                const QString value = QString::fromStdString(args["value"].get<std::string>());
+                return setPalette(ctx, builtinPalette(value) ? value : QString(), builtinPalette(value) ? QString() : value);
+            }
+            if (key == "emulation.region") return setRegion(ctx, args["value"]);
             if (key.rfind("video.", 0) == 0) return setVideo(key, args["value"]);
             const Json& value = args["value"];
             if (key.rfind("audio.", 0) == 0) {

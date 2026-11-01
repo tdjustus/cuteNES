@@ -167,3 +167,24 @@ covered by `GuiFrameClock` and `GuiVideo` tests.
 4. With an external monitor at a different rate (75 or 144 Hz), drag the
    window onto it: the note changes to the console's own rate and play
    stays smooth. Drag it back: it follows the display again.
+
+### Region, palettes and Game Genie (G6, #98)
+
+Checked through MCP: with Emulation > Region on PAL, Mega Man 2 (an NTSC
+cartridge) ran as PAL at 50.007 fps, and the RGB PPU palette coloured the
+picture; switching back to Automatic during play reported that it applies
+at the next power cycle. Settings were restored afterwards. Game Genie has
+no menu yet (G7 adds the cheat list); it is tested through
+`core.set_game_genie`.
+
+1. Emulation > Region > PAL during a game: a message says PAL timing starts
+   at the next power cycle. Emulation > Power Cycle: the game runs about
+   17% slower, and its music is lower in pitch. Automatic and another power
+   cycle bring it back.
+2. View > Palette > RGB PPU (2C03): the colours change at once (brighter,
+   flatter); Default brings the usual colours back. The check mark follows.
+3. View > Palette > Load .pal…, choose any 192-byte .pal file you have: the
+   picture takes its colours, and Load .pal… is checked. Quit and reopen:
+   the same palette is in use.
+4. Take a screenshot with a non-default palette: it shows the colours you
+   see.

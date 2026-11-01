@@ -82,7 +82,8 @@ TEST(GuiPlay, WithoutAGameOnlyTheImplementedNonGameActionsAreEnabled)
         QStringLiteral("gui.toggle_fps"), QStringLiteral("gui.toggle_osd"), QStringLiteral("gui.show_shortcuts"),
         QStringLiteral("gui.set_scale"), QStringLiteral("gui.toggle_fullscreen"),
         QStringLiteral("gui.toggle_integer_scaling"), QStringLiteral("gui.set_aspect"),
-        QStringLiteral("gui.set_overscan"), QStringLiteral("gui.set_filter"),
+        QStringLiteral("gui.set_overscan"), QStringLiteral("gui.set_filter"), QStringLiteral("gui.set_region"),
+        QStringLiteral("gui.set_palette"),
         QStringLiteral("gui.toggle_always_on_top")};
     for (QAction* a : w.menuBar()->findChildren<QAction*>()) {
         const QString command = a->property("command").toString();

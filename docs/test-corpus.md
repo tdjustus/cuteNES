@@ -94,7 +94,7 @@ locally before releases.
 | `blargg_apu_2005.07.30` | 11 | All 11 pass (`$01` = passed, per `tests.txt`): `corpus.txt` (10 and 11 since the half-frame write-simultaneity fix) |
 | `branch_timing_tests` | 3 | All 3 pass: `corpus.txt` (3 since a taken branch stopped delaying NMI) |
 | `vbl_nmi_timing` | 7 | 1-6 pass: `corpus.txt`. 7 fails (`FAILED #3`): documented limitation, see below; kept as known-failing |
-| `pal_apu_tests` | 10 | Run as PAL (`region pal`). All 10 pass: `corpus.txt` (PAL frame-counter steps, noise and DMC tables) |
+| `pal_apu_tests` | 10 | Run as PAL (`region pal`, through the core's region override). All 10 pass: `corpus.txt` (PAL frame-counter steps, noise and DMC tables) |
 | `cpu_dummy_writes` | 2 | Tier 1 |
 | `instr_misc` | 5 | The four `rom_singles` are tier 1. `instr_misc.nes` is the same four tests combined; not registered |
 
