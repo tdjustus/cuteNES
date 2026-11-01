@@ -280,7 +280,6 @@ Result GuiHost::setSpeed(int percent)
 {
     m_speed = percent;
     updatePlayback();
-    m_window.showMessage(percent == 0 ? QObject::tr("Speed: Unlimited") : QObject::tr("Speed: %1 %").arg(percent));
     return Result::ok({{"speed", percent == 0 ? Json("unlimited") : Json(percent)}});
 }
 
@@ -633,7 +632,6 @@ void GuiHost::registerCommands(api::Registry& registry)
         s::object({{"fastForward", s::boolean()}}, {"fastForward"}), true, true, [this](CallContext&, const Json&) {
             m_fastForward = !m_fastForward;
             updatePlayback();
-            m_window.showMessage(m_fastForward ? QObject::tr("Fast-forward on") : QObject::tr("Fast-forward off"));
             return Result::ok({{"fastForward", m_fastForward}});
         });
 

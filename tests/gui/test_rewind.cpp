@@ -182,6 +182,8 @@ TEST(GuiSpeed, SpeedIndicatorsLookLikePausedInTheTopRight)
     ASSERT_NE(speed, nullptr);
     ASSERT_NE(paused, nullptr);
     EXPECT_EQ(speed->parentWidget(), w.view());
+    QStringList messages; // the indicator says it all; no message repeats it
+    QObject::connect(&w, &MainWindow::messageShown, [&](const QString& text) { messages << text; });
     auto shows = [&](const QString& text) {
         return waitUntil([&] {
             const QRect r = speed->geometry();
@@ -210,6 +212,10 @@ TEST(GuiSpeed, SpeedIndicatorsLookLikePausedInTheTopRight)
     call(w, "core.resume");
     call(w, "gui.set_speed", {{"percent", 100}});
     EXPECT_TRUE(waitUntil([&] { return !speed->isVisible(); })) << "nothing at normal speed";
+    call(w, "gui.toggle_fast_forward");
+    call(w, "gui.toggle_fast_forward");
+    QCoreApplication::processEvents();
+    EXPECT_TRUE(messages.isEmpty()) << messages.join(QStringLiteral(", ")).toStdString();
 }
 
 TEST(GuiSpeed, FastForwardRunsAtThreeTimesAndMutesAboveTwo)
