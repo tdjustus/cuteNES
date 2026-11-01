@@ -45,6 +45,9 @@ public:
         virtual void showFileDialog(FileDialog dialog) = 0;
         // Show FPS or Show On-Screen Messages changed in the settings.
         virtual void displayChanged() = 0;
+        // video.* changed (scale, fullscreen, aspect, ...): the window
+        // applies them. `page`: show Settings > Video too.
+        virtual void videoChanged(bool showPage) = 0;
         // servers.* changed: the window starts or stops the listeners to
         // match, on its own thread (a call can turn off its own listener).
         virtual void serversChanged() = 0;
@@ -125,6 +128,9 @@ private:
     api::Result setRewind(api::CallContext& ctx, bool on);
     api::Result setSpeed(int percent); // 0: Unlimited
     void updatePlayback();
+    // Validates `value` for a video.* key, saves it and has the window apply
+    // it. Returns {key, value} as saved.
+    api::Result setVideo(const std::string& key, const api::Json& value, bool showPage = false);
 
     Window& m_window;
     AppSettings& m_settings;

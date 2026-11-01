@@ -200,6 +200,44 @@ void AppSettings::setShowOsd(bool on)
     m_settings.setValue(kShowOsd, on);
 }
 
+AppSettings::VideoSettings AppSettings::video() const
+{
+    std::lock_guard lock(m_mutex);
+    VideoSettings v;
+    const auto get = [this](const char* key, const QVariant& fallback) {
+        return m_settings.value(QStringLiteral("video/") + QLatin1String(key), fallback);
+    };
+    v.scale = get("scale", v.scale).toInt();
+    v.fullscreen = get("fullscreen", v.fullscreen).toBool();
+    v.integerScaling = get("integerScaling", v.integerScaling).toBool();
+    v.aspect = get("aspect", v.aspect).toString();
+    v.overscanTop = get("overscanTop", v.overscanTop).toInt();
+    v.overscanBottom = get("overscanBottom", v.overscanBottom).toInt();
+    v.overscanLeft = get("overscanLeft", v.overscanLeft).toInt();
+    v.overscanRight = get("overscanRight", v.overscanRight).toInt();
+    v.filter = get("filter", v.filter).toString();
+    v.alwaysOnTop = get("alwaysOnTop", v.alwaysOnTop).toBool();
+    return v;
+}
+
+void AppSettings::setVideo(const VideoSettings& v)
+{
+    std::lock_guard lock(m_mutex);
+    const auto set = [this](const char* key, const QVariant& value) {
+        m_settings.setValue(QStringLiteral("video/") + QLatin1String(key), value);
+    };
+    set("scale", v.scale);
+    set("fullscreen", v.fullscreen);
+    set("integerScaling", v.integerScaling);
+    set("aspect", v.aspect);
+    set("overscanTop", v.overscanTop);
+    set("overscanBottom", v.overscanBottom);
+    set("overscanLeft", v.overscanLeft);
+    set("overscanRight", v.overscanRight);
+    set("filter", v.filter);
+    set("alwaysOnTop", v.alwaysOnTop);
+}
+
 AppSettings::InputSettings AppSettings::input() const
 {
     std::lock_guard lock(m_mutex);

@@ -79,14 +79,18 @@ TEST(GuiPlay, WithoutAGameOnlyTheImplementedNonGameActionsAreEnabled)
     const QStringList noGame = {QStringLiteral("gui.open_rom"), QStringLiteral("gui.exit"),
         QStringLiteral("gui.show_about"), QStringLiteral("gui.show_library"),
         QStringLiteral("gui.open_library_folder"), QStringLiteral("gui.select_slot"), QStringLiteral("gui.set_speed"),
-        QStringLiteral("gui.toggle_fps"), QStringLiteral("gui.toggle_osd"), QStringLiteral("gui.show_shortcuts")};
+        QStringLiteral("gui.toggle_fps"), QStringLiteral("gui.toggle_osd"), QStringLiteral("gui.show_shortcuts"),
+        QStringLiteral("gui.set_scale"), QStringLiteral("gui.toggle_fullscreen"),
+        QStringLiteral("gui.toggle_integer_scaling"), QStringLiteral("gui.set_aspect"),
+        QStringLiteral("gui.set_overscan"), QStringLiteral("gui.set_filter"),
+        QStringLiteral("gui.toggle_always_on_top")};
     for (QAction* a : w.menuBar()->findChildren<QAction*>()) {
         const QString command = a->property("command").toString();
         if (command.isEmpty()) continue;
         bool enabled = noGame.contains(command);
         if (command == QLatin1String("gui.show_settings")) {
             const QString page = a->property("commandArgs").toMap().value(QStringLiteral("page")).toString();
-            enabled = page.isEmpty() || page == QLatin1String("library") || page == QLatin1String("servers")
+            enabled = page.isEmpty() || page == QLatin1String("video") || page == QLatin1String("library") || page == QLatin1String("servers")
                 || page == QLatin1String("input") || page == QLatin1String("hotkeys"); // the Key Bindings page
         }
         EXPECT_EQ(a->isEnabled(), enabled) << command.toStdString() << " " << a->text().toStdString();

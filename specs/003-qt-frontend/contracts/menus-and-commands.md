@@ -109,6 +109,18 @@ a paused game pauses again on release; with no history yet, it says so.
 | Show On-Screen Messages | `gui.toggle_osd` | | | |
 | Always on Top | `gui.toggle_always_on_top` | | | |
 
+Each View command changes a `video.*` setting (Settings > Video holds them
+all) and returns the new value: `scale`, `fullscreen`, `integerScaling`,
+`aspect`, `overscan` (`top`, `bottom`, `left`, `right`), `filter` or
+`alwaysOnTop`. The menu items are checked to match. A new scale, aspect or
+crop resizes the window so the game area is the scale times the cropped,
+aspect-corrected picture (rounded up), unless the window is fullscreen or
+maximized. Overscan `none` hides nothing and `tv` hides 8 lines at the top
+and bottom; `custom` with no edges opens Settings > Video, and any edges
+given change just those. In fullscreen on Windows and Linux the menu bar
+hides, and shows again at the top edge or with Alt; the shortcuts keep
+working.
+
 ## Tools
 
 | Item | Command | Arguments | Shortcut | Game |

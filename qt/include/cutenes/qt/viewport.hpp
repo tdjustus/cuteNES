@@ -24,10 +24,16 @@ struct Overscan {
     int right = 0;
 };
 
+// How the NES pixels reach the screen: each one a flat block, blended with
+// its neighbors, or with the lower part of each NES line darkened as on a
+// CRT.
+enum class Filter { Nearest, Smooth, Scanlines };
+
 struct DisplayOptions {
     Aspect aspect = Aspect::EightToSeven;
     Overscan overscan;
     bool integerScaling = true;
+    Filter filter = Filter::Nearest;
 };
 
 struct Viewport {

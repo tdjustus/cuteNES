@@ -14,6 +14,7 @@
 #include <QtMath>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QCursor>
 #include <QDesktopServices>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -130,11 +131,13 @@ const QStringList kImplemented = {
     QStringLiteral("gui.set_speed"), QStringLiteral("gui.frame_advance"),
     QStringLiteral("gui.import_battery_save"), QStringLiteral("gui.export_battery_save"),
     QStringLiteral("gui.take_screenshot"), QStringLiteral("gui.toggle_fps"), QStringLiteral("gui.toggle_osd"),
-    QStringLiteral("gui.show_shortcuts"),
+    QStringLiteral("gui.show_shortcuts"), QStringLiteral("gui.set_scale"), QStringLiteral("gui.toggle_fullscreen"),
+    QStringLiteral("gui.toggle_integer_scaling"), QStringLiteral("gui.set_aspect"), QStringLiteral("gui.set_overscan"),
+    QStringLiteral("gui.set_filter"), QStringLiteral("gui.toggle_always_on_top"),
 };
 // Settings > Hotkeys opens the Key Bindings page (#108).
-const QStringList kSettingsPages = {QStringLiteral("library"), QStringLiteral("servers"), QStringLiteral("input"),
-    QStringLiteral("hotkeys")};
+const QStringList kSettingsPages = {QStringLiteral("video"), QStringLiteral("library"), QStringLiteral("servers"),
+    QStringLiteral("input"), QStringLiteral("hotkeys")};
 const QStringList kNeedGame = {
     QStringLiteral("gui.close_game"), QStringLiteral("gui.toggle_pause"),
     QStringLiteral("gui.reset"), QStringLiteral("gui.power_cycle"),
@@ -352,10 +355,14 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     rebuildRecentMenu();
     setRunState(QStringLiteral("NeedsRom"));
 
-    // Rounded up, so the picture fits at exactly that scale.
-    const QSizeF picture = qt::scaledSize(kDefaultScale, m_view->displayOptions());
-    const int menuHeight = menuBar()->isNativeMenuBar() ? 0 : menuBar()->sizeHint().height();
-    resize(qCeil(picture.width()), qCeil(picture.height()) + menuHeight);
+    // The shortcuts work while the menu bar is hidden (fullscreen) too.
+    for (QAction* action : menuBar()->findChildren<QAction*>()) {
+        // Open Recent's items come and go, without shortcuts.
+        if (!action->menu() && action->parent() != m_recentMenu && !action->property("command").toString().isEmpty()) {
+            addAction(action);
+        }
+    }
+    applyVideo(); // the scale, aspect, crop, filter and window state
     qApp->installEventFilter(this);
 }
 
@@ -1171,6 +1178,11 @@ void MainWindow::updateSettingsDialog()
     SettingsDialog::Input page{input.turboRate, input.allowOppositeDirections, input.pauseOnGamepadDisconnect, {}};
     for (const Gamepad& pad : gamepads()) page.gamepads << tr("Player %1: %2").arg(pad.port).arg(pad.name);
     m_settingsDialog->setInput(page);
+    const AppSettings::VideoSettings v = m_settings.video();
+    SettingsDialog::Video video{v.scale, v.fullscreen, v.integerScaling, v.aspect,
+        {v.overscanTop, v.overscanBottom, v.overscanLeft, v.overscanRight}, v.filter, v.alwaysOnTop,
+        m_settings.showFps(), m_settings.showOsd()};
+    m_settingsDialog->setVideo(video);
 }
 
 void MainWindow::serversChanged()
@@ -1307,7 +1319,117 @@ void MainWindow::displayChanged()
         }
         if (!m_settings.showOsd()) m_osd->hide();
         updateOverlays();
+        updateSettingsDialog();
     }, Qt::QueuedConnection);
+}
+
+void MainWindow::videoChanged(bool showPage)
+{
+    QMetaObject::invokeMethod(this, [this, showPage] {
+        applyVideo();
+        if (showPage) showSettings(QStringLiteral("video"));
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::applyVideo()
+{
+    const AppSettings::VideoSettings v = m_settings.video();
+    qt::DisplayOptions options;
+    options.aspect = v.aspect == QLatin1String("square") ? qt::Aspect::Square
+        : v.aspect == QLatin1String("4:3")              ? qt::Aspect::FourThree
+                                                        : qt::Aspect::EightToSeven;
+    options.overscan = {v.overscanTop, v.overscanBottom, v.overscanLeft, v.overscanRight};
+    options.integerScaling = v.integerScaling;
+    options.filter = v.filter == QLatin1String("smooth") ? qt::Filter::Smooth
+        : v.filter == QLatin1String("scanlines")         ? qt::Filter::Scanlines
+                                                         : qt::Filter::Nearest;
+    m_view->setDisplayOptions(options);
+
+    const std::optional<AppSettings::VideoSettings> was = m_video;
+    m_video = v;
+    if (bool(windowFlags() & Qt::WindowStaysOnTopHint) != v.alwaysOnTop) {
+        const bool shown = isVisible();
+        setWindowFlag(Qt::WindowStaysOnTopHint, v.alwaysOnTop); // hides the window
+        if (shown) show();
+    }
+    const bool leaving = was && was->fullscreen && !v.fullscreen;
+    if (v.fullscreen != bool(windowState() & Qt::WindowFullScreen)) {
+        setWindowState(windowState() ^ Qt::WindowFullScreen);
+    }
+    // In fullscreen the menu bar hides, but for the top edge or Alt
+    // (eventFilter); macOS shows its own at the top edge.
+    if (!menuBar()->isNativeMenuBar()) {
+        menuBar()->setVisible(!v.fullscreen);
+        if (!m_menuEdgeTimer) {
+            // Fullscreen: the menu bar shows at the top edge, and hides once
+            // the pointer leaves it with no menu open.
+            m_menuEdgeTimer = new QTimer(this);
+            m_menuEdgeTimer->setInterval(100);
+            connect(m_menuEdgeTimer, &QTimer::timeout, this, [this] {
+                const int y = mapFromGlobal(QCursor::pos()).y();
+                if (y <= 1 && isActiveWindow()) {
+                    menuBar()->show();
+                } else if (menuBar()->isVisible() && y > menuBar()->height() + 8 && !QApplication::activePopupWidget()) {
+                    menuBar()->hide();
+                }
+            });
+        }
+        v.fullscreen ? m_menuEdgeTimer->start() : m_menuEdgeTimer->stop();
+    }
+    // A new size of picture or scale resizes the window, unless the user
+    // has it fullscreen or maximized.
+    const bool resized = !was || leaving || was->scale != v.scale || was->aspect != v.aspect
+        || was->overscanTop != v.overscanTop || was->overscanBottom != v.overscanBottom
+        || was->overscanLeft != v.overscanLeft || was->overscanRight != v.overscanRight;
+    if (resized && !v.fullscreen && !(windowState() & Qt::WindowMaximized)) {
+        if (leaving) {
+            // Out of fullscreen once the platform has restored the window.
+            QTimer::singleShot(0, this, [this] {
+                if (!isFullScreen()) resizeToScale();
+            });
+        } else {
+            resizeToScale();
+        }
+    }
+
+    for (QAction* action : menuBar()->findChildren<QAction*>()) {
+        const QString command = action->property("command").toString();
+        const QVariantMap args = action->property("commandArgs").toMap();
+        static const QStringList checked = {QStringLiteral("gui.set_scale"), QStringLiteral("gui.toggle_fullscreen"),
+            QStringLiteral("gui.toggle_integer_scaling"), QStringLiteral("gui.set_aspect"),
+            QStringLiteral("gui.set_filter"), QStringLiteral("gui.toggle_always_on_top"),
+            QStringLiteral("gui.set_overscan")};
+        if (checked.contains(command)) action->setCheckable(true);
+        if (command == QLatin1String("gui.set_scale")) {
+            action->setChecked(args.value(QStringLiteral("scale")).toInt() == v.scale);
+        } else if (command == QLatin1String("gui.toggle_fullscreen")) {
+            action->setChecked(v.fullscreen);
+        } else if (command == QLatin1String("gui.toggle_integer_scaling")) {
+            action->setChecked(v.integerScaling);
+        } else if (command == QLatin1String("gui.set_aspect")) {
+            action->setChecked(args.value(QStringLiteral("aspect")).toString() == v.aspect);
+        } else if (command == QLatin1String("gui.set_filter")) {
+            action->setChecked(args.value(QStringLiteral("filter")).toString() == v.filter);
+        } else if (command == QLatin1String("gui.toggle_always_on_top")) {
+            action->setChecked(v.alwaysOnTop);
+        } else if (command == QLatin1String("gui.set_overscan")) {
+            const bool none = v.overscanTop == 0 && v.overscanBottom == 0 && v.overscanLeft == 0 && v.overscanRight == 0;
+            const bool tv = v.overscanTop == 8 && v.overscanBottom == 8 && v.overscanLeft == 0 && v.overscanRight == 0;
+            const QString preset = args.value(QStringLiteral("preset")).toString();
+            action->setChecked(preset == QLatin1String("none") ? none
+                    : preset == QLatin1String("tv")         ? tv
+                                                            : !none && !tv);
+        }
+    }
+    updateSettingsDialog();
+}
+
+void MainWindow::resizeToScale()
+{
+    // Rounded up, so the picture fits at exactly that scale (FR-040).
+    const QSizeF picture = qt::scaledSize(m_video ? m_video->scale : kDefaultScale, m_view->displayOptions());
+    const int menuHeight = menuBar()->isNativeMenuBar() || menuBar()->isHidden() ? 0 : menuBar()->sizeHint().height();
+    resize(qCeil(picture.width()), qCeil(picture.height()) + menuHeight);
 }
 
 void MainWindow::showMessage(const QString& text)
@@ -1602,6 +1724,11 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
         // Game keys while the game shows in this window and no menu or
         // dialog has the keyboard. Auto-repeats change nothing.
         auto* key = static_cast<QKeyEvent*>(event);
+        // Fullscreen: Alt alone shows or hides the menu bar.
+        if (event->type() == QEvent::KeyRelease && key->key() == Qt::Key_Alt && !key->isAutoRepeat()
+            && isFullScreen() && !menuBar()->isNativeMenuBar() && m_keysDown == QSet<int>{Qt::Key_Alt}) {
+            menuBar()->setVisible(!menuBar()->isVisible());
+        }
         if (!key->isAutoRepeat() && event->type() == QEvent::KeyRelease && m_keysDown.remove(key->key())) {
             releaseHeld(key->key());
         } else if (!key->isAutoRepeat() && event->type() == QEvent::KeyPress) {
