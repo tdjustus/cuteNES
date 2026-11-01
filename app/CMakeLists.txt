@@ -32,9 +32,12 @@ add_library(cutenes-app-lib STATIC
     persistence/rewind_buffer.cpp
     persistence/state_slots.cpp
     settings/app_settings.cpp
-    settings/key_bindings.cpp)
+    settings/key_bindings.cpp
+    update/update_feed.cpp
+    update/update_check.cpp
+    update/update_prompt.cpp)
 target_include_directories(cutenes-app-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(cutenes-app-lib PUBLIC cutenes-qt cutenes-mcp Qt6::Widgets Qt6::Concurrent)
+target_link_libraries(cutenes-app-lib PUBLIC cutenes-qt cutenes-mcp Qt6::Widgets Qt6::Concurrent Qt6::Network)
 target_compile_definitions(cutenes-app-lib PUBLIC
     CUTENES_APP_VERSION="${PROJECT_VERSION}")
 set_target_properties(cutenes-app-lib PROPERTIES AUTOMOC ON)

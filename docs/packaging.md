@@ -41,6 +41,12 @@ own, Qt's LGPL-3.0 and GPL-3.0, SDL3's, nlohmann/json's and cpp-httplib's.
 An AppImage starts only its main program, so on Linux `cutenes-server` is
 inside the image but cannot yet be started from it (#134).
 
+Qt Network (the update check, research R16) needs a TLS backend at run
+time. macdeployqt and windeployqt copy Qt's TLS plugins (Secure Transport
+or Schannel, from the system) because the app links Qt Network; on Linux
+the AppImage's Qt plugin copies the OpenSSL backend, which uses the
+system's OpenSSL 3, present on every distribution 22.04 or newer.
+
 ### What each platform needed, and why
 
 These are the problems the first packaging runs hit. They are general to

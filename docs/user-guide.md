@@ -188,6 +188,7 @@ Record Audio…** saves the game's sound as a WAV file in the library's
 | Emulation | Pausing when another application has the focus, fast-forward speed, and resuming where you left off |
 | Library | The library folder's location, and your other ROM folders |
 | Servers | The automation API and MCP server (see "Connecting an AI agent") |
+| Updates | Whether cuteNES checks for a new version when it starts, and a version you skipped |
 
 Changes apply at once. To use another library folder for one run only,
 start cuteNES with `--library DIR`.
@@ -270,6 +271,22 @@ Turning the server off disconnects the agent; the game keeps playing. The
 **API** switch on the same page is a local JSON interface for your own
 scripts. Each start makes a new access token (**Copy Token**), and the
 servers listen only on this computer.
+
+## Updates
+
+The first time cuteNES starts, it asks whether to check for updates. If you
+say yes, it asks GitHub for its list of releases once each time it starts,
+and nothing else is sent. When a newer version is out, and you are not in
+the middle of a game, it says so:
+
+- **See Details** opens the release's page, with what is new and the
+  downloads.
+- **Ask Again Later** asks next time.
+- **Skip This Version** stops asking about that version. A newer one is
+  still offered, and Settings > Updates can offer the skipped one again.
+
+Change your answer in Settings > Updates. Starting cuteNES with a game on
+the command line skips the check for that start.
 
 ## The library folder
 

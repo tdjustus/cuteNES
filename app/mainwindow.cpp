@@ -8,6 +8,8 @@
 #include "dialogs/trace_logger.hpp"
 #include "dialogs/user_guide.hpp"
 #include "log/app_log.hpp"
+#include "update/update_check.hpp"
+#include "update/update_prompt.hpp"
 #include "dialogs/key_bindings_page.hpp"
 #include "dialogs/settings_dialog.hpp"
 #include "library/library_browser.hpp"
@@ -153,7 +155,8 @@ const QStringList kImplemented = {
 };
 // Settings > Hotkeys opens the Key Bindings page (#108).
 const QStringList kSettingsPages = {QStringLiteral("video"), QStringLiteral("audio"), QStringLiteral("emulation"),
-    QStringLiteral("library"), QStringLiteral("servers"), QStringLiteral("input"), QStringLiteral("hotkeys")};
+    QStringLiteral("library"), QStringLiteral("servers"), QStringLiteral("input"), QStringLiteral("hotkeys"),
+    QStringLiteral("updates")};
 const QStringList kNeedGame = {
     QStringLiteral("gui.close_game"), QStringLiteral("gui.show_cheats"), QStringLiteral("gui.show_cheat_search"), QStringLiteral("gui.toggle_pause"),
     QStringLiteral("gui.reset"), QStringLiteral("gui.power_cycle"),
@@ -611,7 +614,7 @@ void MainWindow::createMenus()
     const std::pair<QString, const char*> pages[] = {
         {tr("&Video…"), "video"}, {tr("&Audio…"), "audio"}, {tr("&Input…"), "input"},
         {tr("&Hotkeys…"), "hotkeys"}, {tr("&Emulation…"), "emulation"},
-        {tr("&Library…"), "library"}, {tr("Se&rvers…"), "servers"},
+        {tr("&Library…"), "library"}, {tr("Se&rvers…"), "servers"}, {tr("&Updates…"), "updates"},
     };
     for (const auto& [text, page] : pages) {
         settings.item(text, "gui.show_settings", {}, {{QStringLiteral("page"), QString::fromLatin1(page)}});
@@ -1325,6 +1328,97 @@ void MainWindow::updateSettingsDialog()
     m_settingsDialog->setAudio(audio);
     const AppSettings::EmulationSettings e = m_settings.emulation();
     m_settingsDialog->setEmulation({e.pauseWhenInactive, e.resumeOnOpen, e.fastForwardSpeed});
+    const AppSettings::UpdateSettings u = m_settings.updates();
+    const update::InstallSupport support = update::installSupport();
+    m_settingsDialog->setUpdates({u.check, u.skippedVersion,
+        support.possible ? tr("This copy of cuteNES can install updates itself.") : support.why});
+}
+
+void MainWindow::updatesChanged()
+{
+    QMetaObject::invokeMethod(this, [this] { updateSettingsDialog(); }, Qt::QueuedConnection);
+}
+
+void MainWindow::startUpdates(bool romOnCommandLine)
+{
+    // A game from the command line is what the user came for: no question
+    // and no check this launch (FR-091).
+    if (romOnCommandLine) return;
+    if (!m_settings.updates().asked && m_options.askAboutUpdates) {
+        askAboutUpdates();
+        return;
+    }
+    checkForUpdates();
+}
+
+void MainWindow::askAboutUpdates()
+{
+    auto* box = new QMessageBox(QMessageBox::Question, QStringLiteral("cuteNES"),
+        tr("Check for updates when cuteNES starts?"), QMessageBox::Yes | QMessageBox::No, this);
+    box->setObjectName(QStringLiteral("updatesQuestion"));
+    box->setInformativeText(tr("cuteNES would ask GitHub for its list of releases once per start, and tell you when a "
+                               "new version is out. Nothing else is sent, and nothing is installed unless you choose "
+                               "to. You can change this in Settings > Updates."));
+    box->setDefaultButton(QMessageBox::Yes);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    connect(box, &QMessageBox::finished, this, [this, box] {
+        const bool yes = box->clickedButton() == box->button(QMessageBox::Yes);
+        AppSettings::UpdateSettings updates = m_settings.updates();
+        updates.asked = true;
+        updates.check = yes;
+        m_settings.setUpdates(updates);
+        updateSettingsDialog();
+        if (yes) checkForUpdates();
+    });
+    box->open();
+}
+
+void MainWindow::checkForUpdates()
+{
+    const AppSettings::UpdateSettings settings = m_settings.updates();
+    // No request at all with checks off (FR-090), or with no feed (tests).
+    if (!settings.check || m_options.updateFeed.isEmpty() || m_updateCheck) return;
+    const auto running = update::Version::parse(QStringLiteral(CUTENES_APP_VERSION));
+    if (!running) return;
+    m_updateCheck = new update::UpdateCheck(this);
+    connect(m_updateCheck, &update::UpdateCheck::found, this, [this](const update::Release& release) {
+        // A game running when the answer comes: not now (FR-091).
+        if (hasGame()) {
+            qCInfo(lcApp).noquote() << "cuteNES" << release.version.toString()
+                                    << "is available; not offered while a game runs";
+            return;
+        }
+        qCInfo(lcApp).noquote() << "cuteNES" << release.version.toString() << "is available";
+        offerUpdate(release);
+    });
+    connect(m_updateCheck, &update::UpdateCheck::upToDate, this,
+        [] { qCInfo(lcApp) << "Update check: this is the newest version"; });
+    connect(m_updateCheck, &update::UpdateCheck::failed, this,
+        [](const QString& why) { qCWarning(lcApp).noquote() << "Update check failed:" << why; });
+    m_updateCheck->start(m_options.updateFeed, m_options.allowLoopbackFeed, *running, update::platformSuffix(),
+        settings.skippedVersion);
+}
+
+void MainWindow::offerUpdate(const update::Release& release)
+{
+    const update::InstallSupport support = update::installSupport();
+    auto* prompt = new UpdatePrompt(release, *update::Version::parse(QStringLiteral(CUTENES_APP_VERSION)),
+        support.possible, support.why, this);
+    prompt->setAttribute(Qt::WA_DeleteOnClose);
+    connect(prompt, &UpdatePrompt::skipRequested, this, [this, version = release.version.toString()] {
+        AppSettings::UpdateSettings updates = m_settings.updates();
+        updates.skippedVersion = version;
+        m_settings.setUpdates(updates);
+        updateSettingsDialog();
+    });
+    connect(prompt, &UpdatePrompt::detailsRequested, this, [this, page = release.page] { openExternal(page); });
+    prompt->open();
+}
+
+void MainWindow::openExternal(const QUrl& url)
+{
+    if (m_options.openExternally) QDesktopServices::openUrl(url);
+    emit externalUrlOpened(url);
 }
 
 void MainWindow::serversChanged()

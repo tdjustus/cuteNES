@@ -85,6 +85,12 @@ public:
         int fastForwardSpeed = 300;
     };
     void setEmulation(const Emulation& emulation);
+    struct Updates {
+        bool check = false;
+        QString skippedVersion;
+        QString install; // whether this build can install updates itself, and why not
+    };
+    void setUpdates(const Updates& updates);
 
 signals:
     void pageShown(const QString& page);
@@ -118,6 +124,11 @@ private:
     QWidget* buildVideoPage(QWidget* parent);
     QWidget* buildAudioPage(QWidget* parent);
     QWidget* buildEmulationPage(QWidget* parent);
+    QWidget* buildUpdatesPage(QWidget* parent);
+    QCheckBox* m_updatesCheck = nullptr;
+    QLabel* m_updatesSkipped = nullptr;
+    QPushButton* m_updatesForget = nullptr;
+    QLabel* m_updatesInstall = nullptr;
     QComboBox* m_device = nullptr;
     QSlider* m_volume = nullptr;
     QCheckBox* m_muted = nullptr;

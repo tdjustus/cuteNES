@@ -46,6 +46,7 @@ int main(int argc, char* argv[])
         window.show();
     }
     window.checkLibrary();
+    window.startUpdates(!cli.rom.isEmpty());
     if (!cli.rom.isEmpty()) window.openRom(cli.rom);
     return QApplication::exec();
 }

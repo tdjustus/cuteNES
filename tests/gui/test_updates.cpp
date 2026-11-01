@@ -1,0 +1,402 @@
+// G097/G098 (spec FR-090 to FR-093, FR-096, FR-097; contract "Updates";
+// research R16): the update check, the first-launch question and the prompt,
+// against a fake release feed on loopback. Expectations come from the spec
+// and contract:
+// - with updates.check off there is no request at all;
+// - the first launch asks once; either answer is kept; a ROM on the command
+//   line puts the question off, and means no check that launch;
+// - with checks on, one request per launch, carrying only cuteNES's
+//   User-Agent; a newer release prompts with both versions;
+// - Skip This Version is kept and a newer version still prompts; Ask Again
+//   Later keeps nothing; See Details opens the release page;
+// - a game running when the answer arrives means no prompt; a failed check
+//   is logged and shown nowhere else;
+// - a build that cannot replace itself offers no Install and says why;
+// - the three settings are readable and settable; no command checks,
+//   prompts or installs.
+
+#include "gui_support.hpp"
+#include "log/app_log.hpp"
+#include "mainwindow.hpp"
+
+#include <QAbstractButton>
+#include <QCheckBox>
+#include <QDialog>
+#include <QFile>
+#include <QLabel>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QTemporaryDir>
+
+#include <httplib.h>
+
+#include <gtest/gtest.h>
+
+#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <thread>
+
+using cutenes::api::Json;
+using cutenes::api::Result;
+using cutenes::app::AppLog;
+using cutenes::app::MainWindow;
+using cutenes::test::waitUntil;
+using cutenes::test::windowOptions;
+
+namespace {
+
+const QString kNestest = QStringLiteral(CUTENES_TEST_ROMS "/other/nestest.nes");
+
+// A release list in GitHub's form with one release for every platform.
+std::string feedWith(const std::string& version)
+{
+    Json assets = Json::array();
+    for (const char* suffix : {"macos-arm64.zip", "macos-x86_64.zip", "windows-x64.zip", "linux-x86_64.AppImage"}) {
+        const std::string name = "cuteNES-" + version + "-" + suffix;
+        assets.push_back({{"name", name},
+            {"browser_download_url", "https://github.com/tdjustus/cuteNES/releases/download/v" + version + "/" + name}});
+    }
+    assets.push_back({{"name", "SHA256SUMS"},
+        {"browser_download_url", "https://github.com/tdjustus/cuteNES/releases/download/v" + version + "/SHA256SUMS"}});
+    return Json::array({{{"tag_name", "v" + version}, {"draft", false}, {"prerelease", false},
+                           {"html_url", "https://github.com/tdjustus/cuteNES/releases/tag/v" + version},
+                           {"body", "What is new in " + version}, {"assets", assets}}})
+        .dump();
+}
+
+// The fake feed: answers GET /releases with `body` and `status` after
+// `delay`, and keeps each request's headers.
+class FakeFeed {
+public:
+    FakeFeed()
+    {
+        m_server.Get("/releases", [this](const httplib::Request& request, httplib::Response& response) {
+            std::this_thread::sleep_for(m_delay.load());
+            std::lock_guard lock(m_mutex);
+            m_requests.push_back(request);
+            response.status = m_status;
+            response.set_content(m_body, "application/json");
+        });
+        m_port = m_server.bind_to_any_port("127.0.0.1");
+        m_thread = std::thread([this] { m_server.listen_after_bind(); });
+        m_server.wait_until_ready();
+    }
+    ~FakeFeed()
+    {
+        m_server.stop();
+        m_thread.join();
+    }
+
+    QUrl url() const { return QUrl(QStringLiteral("http://127.0.0.1:%1/releases?per_page=30").arg(m_port)); }
+    void serve(const std::string& body, int status = 200)
+    {
+        std::lock_guard lock(m_mutex);
+        m_body = body;
+        m_status = status;
+    }
+    void delay(std::chrono::milliseconds d) { m_delay = d; }
+    std::vector<httplib::Request> requests()
+    {
+        std::lock_guard lock(m_mutex);
+        return m_requests;
+    }
+
+private:
+    httplib::Server m_server;
+    std::thread m_thread;
+    int m_port = 0;
+    std::mutex m_mutex;
+    std::string m_body = feedWith("1.2.0");
+    int m_status = 200;
+    std::atomic<std::chrono::milliseconds> m_delay{std::chrono::milliseconds(0)};
+    std::vector<httplib::Request> m_requests;
+};
+
+Json call(MainWindow& w, const char* name, const Json& args = Json::object())
+{
+    const Result r = w.session().call(name, args);
+    EXPECT_FALSE(r.isError()) << name << ": " << (r.isError() ? r.error->message : "");
+    return r.value;
+}
+
+Json updates(MainWindow& w)
+{
+    return call(w, "gui.get_settings")["values"]["updates"];
+}
+
+// Options for a window reading `feed`, sharing `settings` across windows
+// (one launch each).
+MainWindow::Options feedOptions(const FakeFeed& feed, const QString& settings, bool ask)
+{
+    MainWindow::Options options = windowOptions();
+    options.settingsFile = settings;
+    options.updateFeed = feed.url();
+    options.allowLoopbackFeed = true;
+    options.askAboutUpdates = ask;
+    return options;
+}
+
+QDialog* shown(MainWindow& w, const char* name)
+{
+    QDialog* found = nullptr;
+    waitUntil([&] {
+        found = w.findChild<QDialog*>(QString::fromLatin1(name));
+        return found && found->isVisible();
+    });
+    return found && found->isVisible() ? found : nullptr;
+}
+
+QAbstractButton* button(QWidget* parent, const char* name)
+{
+    return parent->findChild<QAbstractButton*>(QString::fromLatin1(name));
+}
+
+// Nothing happens for a while: the request would have come and gone.
+void settle(int ms = 700)
+{
+    waitUntil([] { return false; }, ms);
+}
+
+} // namespace
+
+TEST(GuiUpdates, WithChecksOffThereIsNoRequest)
+{
+    FakeFeed feed;
+    QTemporaryDir dir;
+    MainWindow w(feedOptions(feed, dir.filePath(QStringLiteral("cutenes.ini")), false));
+    w.show();
+    EXPECT_EQ(updates(w), (Json{{"check", false}, {"asked", false}, {"skippedVersion", ""}}));
+    w.startUpdates(false);
+    settle();
+    EXPECT_TRUE(feed.requests().empty());
+    EXPECT_EQ(shown(w, "updatePrompt"), nullptr);
+}
+
+TEST(GuiUpdates, TheFirstLaunchAsksOnceAndKeepsTheAnswer)
+{
+    FakeFeed feed;
+    QTemporaryDir dir;
+    const QString settings = dir.filePath(QStringLiteral("cutenes.ini"));
+    {
+        // A ROM on the command line: the question waits, and nothing is fetched.
+        MainWindow w(feedOptions(feed, settings, true));
+        w.show();
+        w.startUpdates(true);
+        settle();
+        EXPECT_EQ(shown(w, "updatesQuestion"), nullptr);
+        EXPECT_EQ(updates(w)["asked"], false);
+    }
+    {
+        MainWindow w(feedOptions(feed, settings, true));
+        w.show();
+        w.startUpdates(false);
+        auto* question = qobject_cast<QMessageBox*>(shown(w, "updatesQuestion"));
+        ASSERT_TRUE(question);
+        EXPECT_TRUE(question->text().contains(QStringLiteral("updates"))) << question->text().toStdString();
+        question->button(QMessageBox::No)->click();
+        EXPECT_TRUE(waitUntil([&] { return updates(w)["asked"] == true; }));
+        EXPECT_EQ(updates(w)["check"], false);
+        settle();
+        EXPECT_TRUE(feed.requests().empty());
+    }
+    {
+        // Asked: never again.
+        MainWindow w(feedOptions(feed, settings, true));
+        w.show();
+        w.startUpdates(false);
+        settle();
+        EXPECT_EQ(shown(w, "updatesQuestion"), nullptr);
+    }
+}
+
+TEST(GuiUpdates, YesTurnsChecksOnAndChecksAtOnce)
+{
+    FakeFeed feed;
+    QTemporaryDir dir;
+    MainWindow w(feedOptions(feed, dir.filePath(QStringLiteral("cutenes.ini")), true));
+    w.show();
+    w.startUpdates(false);
+    auto* question = qobject_cast<QMessageBox*>(shown(w, "updatesQuestion"));
+    ASSERT_TRUE(question);
+    question->button(QMessageBox::Yes)->click();
+    EXPECT_TRUE(waitUntil([&] { return updates(w)["check"] == true && updates(w)["asked"] == true; }));
+    EXPECT_NE(shown(w, "updatePrompt"), nullptr);
+    EXPECT_EQ(feed.requests().size(), 1u);
+}
+
+TEST(GuiUpdates, ANewerReleasePromptsOnceWithBothVersions)
+{
+    FakeFeed feed;
+    QTemporaryDir dir;
+    MainWindow w(feedOptions(feed, dir.filePath(QStringLiteral("cutenes.ini")), false));
+    w.show();
+    call(w, "gui.set_setting", {{"key", "updates.check"}, {"value", true}});
+    w.startUpdates(false);
+    QDialog* prompt = shown(w, "updatePrompt");
+    ASSERT_TRUE(prompt);
+
+    // One request, saying only who is asking.
+    const auto requests = feed.requests();
+    ASSERT_EQ(requests.size(), 1u);
+    EXPECT_EQ(requests[0].get_header_value("User-Agent"), "cuteNES/" CUTENES_APP_VERSION);
+    EXPECT_EQ(requests[0].get_header_value("Accept"), "application/vnd.github+json");
+    EXPECT_EQ(requests[0].get_param_value("per_page"), "30");
+    EXPECT_FALSE(requests[0].has_header("Cookie"));
+    EXPECT_FALSE(requests[0].has_header("Authorization"));
+
+    auto* version = prompt->findChild<QLabel*>(QStringLiteral("updateVersion"));
+    ASSERT_TRUE(version);
+    EXPECT_TRUE(version->text().contains(QStringLiteral("1.2.0"))) << version->text().toStdString();
+    EXPECT_TRUE(version->text().contains(QStringLiteral(CUTENES_APP_VERSION))) << version->text().toStdString();
+    EXPECT_TRUE(prompt->findChild<QWidget*>(QStringLiteral("updateNotes")));
+    for (const char* name : {"updateLater", "updateSkip", "updateDetails"}) EXPECT_TRUE(button(prompt, name)) << name;
+
+    // This build is not a release package (CUTENES_PACKAGE none): no
+    // Install, and the prompt says why (FR-096).
+    EXPECT_EQ(button(prompt, "updateInstall"), nullptr);
+    auto* why = prompt->findChild<QLabel*>(QStringLiteral("updateWhyNoInstall"));
+    ASSERT_TRUE(why);
+    EXPECT_FALSE(why->text().isEmpty());
+}
+
+TEST(GuiUpdates, SkipIsKeptPerVersionAndLaterKeepsNothing)
+{
+    FakeFeed feed;
+    QTemporaryDir dir;
+    const QString settings = dir.filePath(QStringLiteral("cutenes.ini"));
+    const auto launch = [&](const char* press, bool expectPrompt) {
+        MainWindow w(feedOptions(feed, settings, false));
+        w.show();
+        call(w, "gui.set_setting", {{"key", "updates.check"}, {"value", true}});
+        const std::size_t before = feed.requests().size();
+        QUrl opened;
+        QObject::connect(&w, &MainWindow::externalUrlOpened, [&](const QUrl& url) { opened = url; });
+        w.startUpdates(false);
+        EXPECT_TRUE(waitUntil([&] { return feed.requests().size() == before + 1; }));
+        QDialog* prompt = shown(w, "updatePrompt");
+        EXPECT_EQ(prompt != nullptr, expectPrompt) << press;
+        if (prompt && press) {
+            button(prompt, press)->click();
+            EXPECT_TRUE(waitUntil([&] { return !prompt->isVisible(); })) << press;
+            if (QLatin1String(press) == QLatin1String("updateDetails")) {
+                EXPECT_TRUE(waitUntil([&] { return !opened.isEmpty(); }));
+                EXPECT_EQ(opened, QUrl(QStringLiteral("https://github.com/tdjustus/cuteNES/releases/tag/v1.2.0")));
+            }
+        }
+        return updates(w)["skippedVersion"];
+    };
+
+    EXPECT_EQ(launch("updateLater", true), "");    // later: nothing kept
+    EXPECT_EQ(launch("updateDetails", true), "");  // details: the page, nothing kept
+    EXPECT_EQ(launch("updateSkip", true), "1.2.0");
+    EXPECT_EQ(launch(nullptr, false), "1.2.0");    // skipped: checked, not offered
+    feed.serve(feedWith("1.3.0"));
+    EXPECT_EQ(launch(nullptr, true), "1.2.0");     // a newer one is
+}
+
+TEST(GuiUpdates, AGameRunningWhenTheAnswerComesMeansNoPrompt)
+{
+    FakeFeed feed;
+    feed.delay(std::chrono::milliseconds(800));
+    QTemporaryDir dir;
+    MainWindow w(feedOptions(feed, dir.filePath(QStringLiteral("cutenes.ini")), false));
+    w.show();
+    call(w, "gui.set_setting", {{"key", "updates.check"}, {"value", true}});
+    call(w, "gui.set_setting", {{"key", "emulation.pauseWhenInactive"}, {"value", false}});
+    w.startUpdates(false);
+    call(w, "gui.open_rom", {{"path", kNestest.toStdString()}});
+    EXPECT_TRUE(waitUntil([&] { return feed.requests().size() == 1u; }, 5000));
+    settle();
+    EXPECT_EQ(shown(w, "updatePrompt"), nullptr);
+}
+
+TEST(GuiUpdates, ARomOnTheCommandLineMeansNoCheck)
+{
+    FakeFeed feed;
+    QTemporaryDir dir;
+    MainWindow w(feedOptions(feed, dir.filePath(QStringLiteral("cutenes.ini")), false));
+    w.show();
+    call(w, "gui.set_setting", {{"key", "updates.check"}, {"value", true}});
+    w.startUpdates(true);
+    settle();
+    EXPECT_TRUE(feed.requests().empty());
+}
+
+TEST(GuiUpdates, AFailedCheckIsLoggedAndShownNowhereElse)
+{
+    FakeFeed feed;
+    feed.serve(R"({"message":"API rate limit exceeded for 127.0.0.1."})", 403);
+    QTemporaryDir dir;
+    ASSERT_TRUE(AppLog::start(dir.path()));
+    {
+        MainWindow w(feedOptions(feed, dir.filePath(QStringLiteral("cutenes.ini")), false));
+        w.show();
+        call(w, "gui.set_setting", {{"key", "updates.check"}, {"value", true}});
+        w.startUpdates(false);
+        EXPECT_TRUE(waitUntil([&] { return feed.requests().size() == 1u; }));
+        settle();
+        EXPECT_EQ(shown(w, "updatePrompt"), nullptr);
+        EXPECT_EQ(w.findChild<QMessageBox*>(QStringLiteral("warning")), nullptr);
+    }
+    AppLog::stop();
+    QFile log(AppLog::file());
+    ASSERT_TRUE(log.open(QIODevice::ReadOnly));
+    const QString text = QString::fromUtf8(log.readAll());
+    EXPECT_TRUE(text.contains(QStringLiteral("rate limit"))) << text.toStdString();
+}
+
+TEST(GuiUpdates, TheSettingsAreReadAndSetButNoCommandUpdates)
+{
+    MainWindow w(windowOptions());
+    const Json schema = call(w, "gui.get_settings")["schema"];
+    for (const char* key : {"updates.check", "updates.asked", "updates.skippedVersion"}) {
+        EXPECT_TRUE(schema.contains(key)) << key;
+    }
+    call(w, "gui.set_setting", {{"key", "updates.skippedVersion"}, {"value", "1.4.2"}});
+    call(w, "gui.set_setting", {{"key", "updates.asked"}, {"value", true}});
+    EXPECT_EQ(updates(w), (Json{{"check", false}, {"asked", true}, {"skippedVersion", "1.4.2"}}));
+    call(w, "gui.set_setting", {{"key", "updates.skippedVersion"}, {"value", ""}});
+    EXPECT_EQ(updates(w)["skippedVersion"], "");
+    for (const Json& bad : {Json("1.4"), Json("v1.4.2-rc1"), Json(3)}) {
+        const Result r = w.session().call("gui.set_setting", {{"key", "updates.skippedVersion"}, {"value", bad}});
+        ASSERT_TRUE(r.isError()) << bad.dump();
+        EXPECT_EQ(r.error->name, "InvalidArguments");
+    }
+    EXPECT_TRUE(w.session().call("gui.set_setting", {{"key", "updates.check"}, {"value", "yes"}}).isError());
+
+    // FR-097: checking, prompting and installing follow from the setting
+    // and the user's click, never from a command.
+    const Result catalog = w.session().call("api.catalog", Json::object());
+    ASSERT_FALSE(catalog.isError()) << catalog.error->message;
+    for (const Json& command : catalog.value["commands"]) {
+        const std::string name = command["name"];
+        EXPECT_EQ(name.find("update"), std::string::npos) << name;
+    }
+}
+
+TEST(GuiUpdates, TheUpdatesPageShowsAndChangesTheSettings)
+{
+    MainWindow w(windowOptions());
+    w.show();
+    call(w, "gui.set_setting", {{"key", "updates.skippedVersion"}, {"value", "1.4.2"}});
+    call(w, "gui.show_settings", {{"page", "updates"}});
+    QDialog* dialog = shown(w, "settingsDialog");
+    ASSERT_TRUE(dialog);
+    auto* check = dialog->findChild<QCheckBox*>(QStringLiteral("updatesCheck"));
+    auto* skipped = dialog->findChild<QLabel*>(QStringLiteral("updatesSkipped"));
+    auto* forget = dialog->findChild<QPushButton*>(QStringLiteral("updatesForgetSkipped"));
+    auto* install = dialog->findChild<QLabel*>(QStringLiteral("updatesInstall"));
+    ASSERT_TRUE(check && skipped && forget && install);
+    EXPECT_FALSE(check->isChecked());
+    EXPECT_TRUE(waitUntil([&] { return skipped->text().contains(QStringLiteral("1.4.2")); }))
+        << skipped->text().toStdString();
+    EXPECT_FALSE(install->text().isEmpty());
+
+    check->click();
+    EXPECT_TRUE(waitUntil([&] { return updates(w)["check"] == true; }));
+    EXPECT_TRUE(waitUntil([&] { return forget->isEnabled(); }));
+    forget->click();
+    EXPECT_TRUE(waitUntil([&] { return updates(w)["skippedVersion"] == ""; }));
+    EXPECT_TRUE(waitUntil([&] { return !forget->isEnabled(); }));
+}

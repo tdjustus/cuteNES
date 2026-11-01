@@ -24,7 +24,7 @@ if(NOT CUTENES_BUILD_GUI STREQUAL "OFF")
     # keeps it compatible within a minor release (research R2). Before 6.9
     # that target comes with Gui; from 6.9 it is a package of its own.
     set(QT_NO_PRIVATE_MODULE_WARNING ON)
-    set(qt_components Widgets Concurrent ShaderTools)
+    set(qt_components Widgets Concurrent Network ShaderTools)
     if(NOT CUTENES_BUILD_API)
         if(CUTENES_BUILD_GUI STREQUAL "ON")
             message(FATAL_ERROR "CUTENES_BUILD_GUI=ON needs CUTENES_BUILD_API=ON")
