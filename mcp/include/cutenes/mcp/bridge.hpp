@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <functional>
 #include <iosfwd>
 #include <optional>
 #include <string>
@@ -35,7 +36,15 @@ int probe(const Endpoint& endpoint, std::string& error);
 // notifications/cancelled drops that request's connection, which the
 // endpoint treats as cancellation. A 2025-11-25 client hears list changes
 // through a subscription the bridge holds for it.
+//
+// The instance makes a new token, and may take a new port, each time its
+// endpoint starts (the GUI's MCP setting toggled, or the application
+// restarted). When the endpoint refuses the token or does not answer, the
+// bridge asks `refresh` (which reads the token file again) and, if it
+// names a different endpoint, sends the request once more there; the
+// list-changed subscription reconnects the same way.
+using RefreshEndpoint = std::function<std::optional<Endpoint>()>;
 bool serveBridge(const Endpoint& endpoint, std::istream& in, std::ostream& out,
-    const std::atomic<bool>& stop);
+    const std::atomic<bool>& stop, RefreshEndpoint refresh = {});
 
 } // namespace cutenes::mcp

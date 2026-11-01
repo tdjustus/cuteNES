@@ -205,3 +205,47 @@ TEST(McpAttach, TheBridgeRunsNoSessionOfItsOwn)
     EXPECT_EQ(attachInProcess({"--attach", "--api-port", "0"}, message), cutenes::server::kExitUsage);
     EXPECT_EQ(attachInProcess({"--attach", "--library", "x"}, message), cutenes::server::kExitUsage);
 }
+
+// The GUI makes a new token (and may get a new port) each time its MCP
+// server starts: toggled off and on, or the application restarted. An MCP
+// client keeps its --attach bridge running all along, so the bridge reads
+// the token file again when the endpoint refuses it or is gone, and goes
+// on with the new endpoint, list changes included.
+TEST(McpAttach, TheBridgeFollowsTheInstanceToANewTokenAndPort)
+{
+    InstanceA instance;
+    ASSERT_TRUE(instance.a.started);
+    StdioServer b({"--attach", "--mcp-token-file", instance.tokenFile.string()});
+    ASSERT_TRUE(b.started);
+    Json init = b.request(initialize(0));
+    EXPECT_EQ(init["result"]["protocolVersion"], "2025-11-25") << init.dump();
+    b.send(notification("notifications/initialized"));
+    EXPECT_TRUE(b.request(legacy("tools/call", {{"name", "session.status"}}, 1)).contains("result"));
+
+    // The MCP server restarts: the old endpoint goes, a new one has a new
+    // token and port, and the token file says so.
+    instance.a.http.stop();
+    McpHttpConfig config;
+    config.token = cutenes::api::token::generate();
+    McpHttpServer again(instance.a.mcp, config);
+    std::string error;
+    ASSERT_TRUE(again.start(error)) << error;
+    ASSERT_NE(again.url(), instance.a.http.url());
+    ASSERT_TRUE(cutenes::api::token::writeFile(instance.tokenFile, again.url(), config.token, error)) << error;
+
+    Json status = b.request(legacy("tools/call", {{"name", "session.status"}}, 2));
+    EXPECT_TRUE(status.contains("result")) << status.dump();
+
+    // The bridge's list-changed subscription follows too, a moment later.
+    for (int i = 0; i < 500 && again.activity().streams == 0; ++i) std::this_thread::sleep_for(10ms);
+    ASSERT_EQ(again.activity().streams, 1) << "the subscription reconnected";
+    b.notifications.clear();
+    Json toggled = b.request(legacy("tools/call", {{"name", "gui.test_toggle"}}, 3));
+    EXPECT_TRUE(toggled.contains("result")) << toggled.dump();
+    for (int i = 0; i < 200 && b.notifications.empty(); ++i) {
+        if (auto m = b.next(50ms)) b.notifications.push_back(*m);
+    }
+    ASSERT_FALSE(b.notifications.empty()) << "no list change after the restart";
+    EXPECT_EQ(b.notifications[0]["method"], "notifications/tools/list_changed");
+    again.stop();
+}

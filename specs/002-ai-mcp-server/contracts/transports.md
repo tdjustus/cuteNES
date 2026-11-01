@@ -72,6 +72,12 @@ cutenes-server [--library DIR] [--debug-dir DIR]
   reads the GUI's MCP token file, which holds the URL and token. The GUI's
   server settings show the token and offer to copy it, for HTTP clients
   configured by hand.
+- The GUI makes a new token, and may take a new port, each time its MCP
+  server starts. A running bridge follows it: when the endpoint refuses its
+  token (401) or does not answer, it reads the token file again and, if
+  the file names a different endpoint, sends the request once more there.
+  Its own list-changed subscription reconnects the same way. A request
+  that had reached the endpoint is never sent twice.
 - Disabling the API closes the MCP endpoint. In-flight and queued calls
   fail with `ShuttingDown`, open streams end, and emulation continues
   (FR-020).

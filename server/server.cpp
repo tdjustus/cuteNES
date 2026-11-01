@@ -177,7 +177,15 @@ int attach(const Options& o, std::istream& in, std::ostream& out, std::ostream& 
     }
     err << "cutenes-server " << coreVersionString() << ": relaying stdio MCP to "
         << endpoint->url << std::endl;
-    mcp::serveBridge(*endpoint, in, out, stop);
+    // The instance's MCP server may restart with a new token or port (the
+    // GUI setting toggled, the application reopened): read the file again.
+    const std::string urlOverride = o.attachUrl;
+    mcp::serveBridge(*endpoint, in, out, stop, [path, urlOverride]() -> std::optional<mcp::Endpoint> {
+        std::string ignored;
+        auto fresh = mcp::readTokenFile(path, ignored);
+        if (fresh && !urlOverride.empty()) fresh->url = urlOverride;
+        return fresh;
+    });
     return kExitOk;
 }
 

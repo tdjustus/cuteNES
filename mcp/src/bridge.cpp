@@ -165,6 +165,7 @@ private:
 // One request on the wire, so that another thread can abandon it.
 struct InFlight {
     std::shared_ptr<httplib::Client> client;
+    Endpoint endpoint; // where it went
     std::atomic<bool> cancelled{false};
     void cancel()
     {
@@ -173,10 +174,18 @@ struct InFlight {
     }
 };
 
+// How one exchange ended. `retry`: nothing reached the endpoint's session
+// (it did not answer, or refused the token), so the request may go again.
+struct Outcome {
+    bool ok = true;
+    bool retry = false;
+    std::string error;
+};
+
 class Bridge {
 public:
-    Bridge(Endpoint endpoint, Target target, std::ostream& out)
-        : m_endpoint(std::move(endpoint)), m_target(std::move(target)), m_writer(out)
+    Bridge(Endpoint endpoint, std::ostream& out, RefreshEndpoint refresh)
+        : m_endpoint(std::move(endpoint)), m_refresh(std::move(refresh)), m_writer(out)
     {
         m_worker = std::thread([this] { work(); });
     }
@@ -186,7 +195,7 @@ public:
     {
         std::lock_guard lock(m_mutex);
         m_queue.push_back({std::move(raw), std::move(message)});
-        m_cv.notify_one();
+        m_cv.notify_all();
     }
 
     // notifications/cancelled: stdio's cancellation becomes HTTP's.
@@ -212,7 +221,7 @@ public:
             m_queue.clear();
             if (m_current) m_current->cancel();
             for (auto& [key, stream] : m_streams) stream->cancel();
-            m_cv.notify_one();
+            m_cv.notify_all();
         }
         m_worker.join();
         for (auto& t : m_streamThreads) t.join();
@@ -230,14 +239,48 @@ private:
         return message.is_object() && message.contains("id") ? serialize(message["id"]) : "";
     }
 
+    static Json idOf(const Json& message)
+    {
+        return message.is_object() && message.contains("id") ? message["id"] : Json();
+    }
+
+    Endpoint endpoint()
+    {
+        std::lock_guard lock(m_endpointMutex);
+        return m_endpoint;
+    }
+
+    // After `used` failed: true when there is a different endpoint to try,
+    // because another request moved on already or the token file names one.
+    bool refreshFrom(const Endpoint& used)
+    {
+        std::lock_guard lock(m_endpointMutex);
+        const auto same = [](const Endpoint& a, const Endpoint& b) { return a.url == b.url && a.token == b.token; };
+        if (!same(m_endpoint, used)) return true;
+        if (!m_refresh) return false;
+        const std::optional<Endpoint> fresh = m_refresh();
+        if (!fresh || same(*fresh, used) || !parseUrl(fresh->url)) return false;
+        m_endpoint = *fresh;
+        return true;
+    }
+
+    std::shared_ptr<InFlight> newFlight()
+    {
+        auto flight = std::make_shared<InFlight>();
+        flight->endpoint = endpoint();
+        flight->client = makeClient(*parseUrl(flight->endpoint.url), flight->endpoint.token);
+        return flight;
+    }
+
     // Sends one message and hands each message that comes back to `on`.
-    void exchange(const std::string& raw, const Json& message, InFlight& flight,
+    Outcome exchange(const std::string& raw, const Json& message, InFlight& flight,
         const std::function<void(const Json&)>& on)
     {
         enum class Mode { Unknown, Json, Sse } mode = Mode::Unknown;
         std::string body;
         SseReader sse;
-        const auto res = flight.client->Post(m_target.path, headersFor(message, m_legacyVersion), raw,
+        const Target target = *parseUrl(flight.endpoint.url);
+        const auto res = flight.client->Post(target.path, headersFor(message, m_legacyVersion), raw,
             "application/json", [&](const char* data, std::size_t n) {
                 if (mode == Mode::Unknown) {
                     const std::string_view chunk(data, n);
@@ -253,44 +296,74 @@ private:
                 }
                 return true;
             });
-        if (flight.cancelled) return; // no response to a cancelled request
-        const Json id = message.is_object() && message.contains("id") ? message["id"] : Json();
+        if (flight.cancelled) return {}; // no response to a cancelled request
         if (!res) {
-            if (!id.is_null()) {
-                on(errorResponse(id, kInternalError, "the MCP endpoint at " + m_endpoint.url
-                    + " did not answer (" + httplib::to_string(res.error()) + ")"));
-            }
-            return;
+            // A stream that had started was delivered; one that never got
+            // an answer can go again.
+            return {false, mode == Mode::Unknown,
+                "the MCP endpoint at " + flight.endpoint.url + " did not answer ("
+                    + httplib::to_string(res.error()) + ")"};
         }
-        if (res->status == 202 || mode == Mode::Sse) return;
+        if (res->status == 202 || mode == Mode::Sse) return {};
         const Json reply = Json::parse(body, nullptr, false);
         if (reply.is_object() && reply.contains("jsonrpc")) {
             on(reply); // a result, or a JSON-RPC error as the endpoint sent it
-        } else if (!id.is_null()) {
-            on(errorResponse(id, kInternalError, res->status == 401
-                    ? "the MCP endpoint refused the token (HTTP 401); the token file is from an earlier launch"
-                    : "the MCP endpoint answered HTTP " + std::to_string(res->status)));
+            return {};
         }
+        if (res->status == 401) {
+            return {false, true,
+                "the MCP endpoint refused the token (HTTP 401); the token file is from an earlier launch"};
+        }
+        return {false, false, "the MCP endpoint answered HTTP " + std::to_string(res->status)};
     }
 
     void write(const Json& message) { m_writer.write(message); }
 
     // A long-lived request (subscriptions/listen) on its own connection.
+    // `persistent`: the bridge's own subscription, which reconnects until
+    // the bridge finishes, following the instance to a new endpoint.
     void stream(const std::string& key, std::string raw, Json message,
-        std::function<void(const Json&)> on)
+        std::function<void(const Json&)> on, bool persistent = false)
     {
-        auto flight = std::make_shared<InFlight>();
-        flight->client = makeClient(m_target, m_endpoint.token);
         {
             std::lock_guard lock(m_mutex);
             if (m_finishing) return;
-            m_streams[key] = flight;
         }
         m_streamThreads.emplace_back([this, key, raw = std::move(raw), message = std::move(message),
-                                         on = std::move(on), flight] {
-            exchange(raw, message, *flight, on);
-            std::lock_guard lock(m_mutex);
-            m_streams.erase(key);
+                                         on = std::move(on), persistent] {
+            bool retried = false;
+            for (;;) {
+                auto flight = newFlight();
+                {
+                    std::lock_guard lock(m_mutex);
+                    if (m_finishing) return;
+                    m_streams[key] = flight;
+                }
+                const Outcome outcome = exchange(raw, message, *flight, on);
+                {
+                    std::unique_lock lock(m_mutex);
+                    m_streams.erase(key);
+                    if (m_finishing || flight->cancelled) return;
+                    if (persistent) {
+                        // The endpoint went away or restarted: wait a moment,
+                        // look for its new address, and listen again.
+                        m_cv.wait_for(lock, std::chrono::milliseconds(250), [&] { return m_finishing; });
+                        if (m_finishing) return;
+                    }
+                }
+                if (persistent) {
+                    refreshFrom(flight->endpoint);
+                    continue;
+                }
+                if (!outcome.ok && outcome.retry && !retried && refreshFrom(flight->endpoint)) {
+                    retried = true;
+                    continue;
+                }
+                if (!outcome.ok && !idOf(message).is_null()) {
+                    write(errorResponse(idOf(message), kInternalError, outcome.error));
+                }
+                return;
+            }
         });
     }
 
@@ -314,7 +387,8 @@ private:
                 } else if (method == "notifications/tools/list_changed") {
                     write({{"jsonrpc", "2.0"}, {"method", "notifications/tools/list_changed"}});
                 }
-            });
+            },
+            /*persistent=*/true);
         // Changes after initialize must not be missed.
         ready.wait_for(std::chrono::seconds(5));
     }
@@ -336,15 +410,11 @@ private:
                 stream(key, q.raw, q.message, [this](const Json& m) { write(m); });
                 continue;
             }
-            auto flight = std::make_shared<InFlight>();
-            flight->client = makeClient(m_target, m_endpoint.token);
             {
                 std::lock_guard lock(m_mutex);
                 if (!key.empty() && m_cancelledBeforeSending.erase(key)) continue;
-                m_current = flight;
-                m_currentKey = key;
             }
-            exchange(q.raw, q.message, *flight, [&](const Json& m) {
+            const auto deliver = [&](const Json& m) {
                 if (method == "initialize" && m.contains("result")) {
                     m_legacyVersion = stringAt(m["result"], "protocolVersion");
                     if (!m_relayingLegacy) {
@@ -353,15 +423,34 @@ private:
                     }
                 }
                 write(m);
-            });
-            std::lock_guard lock(m_mutex);
-            m_current.reset();
-            m_currentKey.clear();
+            };
+            Outcome outcome;
+            for (int attempt = 0; attempt < 2; ++attempt) {
+                auto flight = newFlight();
+                {
+                    std::lock_guard lock(m_mutex);
+                    m_current = flight;
+                    m_currentKey = key;
+                }
+                outcome = exchange(q.raw, q.message, *flight, deliver);
+                {
+                    std::lock_guard lock(m_mutex);
+                    m_current.reset();
+                    m_currentKey.clear();
+                }
+                // Once more, at the instance's new endpoint (a new token or
+                // port after its MCP server restarted).
+                if (outcome.ok || !outcome.retry || attempt == 1 || !refreshFrom(flight->endpoint)) break;
+            }
+            if (!outcome.ok && !idOf(q.message).is_null()) {
+                write(errorResponse(idOf(q.message), kInternalError, outcome.error));
+            }
         }
     }
 
-    Endpoint m_endpoint;
-    Target m_target;
+    std::mutex m_endpointMutex;
+    Endpoint m_endpoint; // under m_endpointMutex
+    RefreshEndpoint m_refresh; // called under m_endpointMutex
     Writer m_writer;
     std::string m_legacyVersion; // the worker's
     bool m_relayingLegacy = false;
@@ -424,7 +513,7 @@ int probe(const Endpoint& endpoint, std::string& error)
 }
 
 bool serveBridge(const Endpoint& endpoint, std::istream& in, std::ostream& out,
-    const std::atomic<bool>& stop)
+    const std::atomic<bool>& stop, RefreshEndpoint refresh)
 {
     const auto target = parseUrl(endpoint.url);
     if (!target) return false;
@@ -448,7 +537,7 @@ bool serveBridge(const Endpoint& endpoint, std::istream& in, std::ostream& out,
         input->cv.notify_one();
     });
 
-    Bridge bridge(endpoint, *target, out);
+    Bridge bridge(endpoint, out, std::move(refresh));
     bool endOfInput = false;
     while (!stop.load()) {
         std::string line;
