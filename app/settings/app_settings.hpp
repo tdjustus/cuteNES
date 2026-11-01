@@ -73,6 +73,7 @@ public:
         int overscanRight = 0;
         QString filter = QStringLiteral("nearest");
         bool alwaysOnTop = false;
+        QString pacing = QStringLiteral("auto"); // auto, display or audio (R4)
         bool operator==(const VideoSettings&) const = default;
     };
     VideoSettings video() const;

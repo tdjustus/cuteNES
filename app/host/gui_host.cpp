@@ -34,7 +34,7 @@ const std::vector<std::string> kSettingsPages = {
 // The settings groups and keys implemented so far (data-model "Settings
 // keys"); later phases add theirs.
 const std::vector<std::string> kSettingKeys = {"video.scale", "video.fullscreen", "video.integerScaling",
-    "video.aspect", "video.overscan", "video.filter", "video.alwaysOnTop", "video.showFps", "video.showOsd",
+    "video.aspect", "video.overscan", "video.filter", "video.alwaysOnTop", "video.pacing", "video.showFps", "video.showOsd",
     "audio.device", "audio.volume", "audio.muted", "audio.latencyMs", "audio.fastForwardAudio",
     "emulation.pauseWhenInactive", "emulation.resumeOnOpen", "emulation.fastForwardSpeed",
     "library.root", "servers.apiEnabled", "servers.apiPort",
@@ -623,7 +623,7 @@ Json videoJson(const AppSettings::VideoSettings& v, const AppSettings& settings)
 {
     return {{"scale", v.scale}, {"fullscreen", v.fullscreen}, {"integerScaling", v.integerScaling},
         {"aspect", str(v.aspect)}, {"overscan", overscanJson(v)}, {"filter", str(v.filter)},
-        {"alwaysOnTop", v.alwaysOnTop}, {"showFps", settings.showFps()}, {"showOsd", settings.showOsd()}};
+        {"alwaysOnTop", v.alwaysOnTop}, {"pacing", str(v.pacing)}, {"showFps", settings.showFps()}, {"showOsd", settings.showOsd()}};
 }
 
 } // namespace
@@ -649,6 +649,9 @@ Result GuiHost::setVideo(const std::string& key, const Json& value, bool showPag
     } else if (key == "video.filter") {
         if (!oneOf({"nearest", "smooth", "scanlines"})) return invalid("/value", "must be nearest, smooth or scanlines");
         v.filter = QString::fromStdString(value.get<std::string>());
+    } else if (key == "video.pacing") {
+        if (!oneOf({"auto", "display", "audio"})) return invalid("/value", "must be auto, display or audio");
+        v.pacing = QString::fromStdString(value.get<std::string>());
     } else if (key == "video.overscan") {
         // Any of the edges; the others keep their value.
         if (!value.is_object()) return invalid("/value", "must be an object of top, bottom, left and right");
@@ -1276,7 +1279,11 @@ void GuiHost::registerCommands(api::Registry& registry)
             const AppSettings::InputSettings input = m_settings.input();
             const AppSettings::AudioSettings audio = m_settings.audio();
             const AppSettings::EmulationSettings emulation = m_settings.emulation();
-            const Json values = {{"video", videoJson(m_settings.video(), m_settings)},
+            const Window::PacingNow pacing = m_window.pacingNow();
+            Json video = videoJson(m_settings.video(), m_settings);
+            video["pacingNow"] = {{"mode", pacing.display ? "display" : "audio"}, {"divisor", pacing.divisor},
+                {"displayHz", pacing.displayHz}, {"framesPerSecond", pacing.framesPerSecond}};
+            const Json values = {{"video", video},
                 {"audio", {{"device", str(audio.device)}, {"volume", audio.volume}, {"muted", audio.muted},
                               {"latencyMs", audio.latencyMs}, {"fastForwardAudio", str(audio.fastForwardAudio)}}},
                 {"emulation", {{"pauseWhenInactive", emulation.pauseWhenInactive},
@@ -1298,6 +1305,7 @@ void GuiHost::registerCommands(api::Registry& registry)
                 {"video.overscan", s::object({{"top", edge}, {"bottom", edge}, {"left", edge}, {"right", edge}})},
                 {"video.filter", s::stringEnum({"nearest", "smooth", "scanlines"})},
                 {"video.alwaysOnTop", s::boolean("keep the window above others")},
+                {"video.pacing", s::stringEnum({"auto", "display", "audio"})},
                 {"video.showFps", s::boolean("the frame rate over the game (off)")},
                 {"video.showOsd", s::boolean("short on-screen messages (on)")},
                 {"audio.device", s::string("a name from gui.list_audio_devices, or default (the system's)")},

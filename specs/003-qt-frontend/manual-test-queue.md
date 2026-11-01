@@ -147,3 +147,23 @@ tests.
 7. Turn on "Resume games where I left off", play a little, close the game,
    and open it again: you are asked, and Yes goes on from where you were;
    No starts afresh.
+
+### Frame pacing (G051, #97)
+
+Checked through MCP: on the MacBook's 120 Hz display, `video.pacingNow`
+reported sync to display with a frame every second refresh (60 fps);
+`video.pacing` `audio` went back to 60.0988 fps. The choice rules are
+covered by `GuiFrameClock` and `GuiVideo` tests.
+
+1. Settings > Video > Frame pacing shows "Automatic" and, under it, what it
+   is doing ("a frame every 2 refreshes of the 120.00 Hz display" on a ProMotion
+   MacBook, or "in step with the 60.00 Hz display" on a 60 Hz monitor).
+2. Play a side-scroller (Mega Man 2's intro, or a level) for a minute on
+   Automatic: the scrolling is smooth, with no regular hitch, and the
+   sound has no crackle.
+3. Switch to "Sync to audio" and compare: on a 60 Hz display you may see a
+   small hitch every several seconds; Automatic should look as good or
+   better.
+4. With an external monitor at a different rate (75 or 144 Hz), drag the
+   window onto it: the note changes to the console's own rate and play
+   stays smooth. Drag it back: it follows the display again.

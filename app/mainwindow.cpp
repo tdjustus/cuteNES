@@ -39,6 +39,8 @@
 #include <QLineEdit>
 #include <QVBoxLayout>
 #include <QTimer>
+#include <QScreen>
+#include <QWindow>
 #include <QLocale>
 #include <QIcon>
 #include <QPixmap>
@@ -346,8 +348,9 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     });
     m_automationTimer->start();
 
-    // Timer pacing at the console's rate (R4); frames requested while
-    // nothing runs are dropped by the session.
+    // The frame clock (R4): the console's rate until the window knows its
+    // display (followScreen); frames requested while nothing runs are
+    // dropped by the session.
     m_clock = std::make_unique<qt::FrameClock>(
         [session = m_session.get()](std::uint32_t frames) { session->requestFrames(frames); });
     m_clock->start(kNtscFps);
@@ -1155,7 +1158,7 @@ QVector<LibraryEntry> MainWindow::libraryEntries() const
 
 void MainWindow::gameOpened(const QString& path, const GameIdentity&, const BatterySaver::Opened&)
 {
-    m_baseRate = m_session->machine().region() == Region::Pal ? kPalFps : kNtscFps;
+    m_consoleRate = m_session->machine().region() == Region::Pal ? kPalFps : kNtscFps;
     playbackChanged(playback()); // the speed applies to the new game's rate
     QMetaObject::invokeMethod(this, [this, path] {
         m_romName = QFileInfo(path).fileName();
@@ -1257,7 +1260,7 @@ void MainWindow::updateSettingsDialog()
     const AppSettings::VideoSettings v = m_settings.video();
     SettingsDialog::Video video{v.scale, v.fullscreen, v.integerScaling, v.aspect,
         {v.overscanTop, v.overscanBottom, v.overscanLeft, v.overscanRight}, v.filter, v.alwaysOnTop,
-        m_settings.showFps(), m_settings.showOsd()};
+        m_settings.showFps(), m_settings.showOsd(), v.pacing, pacingText()};
     m_settingsDialog->setVideo(video);
     const AppSettings::AudioSettings a = m_settings.audio();
     SettingsDialog::Audio audio{a.device, {}, a.volume, a.muted, a.latencyMs, a.fastForwardAudio};
@@ -1503,6 +1506,7 @@ void MainWindow::applyVideo()
                                                             : !none && !tv);
         }
     }
+    playbackChanged(playback()); // video.pacing
     updateSettingsDialog();
 }
 
@@ -1566,11 +1570,63 @@ void MainWindow::playbackChanged(const Playback& playback)
         std::lock_guard lock(m_playbackMutex);
         m_playback = playback;
     }
+    const QString mode = m_settings.video().pacing;
+    const qt::Pacing pacing = qt::choosePacing(mode == QLatin1String("audio") ? qt::PacingMode::Audio
+            : mode == QLatin1String("display")                               ? qt::PacingMode::Display
+                                                                             : qt::PacingMode::Auto,
+        m_displayHz.load(), m_consoleRate.load());
+    {
+        std::lock_guard lock(m_playbackMutex);
+        m_pacing = {pacing.display, pacing.divisor, m_displayHz.load(), pacing.framesPerSecond};
+    }
     constexpr double kUnlimited = 1000.0;
-    m_clock->setRate(playback.speed > 0 ? m_baseRate * playback.speed : kUnlimited);
+    m_clock->setRate(playback.speed > 0 ? pacing.framesPerSecond * playback.speed : kUnlimited);
     m_audio->setSpeed(playback.speed > 0 ? playback.speed : 1.0);
     m_audio->setMuted(playback.muted);
     QMetaObject::invokeMethod(this, [this] { updateOverlays(); }, Qt::QueuedConnection);
+}
+
+QString MainWindow::pacingText() const
+{
+    const PacingNow now = pacingNow();
+    if (now.display) {
+        return now.divisor == 1 ? tr("Now: in step with the %1 Hz display").arg(now.displayHz, 0, 'f', 2)
+                                : tr("Now: a frame every %1 refreshes of the %2 Hz display")
+                                      .arg(now.divisor)
+                                      .arg(now.displayHz, 0, 'f', 2);
+    }
+    return now.displayHz > 0 ? tr("Now: the console's own rate (the %1 Hz display is too far from it)")
+                                   .arg(now.displayHz, 0, 'f', 2)
+                             : tr("Now: the console's own rate");
+}
+
+MainWindow::PacingNow MainWindow::pacingNow() const
+{
+    std::lock_guard lock(m_playbackMutex);
+    return m_pacing;
+}
+
+void MainWindow::showEvent(QShowEvent* event)
+{
+    QMainWindow::showEvent(event);
+    if (!m_screenWatched) {
+        m_screenWatched = true;
+        connect(windowHandle(), &QWindow::screenChanged, this, &MainWindow::followScreen);
+        followScreen();
+    }
+}
+
+void MainWindow::followScreen()
+{
+    // Sync to display needs the refresh rate of the screen the window is on
+    // (R4); moving to another screen, or the rate changing, re-chooses.
+    QScreen* screen = windowHandle() ? windowHandle()->screen() : this->screen();
+    disconnect(m_refreshConnection);
+    m_refreshConnection = screen ? connect(screen, &QScreen::refreshRateChanged, this, &MainWindow::followScreen)
+                                 : QMetaObject::Connection();
+    m_displayHz = screen ? screen->refreshRate() : 0.0;
+    playbackChanged(playback());
+    updateSettingsDialog();
 }
 
 void MainWindow::updateOverlays()

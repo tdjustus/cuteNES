@@ -61,6 +61,16 @@ public:
             bool muted = false;      // the audio policy: stretch up to 2x, then mute
         };
         virtual void playbackChanged(const Playback& playback) = 0;
+        // The pacing in use (R4): synced to the display (a frame every
+        // divisor-th vsync) or to audio, with the display's refresh rate
+        // (0 when unknown) and the frame clock's rate at 100% speed.
+        struct PacingNow {
+            bool display = false;
+            int divisor = 1;
+            double displayHz = 0;
+            double framesPerSecond = 0;
+        };
+        virtual PacingNow pacingNow() const = 0;
         // A short confirmation for the user ("State saved to slot 3").
         virtual void showMessage(const QString& text) = 0;
         // select: a path or empty; paused: the command paused a running game.

@@ -217,6 +217,7 @@ AppSettings::VideoSettings AppSettings::video() const
     v.overscanRight = get("overscanRight", v.overscanRight).toInt();
     v.filter = get("filter", v.filter).toString();
     v.alwaysOnTop = get("alwaysOnTop", v.alwaysOnTop).toBool();
+    v.pacing = get("pacing", v.pacing).toString();
     return v;
 }
 
@@ -236,6 +237,7 @@ void AppSettings::setVideo(const VideoSettings& v)
     set("overscanRight", v.overscanRight);
     set("filter", v.filter);
     set("alwaysOnTop", v.alwaysOnTop);
+    set("pacing", v.pacing);
 }
 
 AppSettings::AudioSettings AppSettings::audio() const

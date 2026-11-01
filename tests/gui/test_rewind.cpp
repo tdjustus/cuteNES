@@ -75,6 +75,13 @@ QAction* action(MainWindow& w, const char* command, const QVariantMap& args = {}
     return nullptr;
 }
 
+// The speed tests measure against the console's rate: sync to audio keeps
+// it whatever the display (R4; offscreen reports 60 Hz).
+void consoleRatePacing(MainWindow& w)
+{
+    call(w, "gui.set_setting", {{"key", "video.pacing"}, {"value", "audio"}});
+}
+
 } // namespace
 
 TEST(GuiRewind, RewindingLandsOnTheStateAFreshRunReaches)
@@ -162,6 +169,7 @@ TEST(GuiRewind, RewindMutesTheSoundAndSaysRewind)
 TEST(GuiRewind, RewindWithFastForwardShowsFastRewind)
 {
     MainWindow w(windowOptions());
+    consoleRatePacing(w);
     play(w);
     ASSERT_TRUE(waitUntil([&] { return frame(w) >= 120; }, kSlow));
     call(w, "gui.set_rewind", {{"on", true}});
@@ -225,6 +233,7 @@ TEST(GuiSpeed, SpeedIndicatorsLookLikePausedInTheTopRight)
 TEST(GuiSpeed, FastForwardRunsAtThreeTimesAndMutesAboveTwo)
 {
     MainWindow w(windowOptions());
+    consoleRatePacing(w);
     play(w);
     ASSERT_TRUE(waitUntil([&] { return frame(w) > 0; }));
     EXPECT_NEAR(w.frameRate(), kNtsc, 0.01);
@@ -244,6 +253,7 @@ TEST(GuiSpeed, FastForwardRunsAtThreeTimesAndMutesAboveTwo)
 TEST(GuiSpeed, SpeedScalesTheClockAndTheSound)
 {
     MainWindow w(windowOptions());
+    consoleRatePacing(w);
     play(w);
     EXPECT_EQ(call(w, "gui.set_speed", {{"percent", 50}})["speed"], 50);
     EXPECT_NEAR(w.frameRate(), kNtsc / 2, 0.01);
@@ -304,6 +314,7 @@ TEST(GuiSpeed, TheHoldItemsToggleFromTheMenu)
 TEST(GuiSpeed, TheSpeedMenuRunsItsCommand)
 {
     MainWindow w(windowOptions());
+    consoleRatePacing(w);
     play(w);
     QAction* half = action(w, "gui.set_speed", {{QStringLiteral("percent"), 50}});
     ASSERT_NE(half, nullptr);

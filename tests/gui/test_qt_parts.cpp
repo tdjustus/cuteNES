@@ -187,6 +187,42 @@ TEST(GuiFrameClock, NeverRunsAheadOfItsRate)
     EXPECT_EQ(times.size(), after) << "ticks after stop()";
 }
 
+// R4: a display within 1% of the console rate, or of a whole multiple of
+// it, paces the game (one frame per vsync, or per Nth); any other display,
+// or the audio mode, keeps the console's own rate.
+TEST(GuiFrameClock, PacingFollowsADisplayCloseToTheConsoleRate)
+{
+    constexpr double ntsc = 60.0988;
+    constexpr double pal = 50.0070;
+
+    const Pacing at60 = choosePacing(PacingMode::Auto, 60.0, ntsc);
+    EXPECT_TRUE(at60.display);
+    EXPECT_EQ(at60.divisor, 1);
+    EXPECT_DOUBLE_EQ(at60.framesPerSecond, 60.0);
+
+    const Pacing at5994 = choosePacing(PacingMode::Auto, 59.94, ntsc);
+    EXPECT_TRUE(at5994.display) << "0.26% off";
+    EXPECT_DOUBLE_EQ(at5994.framesPerSecond, 59.94);
+
+    const Pacing at120 = choosePacing(PacingMode::Auto, 120.0, ntsc);
+    EXPECT_TRUE(at120.display);
+    EXPECT_EQ(at120.divisor, 2) << "every second vsync";
+    EXPECT_DOUBLE_EQ(at120.framesPerSecond, 60.0);
+
+    EXPECT_FALSE(choosePacing(PacingMode::Auto, 144.0, ntsc).display) << "144 / 60 is not whole";
+    EXPECT_FALSE(choosePacing(PacingMode::Auto, 75.0, ntsc).display);
+    EXPECT_FALSE(choosePacing(PacingMode::Auto, 60.0, pal).display) << "PAL on a 60 Hz display";
+    EXPECT_TRUE(choosePacing(PacingMode::Auto, 100.0, pal).display);
+    EXPECT_EQ(choosePacing(PacingMode::Auto, 100.0, pal).divisor, 2);
+    EXPECT_FALSE(choosePacing(PacingMode::Auto, 0.0, ntsc).display) << "an unknown refresh rate";
+
+    const Pacing audio = choosePacing(PacingMode::Audio, 60.0, ntsc);
+    EXPECT_FALSE(audio.display);
+    EXPECT_DOUBLE_EQ(audio.framesPerSecond, ntsc);
+    EXPECT_FALSE(choosePacing(PacingMode::Display, 75.0, ntsc).display) << "it cannot sync to 75 Hz";
+    EXPECT_DOUBLE_EQ(choosePacing(PacingMode::Display, 75.0, ntsc).framesPerSecond, ntsc);
+}
+
 // R4: the queue above its target plays slightly faster, never more than
 // 0.5% off; clear() empties the queue.
 TEST(GuiAudio, RateControlStaysWithinHalfAPercent)

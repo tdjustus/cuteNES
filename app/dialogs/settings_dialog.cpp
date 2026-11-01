@@ -291,6 +291,14 @@ QWidget* SettingsDialog::buildVideoPage(QWidget* parent)
         {{tr("Square pixels"), "square"}, {tr("8:7 (NTSC hardware)"), "8:7"}, {tr("4:3 stretch"), "4:3"}});
     combo(c.filter, "filter", "video.filter",
         {{tr("Nearest (sharp)"), "nearest"}, {tr("Smooth"), "smooth"}, {tr("Scanlines"), "scanlines"}});
+    combo(c.pacing, "pacing", "video.pacing",
+        {{tr("Automatic"), "auto"}, {tr("Sync to display"), "display"}, {tr("Sync to audio"), "audio"}});
+    c.pacing->setToolTip(tr("Sync to display shows every frame exactly once when the display runs near 60 Hz "
+                            "(or 50 Hz for PAL), or a whole multiple of it. Sync to audio keeps the console's "
+                            "own rate on any display."));
+    c.pacingNow = new QLabel(page);
+    c.pacingNow->setObjectName(QStringLiteral("pacingNow"));
+    c.pacingNow->setForegroundRole(QPalette::PlaceholderText);
     check(c.alwaysOnTop, tr("Always on top"), "alwaysOnTop", "video.alwaysOnTop");
     check(c.showFps, tr("Show FPS"), "showFps", "video.showFps");
     check(c.showOsd, tr("Show on-screen messages"), "showOsd", "video.showOsd");
@@ -322,6 +330,8 @@ QWidget* SettingsDialog::buildVideoPage(QWidget* parent)
     form->addRow(tr("Window scale"), c.scale);
     form->addRow(tr("Aspect ratio"), c.aspect);
     form->addRow(tr("Filter"), c.filter);
+    form->addRow(tr("Frame pacing"), c.pacing);
+    form->addRow(QString(), c.pacingNow);
     form->addRow(tr("Overscan"), crop);
     auto* note = new QLabel(tr("Overscan hides the picture's edges, as TVs did: 8 lines at the top and bottom by "
                                "default. Most games put nothing there."),
@@ -344,9 +354,9 @@ void SettingsDialog::setVideo(const Video& v)
 {
     VideoControls& c = m_video;
     std::vector<QSignalBlocker> blockers;
-    blockers.reserve(12);
+    blockers.reserve(13);
     for (QWidget* w : std::initializer_list<QWidget*>{c.scale, c.fullscreen, c.integerScaling, c.aspect, c.filter,
-             c.alwaysOnTop, c.showFps, c.showOsd, c.overscan[0], c.overscan[1], c.overscan[2], c.overscan[3]}) {
+             c.pacing, c.alwaysOnTop, c.showFps, c.showOsd, c.overscan[0], c.overscan[1], c.overscan[2], c.overscan[3]}) {
         blockers.emplace_back(w);
     }
     if (!c.scale->hasFocus()) c.scale->setValue(v.scale);
@@ -354,6 +364,8 @@ void SettingsDialog::setVideo(const Video& v)
     c.integerScaling->setChecked(v.integerScaling);
     c.aspect->setCurrentIndex(qMax(0, c.aspect->findData(v.aspect)));
     c.filter->setCurrentIndex(qMax(0, c.filter->findData(v.filter)));
+    c.pacing->setCurrentIndex(qMax(0, c.pacing->findData(v.pacing)));
+    c.pacingNow->setText(v.pacingNow);
     for (int i = 0; i < 4; ++i) {
         if (!c.overscan[i]->hasFocus()) c.overscan[i]->setValue(v.overscan[i]);
     }
