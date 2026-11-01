@@ -75,6 +75,7 @@ struct Session::Impl {
 
     // Real-time play (Session::setRealtime, research R3).
     std::atomic<bool> realtime{false};
+    Session::FrameRunner frameRunner; // emulation thread
     std::uint32_t pendingFrames = 0; // guarded by queueMutex
     std::array<std::atomic<std::uint8_t>, 2> liveInput{};
     std::array<ButtonSet, 2> automationInput{}; // the last core.set_controller

@@ -20,6 +20,7 @@
 #include <QFuture>
 #include <QMainWindow>
 #include <QPointer>
+#include <QSet>
 #include <QThreadPool>
 #include <QVariantMap>
 
@@ -59,6 +60,7 @@ class MainWindow : public QMainWindow, private GuiHost::Window {
 
 public:
     using Options = MainWindowOptions;
+    using Playback = GuiHost::Window::Playback;
 
     explicit MainWindow(const Options& options = Options{}, QWidget* parent = nullptr);
     ~MainWindow() override;
@@ -75,6 +77,11 @@ public:
     AppSettings& settings() { return m_settings; }
     Library library() const override;
     bool isShowingLibrary() const;
+
+    // The frame clock's rate now (the console's rate times the speed) and
+    // the playback the host last asked for.
+    double frameRate() const;
+    Playback playback() const;
 
     // Runs a command on the session without blocking the GUI thread. A
     // failure is shown to the user unless `quiet`.
@@ -123,6 +130,7 @@ private:
     // GuiHost::Window, called on the emulation thread.
     void showStateFileDialog(bool save) override;
     void showMessage(const QString& text) override;
+    void playbackChanged(const Playback& playback) override;
     void showLibrary(const QString& select, bool paused) override;
     void showSettings(const QString& page) override;
     void openLibraryFolder() override;
@@ -141,7 +149,8 @@ private:
     void updateSlotMenus(); // GUI thread: each slot's time and thumbnail
     void showOsd(const QString& text); // GUI thread
     void placeOsd();
-    void placePaused();
+    void updateOverlays(); // GUI thread: PAUSED and the speed indicator
+    void releaseHeld(int key); // the release of a hold action's key
     void setRunState(const QString& runState);    // GUI thread
     void showGame();
     void returnToGame();
@@ -166,7 +175,12 @@ private:
     QMenu* m_recentMenu = nullptr;
     QAction* m_pauseAction = nullptr;
     QLabel* m_osd = nullptr; // on-screen messages, over the page
-    QLabel* m_paused = nullptr; // "PAUSED", over the game
+    QLabel* m_paused = nullptr; // "PAUSED", in the middle of the game
+    QLabel* m_speed = nullptr;  // "◀◀ REWIND", "SPEED 50%"..., top right, in PAUSED's style
+    QSet<int> m_keysDown; // keys held now, for the hold actions
+    mutable std::mutex m_playbackMutex;
+    Playback m_playback; // under m_playbackMutex
+    double m_baseRate = 60.0988; // the console's frame rate
     QTimer* m_osdTimer = nullptr;
     QMenu* m_saveStateMenu = nullptr;
     QMenu* m_loadStateMenu = nullptr;

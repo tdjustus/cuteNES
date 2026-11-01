@@ -10,7 +10,7 @@
 | **GameIdentity** | `sha1` (40 hex), `id8`, `displayName` | `sha1` covers the ROM after the header and trainer (R7). `displayName` is fixed the first time the game gets a file |
 | **BatterySave** | `identity`, `bytes`, `dirty`, `lastWrite` | Written when `dirty` and at least 5 s after `lastWrite`, and always on close (FR-012). Guarded by the game's lock file |
 | **StateSlot** | `identity`, `slot` 1-10 or `auto`, `state` (core blob), `thumbnail` (PNG), `savedAt`, `coreVersion` | `selectedSlot` is per game and starts at 1. `undoState` is held in memory only, for one level of undo |
-| **RewindBuffer** | `budgetBytes` (default 64 MiB), `keyframeInterval` (60), entries (keyframe or delta) | Cleared on load, reset, power cycle and state load. Disabled when the budget is 0 |
+| **RewindBuffer** | `budgetBytes` (default 64 MiB), entries (the oldest whole, the rest XOR deltas, each with its frame's input) | Cleared on load, reset, power cycle and state load. Disabled when the budget is 0 |
 | **Movie** | `identity`, `coreVersion`, `region`, `start` (power-on or state), `frames` (2 bytes each), `rerecords`, `events`, `mode` (recording, playing read-only, playing read-write) | Refused for a different `identity`. Taking over from read-only truncates at the current frame and starts recording |
 | **Cheat** | `label`, `kind` (freeze, set, game_genie), `address`, `value`, `code`, `enabled` | `freeze` writes each frame before emulation, `set` writes once on enable, and `game_genie` goes to the core (R10) |
 | **CheatSearch** | `snapshot` (CPU RAM `$0000-$07FF` plus PRG-RAM), `candidates` (address set) | Resets to all addresses. Each filter compares with the previous snapshot or a value |

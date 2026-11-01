@@ -60,7 +60,7 @@ int AudioOutput::queuedSamples() const
 void AudioOutput::onSamples(const std::int16_t* pcm, std::size_t count, std::uint64_t)
 {
     std::lock_guard lock(m_mutex);
-    if (!m_stream || count == 0) {
+    if (!m_stream || count == 0 || m_muted.load()) {
         return;
     }
     const int target = m_sampleRate * m_targetMs.load() / 1000;
@@ -88,7 +88,18 @@ void AudioOutput::onSamples(const std::int16_t* pcm, std::size_t count, std::uin
     const double error = static_cast<double>(queued - target) / target;
     const double wanted = 1.0 + std::clamp(error * kMaxRateAdjust, -kMaxRateAdjust, kMaxRateAdjust);
     m_rate += (wanted - m_rate) * 0.05;
-    SDL_SetAudioStreamFrequencyRatio(m_stream, static_cast<float>(m_rate));
+    SDL_SetAudioStreamFrequencyRatio(m_stream, static_cast<float>(m_rate * m_speed.load()));
+}
+
+void AudioOutput::setSpeed(double speed)
+{
+    m_speed.store(speed > 0 ? speed : 1.0);
+}
+
+void AudioOutput::setMuted(bool muted)
+{
+    if (m_muted.exchange(muted) == muted) return;
+    if (muted) clear(); // nothing stale plays when it comes back
 }
 
 void AudioOutput::clear()

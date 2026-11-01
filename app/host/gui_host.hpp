@@ -10,6 +10,7 @@
 #include "library/library.hpp"
 #include "library/library_index.hpp"
 #include "persistence/battery_saver.hpp"
+#include "persistence/rewind_buffer.hpp"
 #include "persistence/state_slots.hpp"
 
 #include <cutenes/api/host.hpp>
@@ -23,6 +24,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace cutenes::app {
 
@@ -39,6 +41,15 @@ public:
         virtual void showOpenRomDialog() = 0;
         // Save State to File… (save) or Load State from File… without a path.
         virtual void showStateFileDialog(bool save) = 0;
+        // How the game plays now (speed, fast-forward, rewind): the window
+        // sets its frame clock and the sound to match.
+        struct Playback {
+            double speed = 1.0;      // of the console's rate (Unlimited: 0)
+            bool fastForward = false;
+            bool rewinding = false;
+            bool muted = false;      // the audio policy: stretch up to 2x, then mute
+        };
+        virtual void playbackChanged(const Playback& playback) = 0;
         // A short confirmation for the user ("State saved to slot 3").
         virtual void showMessage(const QString& text) = 0;
         // select: a path or empty; paused: the command paused a running game.
@@ -59,8 +70,13 @@ public:
 
     GuiHost(Window& window, AppSettings& settings, BatterySaver& battery);
 
-    // The session hosting these commands, once it exists.
-    void attach(api::Session& session) { m_session = &session; }
+    // The session hosting these commands, once it exists. Real-time frames
+    // then run through runFrame, which keeps the rewind history.
+    void attach(api::Session& session);
+    void detach();
+
+    // The speeds of Emulation > Speed, in percent (FR-035).
+    static const std::vector<int>& speeds();
 
     // The open game's save-state slots (any thread; empty without a game).
     StateSlots stateSlots() const;
@@ -81,6 +97,10 @@ private:
     // Loads `state`, keeping what it replaced for Undo Load State.
     api::Result loadStateBytes(api::CallContext& ctx, const QByteArray& state, bool keepUndo = true);
     api::Result selectSlot(int slot);
+    void runFrame(Machine& machine); // each real-time frame, emulation thread
+    api::Result setRewind(api::CallContext& ctx, bool on);
+    api::Result setSpeed(int percent); // 0: Unlimited
+    void updatePlayback();
 
     Window& m_window;
     AppSettings& m_settings;
@@ -92,6 +112,15 @@ private:
     StateSlots m_slots; // under m_slotsMutex
     std::atomic<int> m_selectedSlot{1};
     std::optional<QByteArray> m_undoState; // emulation thread; one level (data-model "StateSlot")
+
+    // Emulation thread: rewind (R6) and speed (FR-035).
+    RewindBuffer m_rewind;
+    bool m_rewinding = false;
+    bool m_pauseAfterRewind = false;      // rewind started from a paused game
+    std::optional<RewindBuffer::Entry> m_rewound; // the state shown last while rewinding
+    int m_speed = 100;                    // percent; 0 is Unlimited
+    bool m_fastForward = false;
+    int m_fastForwardSpeed = 300;         // data-model "emulation.fastForwardSpeed"
 };
 
 } // namespace cutenes::app

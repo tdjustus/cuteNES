@@ -189,9 +189,9 @@ Tests are labelled in CTest. Counts are from the current tree.
 | `tier2` | 28 | Broader ROM suites incl. 22 Holy Mapperel board tests | every PR (Release builds) |
 | `behavior` | 18 | Determinism (run twice, byte-identical), save-state round trip, instruction-step equivalence | every PR |
 | `playtest`, `corpus` | 113 | Scripted ROM runs with on-screen text or pinned, hand-viewed frame hashes | every PR, except entries needing `roms-local/` |
-| `api` | 96 | The `cutenes-api` command layer and HTTP API (feature 002): every `core.*`/`session.*` command against the contracts, a test ROM's own verdict through the commands, save-slot branching, structured errors that change no state, call ordering across threads and clients, JSON-RPC 2.0 framing, the token, Host and Origin checks, the frozen catalog, a GUI host's `gui.*` commands reaching both catalogs and MCP clients' list-changed notifications, and real-time play (one frame per requested frame, commands between frames, human and automation input combined) | every PR |
+| `api` | 97 | The `cutenes-api` command layer and HTTP API (feature 002): every `core.*`/`session.*` command against the contracts, a test ROM's own verdict through the commands, save-slot branching, structured errors that change no state, call ordering across threads and clients, JSON-RPC 2.0 framing, the token, Host and Origin checks, the frozen catalog, a GUI host's `gui.*` commands reaching both catalogs and MCP clients' list-changed notifications, and real-time play (one frame per requested frame, commands between frames, human and automation input combined, a host frame runner) | every PR |
 | `mcp` | 33 | The MCP adapter (feature 002) against MCP's own pinned `schema.json` for both revisions it serves (2026-07-28 and 2025-11-25): discovery over stdio with the real executable, a test ROM's verdict and a PNG image block through tool calls, `tools/list` equal to `api.catalog`, Streamable HTTP's header and status rules, progress and subscription streams, cancellation when a client goes away, and the `--attach` bridge relaying a stdio client to a running instance (exit 4 when there is none) | every PR |
-| `gui` | 102 | The Qt frontend (feature 003), offscreen and with SDL's dummy audio: the window and its seven menus in the spec's order, the menu actions' `gui.*` commands, shortcuts and platform roles, About's versions and license texts (Qt's LGPL included), SDL starting audio and gamepads, SIGTERM still ending the process, picture sizing (aspect, overscan, integer scaling), keyboard defaults, the frame hand-off, the frame clock, audio rate control within ±0.5%, the command line, playing a test ROM to its own "passed" in real time with the view showing the core's exact frame, game identity and file naming, the library layout, index and browser, recent games, Settings > Library, save-state slots (the same hash after a load, a load waiting paused and then playing on with sound, a name asked for and a warning before replacing, states kept across a ROM rename, "PAUSED" over a paused game, messages that never resize the view, thumbnails, the selected slot per game, one level of undo, state files, another board's state refused), and battery saves (written within the interval and on close, atomic, found by identity after a rename, a bad save set aside, one writer per game) | every PR (not the sanitizer job) |
+| `gui` | 121 | The Qt frontend (feature 003), offscreen and with SDL's dummy audio: the window and its seven menus in the spec's order, the menu actions' `gui.*` commands, shortcuts and platform roles, About's versions and license texts (Qt's LGPL included), SDL starting audio and gamepads, SIGTERM still ending the process, picture sizing (aspect, overscan, integer scaling), keyboard defaults, the frame hand-off, the frame clock, audio rate control within ±0.5%, the command line, playing a test ROM to its own "passed" in real time with the view showing the core's exact frame, game identity and file naming, the library layout, index and browser, recent games, Settings > Library, rewind (a rewound game in exactly the state a fresh run reaches, the history kept within budget, 30 s in far less than 64 MiB), fast-forward, speed and Frame Advance, a top-right indicator for rewind, fast rewind and speed in the style of PAUSED at half its size, save-state slots (the same hash after a load, a load waiting paused and then playing on with sound, a name asked for and a warning before replacing, states kept across a ROM rename, "PAUSED" over a paused game, messages that never resize the view, thumbnails, the selected slot per game, one level of undo, state files, another board's state refused), and battery saves (written within the interval and on close, atomic, found by identity after a rename, a bad save set aside, one writer per game) | every PR (not the sanitizer job) |
 | `known-failing` | 1 | A documented hardware discrepancy (#42) | never (run with `ctest -L known-failing`) |
 
 What the numbers do not say: a golden hash records what this emulator draws,
@@ -221,6 +221,21 @@ build/tests/rom_harness step-equiv R N                # stepping == runFrames
 build/tests/rom_harness bench --rom R [--seconds N] [--min-x X]
 build/tests/rom_harness golden --list tests/golden/roms.txt --check tests/golden/baseline.txt
 ```
+
+## Legal use
+
+cuteNES is for playing games you own and for homebrew. The project does not
+condone piracy and is designed not to enable it:
+
+- It ships **no commercial ROMs**, and never will. The test suite uses
+  freely licensed test ROMs; tests on commercial games run only on a
+  developer's own copies in the gitignored `roms-local/`.
+- Play your own dumps of cartridges you own, or homebrew and public-domain
+  games. Do not download or share ROMs you have no right to.
+- Features that touch other people's content are built the same way: game
+  art (#90) uses only sources that allow it, and the planned `.nesx` format
+  (#102) can never contain a ROM. It names its target by hash, and you
+  supply your own copy.
 
 ## Project
 
