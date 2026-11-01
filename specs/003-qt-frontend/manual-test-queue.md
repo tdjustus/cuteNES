@@ -188,3 +188,26 @@ no menu yet (G7 adds the cheat list); it is tested through
    the same palette is in use.
 4. Take a screenshot with a non-default palette: it shows the colours you
    see.
+
+### Cheats and the cheat search (G071, #99)
+
+Checked through MCP: on Mega Man 2 the search covered 10240 bytes (RAM and
+PRG-RAM), one "changed" filter left 13, and the game kept running with the
+search window open. Narrowing by value, 2-byte values, edits, freeze, set,
+Game Genie and saving per game are covered by the `GuiCheatSearch` and
+`GuiCheats` tests on a counter ROM.
+
+1. Super Mario Bros.: Tools > Cheat Search…, New Search (1 byte). Filter
+   "Equal to" 3 (your lives). Lose a life, filter "Equal to" 2. Repeat until
+   one address is left (it should be $075A). The game never paused.
+2. Select it, type a label ("Lives"), press Freeze: Tools > Cheats… lists
+   it, switched on. Lose a life: the count stays.
+3. In the results, double-click the value and type 9: the lives counter
+   shows it at once, while the game runs.
+4. Press Watch: the watch list shows the address with its live value; type
+   a new value there too.
+5. Tools > Cheats…, Kind "Game Genie", code SXIOPO (Super Mario Bros.
+   infinite lives), Add: it works as the accessory did. A wrong code, like
+   HELLO1, is refused with the reason.
+6. Untick a cheat: it stops. Close and reopen the game: the cheats and the
+   watch list are back, ticked as you left them.

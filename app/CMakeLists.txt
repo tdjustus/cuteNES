@@ -9,6 +9,7 @@ add_library(cutenes-app-lib STATIC
     cli.cpp
     dialogs/key_bindings_page.cpp
     dialogs/settings_dialog.cpp
+    dialogs/cheats_window.cpp
     host/gui_host.cpp
     host/servers.cpp
     library/game_identity.cpp
@@ -17,6 +18,8 @@ add_library(cutenes-app-lib STATIC
     library/library_index.cpp
     media/wav_writer.cpp
     media/palettes.cpp
+    cheats/cheat_list.cpp
+    cheats/cheat_search.cpp
     persistence/battery_saver.cpp
     persistence/rewind_buffer.cpp
     persistence/state_slots.cpp

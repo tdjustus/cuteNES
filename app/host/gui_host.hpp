@@ -11,6 +11,8 @@
 #include "library/library_index.hpp"
 #include "media/wav_writer.hpp"
 #include "persistence/battery_saver.hpp"
+#include "cheats/cheat_list.hpp"
+#include "cheats/cheat_search.hpp"
 #include "persistence/rewind_buffer.hpp"
 #include "persistence/state_slots.hpp"
 
@@ -100,6 +102,9 @@ public:
         virtual void offerResume(const QString& autoState) = 0;
         // Record Audio started (`path`) or stopped (empty).
         virtual void recordingChanged(const QString& path) = 0;
+        // Tools > Cheats… (search: Cheat Search…), and the list changed.
+        virtual void showCheats(bool search) = 0;
+        virtual void cheatsChanged() = 0;
         virtual void showAbout() = 0;
         virtual void openLibraryFolder() = 0;
         virtual void exit() = 0;
@@ -161,6 +166,12 @@ private:
     api::Result setRegion(api::CallContext& ctx, const api::Json& value);
     api::Result setPalette(api::CallContext& ctx, const QString& name, const QString& path);
     void applyCoreSettings(api::CallContext& ctx);
+    // Cheats (emulation thread): Game Genie codes to the core, a search
+    // snapshot, and the game's file.
+    void applyGameGenie(Machine& machine);
+    static CheatSearch::Snapshot snapshot(Machine& machine);
+    api::Result saveCheats();
+    api::Json cheatsJson() const;
 
     Window& m_window;
     AppSettings& m_settings;
@@ -168,6 +179,9 @@ private:
     std::atomic<api::Session*> m_session{nullptr}; // set on the GUI thread, read on the emulation thread
     bool m_gameOpen = false; // emulation thread
     GameIdentity m_identity; // emulation thread
+    CheatList m_cheats;      // emulation thread: the open game's
+    QString m_cheatsPath;    // emulation thread: its cheats/<game>.json, or empty
+    CheatSearch m_search;    // emulation thread
     QString m_gameName;      // emulation thread: the ROM's file name, for file names
     mutable std::mutex m_slotsMutex;
     StateSlots m_slots; // under m_slotsMutex

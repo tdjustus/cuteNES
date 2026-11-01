@@ -222,18 +222,21 @@ documented ROM behavior. `contracts/core-additions.md`.
   golden catalog, the surface version MINOR bump, and the parity test.
 - [ ] G064 Manual checklist **M6**.
 
-## Phase G7: Cheats and movies (branch `feature/gui-cheats-movies`)
+## Phase G7: Cheats and movies (branches `feature/gui-cheats`, then `feature/gui-movies`)
+
+Split in two, one after the other: cheats (G071 and G070's cheat tests),
+then movies (G072 and G070's movie tests).
 
 - [ ] G070 [US8] Tests first (A11, A12):
   - a movie from power-on and one from a state each replay to the same hash;
   - a movie for a different game is refused;
   - a read-only takeover truncates the movie;
-  - cheat search on a test ROM finds a counter, by value, while the game
+  - [x] cheat search on a test ROM finds a counter, by value, while the game
     runs (US8-2), with 1- and 2-byte values;
-  - an edited value reaches the game at the next frame boundary, without a
+  - [x] an edited value reaches the game at the next frame boundary, without a
     pause (US8-3, FR-053);
-  - a freeze holds it.
-- [ ] G071 [US8] Cheats window: freeze, set and Game Genie, stored per game,
+  - [x] a freeze holds it.
+- [x] G071 [US8] Cheats window: freeze, set and Game Genie, stored per game,
   each switchable on and off. The cheat search window and its commands,
   usable while the game runs, with live values, in-place editing and a
   per-game watch list (FR-053).

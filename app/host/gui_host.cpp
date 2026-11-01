@@ -1,5 +1,6 @@
 #include "host/gui_host.hpp"
 
+#include "cheats/cheat_list.hpp"
 #include "media/palettes.hpp"
 #include "settings/app_settings.hpp"
 #include "settings/key_bindings.hpp"
@@ -316,7 +317,61 @@ void GuiHost::runFrame(Machine& machine)
     }
     const SaveStateBlob state = machine.captureState();
     m_rewind.push(state.data, state.size, machine.controller(Port::One), machine.controller(Port::Two));
+    // Freeze cheats write before every frame (data-model "Cheat").
+    for (const Cheat& cheat : m_cheats.cheats) {
+        if (cheat.enabled && cheat.kind == Cheat::Kind::Freeze) machine.writeMemory(cheat.address, &cheat.value, 1);
+    }
     machine.runFrames(1);
+}
+
+void GuiHost::applyGameGenie(Machine& machine)
+{
+    std::vector<GameGenieCode> codes;
+    for (const Cheat& cheat : m_cheats.cheats) {
+        if (!cheat.enabled || cheat.kind != Cheat::Kind::GameGenie) continue;
+        if (const auto code = decodeGameGenie(cheat.code.toStdString())) codes.push_back(*code);
+    }
+    machine.setGameGenieCodes(codes);
+}
+
+CheatSearch::Snapshot GuiHost::snapshot(Machine& machine)
+{
+    // CPU RAM, and PRG-RAM when the cartridge has it (data-model
+    // "CheatSearch"). Both are plain memory: reading them has no effect.
+    CheatSearch::Snapshot s;
+    s.ram.resize(0x800);
+    machine.readMemory(0x0000, s.ram.size(), s.ram.data());
+    const std::size_t prgRam = std::min<std::size_t>(machine.cartridgeInfo().prgRamSize, 0x2000);
+    s.prgRam.resize(prgRam);
+    if (prgRam > 0) machine.readMemory(0x6000, prgRam, s.prgRam.data());
+    return s;
+}
+
+Result GuiHost::saveCheats()
+{
+    QString error;
+    if (!m_cheatsPath.isEmpty() && !m_cheats.write(m_cheatsPath, m_identity, &error)) {
+        return Result::fail("WriteError", str(error), {{"path", str(m_cheatsPath)}});
+    }
+    m_window.cheatsChanged();
+    return Result::ok();
+}
+
+Json GuiHost::cheatsJson() const
+{
+    Json list = Json::array();
+    for (qsizetype i = 0; i < m_cheats.cheats.size(); ++i) {
+        const Cheat& c = m_cheats.cheats[i];
+        Json item = {{"index", i}, {"label", str(c.label)}, {"kind", str(kindName(c.kind))}, {"enabled", c.enabled}};
+        if (c.kind == Cheat::Kind::GameGenie) {
+            item["code"] = str(c.code);
+        } else {
+            item["address"] = c.address;
+            item["value"] = c.value;
+        }
+        list.push_back(item);
+    }
+    return list;
 }
 
 Result GuiHost::setRewind(CallContext& ctx, bool on)
@@ -501,6 +556,14 @@ Result GuiHost::openRom(CallContext& ctx, const QString& path, std::optional<boo
             : StateSlots(library, id, QFileInfo(path).completeBaseName());
     }
     m_selectedSlot = id.sha1.isEmpty() ? 1 : m_settings.selectedSlot(id.sha1);
+    // The game's cheats (FR-051): freezes start with the first frame, and
+    // Game Genie codes go to the core. Set cheats write only when switched on.
+    m_search = CheatSearch();
+    m_cheatsPath = id.sha1.isEmpty() || !library.isUsable()
+        ? QString()
+        : library.gameFile(Library::Folder::Cheats, id, m_gameName, QStringLiteral(".json"));
+    m_cheats = m_cheatsPath.isEmpty() ? CheatList() : CheatList::read(m_cheatsPath);
+    applyGameGenie(ctx.session.machine());
     m_settings.addRecent(path);
     if (!id.sha1.isEmpty()) m_settings.setLastPlayed(id.sha1, QDateTime::currentDateTimeUtc());
     m_window.gameOpened(QFileInfo(path).absoluteFilePath(), id, battery);
@@ -545,6 +608,10 @@ Result GuiHost::closeGame(CallContext& ctx)
     m_battery.close(ctx.session.machine());
     m_gameOpen = false;
     m_identity = {};
+    m_cheats = CheatList();
+    m_cheatsPath.clear();
+    m_search = CheatSearch();
+    ctx.session.machine().setGameGenieCodes({});
     m_rewind.clear();
     m_rewound.reset();
     m_rewinding = false;
@@ -835,6 +902,174 @@ void GuiHost::registerCommands(api::Registry& registry)
                 QString::fromStdString(args.value("path", "")));
         });
 
+    // --- Cheats (FR-050/051/053, data-model "Cheat", "CheatSearch") ---------
+    add(registry, "gui.show_cheats", "Open the cheats window", s::object({}), s::object({}), false, true,
+        [this](CallContext&, const Json&) {
+            m_window.showCheats(false);
+            return Result::ok();
+        });
+    add(registry, "gui.show_cheat_search", "Open the cheat search (the game keeps running)", s::object({}),
+        s::object({}), false, true, [this](CallContext&, const Json&) {
+            m_window.showCheats(true);
+            return Result::ok();
+        });
+
+    const Json cheatOut = s::object({{"index", s::integer(0, 9999)}, {"label", s::string()},
+        {"kind", s::stringEnum({"freeze", "set", "game_genie"})}, {"address", s::u16()},
+        {"value", s::integer(0, 255)}, {"code", s::string()}, {"enabled", s::boolean()}},
+        {"index", "label", "kind", "enabled"});
+    add(registry, "gui.list_cheats", "The game's cheats", s::object({}),
+        s::object({{"cheats", s::array(cheatOut, 10000, "in order")}}, {"cheats"}), false, true,
+        [this](CallContext&, const Json&) { return Result::ok({{"cheats", cheatsJson()}}); });
+
+    add(registry, "gui.add_cheat",
+        "Add a cheat: freeze (written before every frame) or set (written once) an address to a value, or a "
+        "6- or 8-letter Game Genie code; saved with the game",
+        s::object({{"kind", s::stringEnum({"freeze", "set", "game_genie"})}, {"address", s::u16()},
+                      {"value", s::integer(0, 255)}, {"code", s::string("Game Genie letters")},
+                      {"label", s::string()}, {"enabled", s::boolean("default true")}},
+            {"kind"}),
+        s::object({{"index", s::integer(0, 9999)}}, {"index"}), true, true,
+        [this](CallContext& ctx, const Json& args) {
+            Cheat cheat;
+            cheat.kind = *kindFromName(QString::fromStdString(args["kind"].get<std::string>()));
+            cheat.label = QString::fromStdString(args.value("label", ""));
+            cheat.enabled = args.value("enabled", true);
+            if (cheat.kind == Cheat::Kind::GameGenie) {
+                const std::string code = args.value("code", "");
+                if (!decodeGameGenie(code)) {
+                    return invalid("/code", "a Game Genie code is 6 or 8 of the letters APZLGITYEOXUKSVN");
+                }
+                cheat.code = QString::fromStdString(code).toUpper();
+            } else {
+                if (!args.contains("address") || !args.contains("value")) {
+                    return invalid("", "freeze and set need an address and a value");
+                }
+                cheat.address = args["address"].get<std::uint16_t>();
+                cheat.value = static_cast<std::uint8_t>(args["value"].get<int>());
+            }
+            m_cheats.cheats.push_back(cheat);
+            Machine& machine = ctx.session.machine();
+            // Switched on, freeze and set write at once; freeze then before every frame.
+            if (cheat.enabled && cheat.kind != Cheat::Kind::GameGenie) machine.writeMemory(cheat.address, &cheat.value, 1);
+            applyGameGenie(machine);
+            Result saved = saveCheats();
+            if (saved.isError()) return saved;
+            return Result::ok({{"index", m_cheats.cheats.size() - 1}});
+        });
+
+    const Json byIndex = s::object({{"index", s::integer(0, 9999)}}, {"index"});
+    add(registry, "gui.remove_cheat", "Remove a cheat", byIndex, s::object({}), true, true,
+        [this](CallContext& ctx, const Json& args) {
+            const int i = args["index"].get<int>();
+            if (i >= m_cheats.cheats.size()) return invalid("/index", "there is no such cheat");
+            m_cheats.cheats.removeAt(i);
+            applyGameGenie(ctx.session.machine());
+            return saveCheats();
+        });
+
+    add(registry, "gui.set_cheat_enabled", "Switch a cheat on (set cheats write their value then) or off",
+        s::object({{"index", s::integer(0, 9999)}, {"enabled", s::boolean()}}, {"index", "enabled"}), s::object({}),
+        true, true, [this](CallContext& ctx, const Json& args) {
+            const int i = args["index"].get<int>();
+            if (i >= m_cheats.cheats.size()) return invalid("/index", "there is no such cheat");
+            Cheat& cheat = m_cheats.cheats[i];
+            const bool on = args["enabled"].get<bool>();
+            Machine& machine = ctx.session.machine();
+            if (on && !cheat.enabled && cheat.kind != Cheat::Kind::GameGenie) {
+                machine.writeMemory(cheat.address, &cheat.value, 1);
+            }
+            cheat.enabled = on;
+            applyGameGenie(machine);
+            return saveCheats();
+        });
+
+    add(registry, "gui.cheat_search_reset",
+        "Start a cheat search over CPU RAM and PRG-RAM, with 1- or 2-byte (little-endian) values",
+        s::object({{"size", s::integer(1, 2, "bytes (1)")}}), s::object({{"candidates", s::u64()}}, {"candidates"}),
+        false, true, [this](CallContext& ctx, const Json& args) {
+            m_search.reset(snapshot(ctx.session.machine()), args.value("size", 1));
+            return Result::ok({{"candidates", m_search.count()}});
+        });
+
+    add(registry, "gui.cheat_search_filter",
+        "Keep the addresses whose value now is equal/not_equal/greater/less than `value` (or the previous "
+        "snapshot without one), or changed/unchanged since it; snapshots are taken at frame boundaries",
+        s::object({{"filter", s::stringEnum({"equal", "not_equal", "greater", "less", "changed", "unchanged"})},
+                      {"value", s::integer(0, 65535)}},
+            {"filter"}),
+        s::object({{"candidates", s::u64()}}, {"candidates"}), false, true,
+        [this](CallContext& ctx, const Json& args) {
+            if (!m_search.active()) m_search.reset(snapshot(ctx.session.machine()), 1);
+            const std::string name = args["filter"];
+            const CheatSearch::Filter filter = name == "equal" ? CheatSearch::Filter::Equal
+                : name == "not_equal"                          ? CheatSearch::Filter::NotEqual
+                : name == "greater"                            ? CheatSearch::Filter::Greater
+                : name == "less"                               ? CheatSearch::Filter::Less
+                : name == "changed"                            ? CheatSearch::Filter::Changed
+                                                               : CheatSearch::Filter::Unchanged;
+            std::optional<std::uint32_t> value;
+            if (args.contains("value")) value = args["value"].get<std::uint32_t>();
+            m_search.filter(filter, value, snapshot(ctx.session.machine()));
+            return Result::ok({{"candidates", m_search.count()}});
+        });
+
+    add(registry, "gui.cheat_search_results", "The addresses left, with their values now and at the last filter",
+        s::object({{"max", s::integer(1, 1000, "default 100")}}),
+        s::object({{"candidates", s::u64()}, {"size", s::integer(0, 2)},
+                      {"results", s::array(s::object({{"address", s::u16()}, {"value", s::u64()},
+                                                          {"previous", s::u64()}}),
+                                      1000, "in address order")}},
+            {"candidates", "size", "results"}),
+        false, true, [this](CallContext& ctx, const Json& args) {
+            Json results = Json::array();
+            const auto now = snapshot(ctx.session.machine());
+            const auto max = static_cast<std::size_t>(args.value("max", 100));
+            for (const CheatSearch::Candidate& c : m_search.results(now, max)) {
+                results.push_back({{"address", c.address}, {"value", c.value}, {"previous", c.previous}});
+            }
+            return Result::ok({{"candidates", m_search.count()}, {"size", m_search.size()}, {"results", results}});
+        });
+
+    add(registry, "gui.add_watch", "Keep an address in the game's watch list, with a label",
+        s::object({{"address", s::u16()}, {"size", s::integer(1, 2, "bytes (1)")}, {"label", s::string()}},
+            {"address"}),
+        s::object({{"index", s::integer(0, 9999)}}, {"index"}), true, true,
+        [this](CallContext&, const Json& args) {
+            m_cheats.watches.push_back({QString::fromStdString(args.value("label", "")),
+                args["address"].get<std::uint16_t>(), args.value("size", 1)});
+            Result saved = saveCheats();
+            if (saved.isError()) return saved;
+            return Result::ok({{"index", m_cheats.watches.size() - 1}});
+        });
+
+    add(registry, "gui.remove_watch", "Remove an address from the watch list", byIndex, s::object({}), true, true,
+        [this](CallContext&, const Json& args) {
+            const int i = args["index"].get<int>();
+            if (i >= m_cheats.watches.size()) return invalid("/index", "there is no such watch");
+            m_cheats.watches.removeAt(i);
+            return saveCheats();
+        });
+
+    add(registry, "gui.list_watches", "The watch list with live values", s::object({}),
+        s::object({{"watches", s::array(s::object({{"index", s::integer(0, 9999)}, {"label", s::string()},
+                                                       {"address", s::u16()}, {"size", s::integer(1, 2)},
+                                                       {"value", s::u64()}}),
+                                   10000, "in order")}},
+            {"watches"}),
+        false, true, [this](CallContext& ctx, const Json&) {
+            Json list = Json::array();
+            Machine& machine = ctx.session.machine();
+            for (qsizetype i = 0; i < m_cheats.watches.size(); ++i) {
+                const Watch& w = m_cheats.watches[i];
+                std::uint8_t bytes[2] = {};
+                for (int b = 0; b < w.size; ++b) bytes[b] = machine.peek(static_cast<std::uint16_t>(w.address + b));
+                list.push_back({{"index", i}, {"label", str(w.label)}, {"address", w.address}, {"size", w.size},
+                    {"value", bytes[0] | (w.size == 2 ? bytes[1] << 8 : 0)}});
+            }
+            return Result::ok({{"watches", list}});
+        });
+
     add(registry, "gui.save_state_file", "Save the state to a file; without path, show the file dialog",
         s::object({{"path", s::string("a file path")}}), s::object({{"dialog", s::boolean()}, {"path", s::string()}}),
         true, true, [this](CallContext& ctx, const Json& args) {
@@ -1097,8 +1332,6 @@ void GuiHost::registerCommands(api::Registry& registry)
     };
     const Json none = s::object({});
     const Json fileArgs = s::object({{"path", s::string("a file path; without it, a file dialog")}});
-    later("gui.show_cheats", "Open the cheats window", none, true, "G7");
-    later("gui.show_cheat_search", "Open the cheat search", none, true, "G7");
     later("gui.record_movie", "Record a movie from power-on or the current state",
         s::object({{"path", s::string()}, {"from", s::stringEnum({"power_on", "state"})}}), true, "G7");
     later("gui.play_movie", "Play a movie", fileArgs, true, "G7");

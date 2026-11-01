@@ -63,7 +63,7 @@ for their games still go in this library.
 | `slot-NN.png` | A 256x240 thumbnail taken when the state was saved |
 | `slot-NN.json` | `{"name": …}`: what the menus call the state (by default, the time it was saved) |
 | `.cnm` | A movie: see below |
-| `cheats/<game>.json` | `{"identity": sha1, "cheats": [{"label", "kind": "freeze"\|"set"\|"game_genie", "address", "value", "code", "enabled"}]}` |
+| `cheats/<game>.json` | `{"identity": sha1, "cheats": [{"label", "kind": "freeze"\|"set"\|"game_genie", "address", "value", "code", "enabled"}], "watches": [{"label", "address", "size"}]}`. Game Genie cheats carry `code` and no address or value; the file goes when the lists are empty |
 | `.png` | A screenshot: lossless, native resolution, with no filter or scaling |
 | `.wav` | PCM 16-bit mono at the session's sample rate (48 kHz) |
 | `.dmp` | The core's `memoryDump` layout (001 core-api "Memory dump") |
