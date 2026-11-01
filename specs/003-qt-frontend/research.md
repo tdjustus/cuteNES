@@ -316,6 +316,28 @@ cartridge reads.
 - Packaging runs on tags and weekly, not on every PR. Signing with developer
   certificates is out of scope for 1.0.
 
+## R16. Self-update (#105)
+
+**Decision, to be settled before G096.**
+- **Feed.** The GitHub Releases API for this repository
+  (`/repos/<owner>/cuteNES/releases/latest`), over HTTPS with Qt Network.
+  Tests point it at a local fake feed.
+- **Assets.** Release builds follow a fixed naming scheme, one per OS,
+  architecture and package type (for example
+  `cuteNES-<version>-macos-arm64.zip`), each with a `SHA256SUMS` entry. G093
+  packaging produces them.
+- **Replacement.**
+  - macOS: unpack beside the bundle, swap the `.app` atomically (rename),
+    keeping its signature valid.
+  - Windows: a running `.exe` cannot be overwritten. A small updater
+    process waits for cuteNES to exit, swaps the folder, and starts the new
+    version.
+  - Linux: the AppImage replaces its own file. Distro packages are not
+    replaced (FR-096).
+- **Relaunch.** The new process gets the original `argv`.
+- **Open questions.** Signing the checksum list (not only the checksums),
+  and whether Help gets a manual "Check for Updates…" item.
+
 ## R14. Movie format
 
 **Decision.** `.cnm`, documented in

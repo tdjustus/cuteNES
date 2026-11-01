@@ -30,6 +30,15 @@ the GUI-mode requirements that feature 002 handed over.
   mode out of 1.0? → A: Yes. 1.0 has PNG screenshots, WAV audio recording,
   and nearest, smooth and scanline filters.
 
+### Session 2026-10-31
+
+- Q: Can cuteNES update itself? → A: Yes, in 1.0, and opt-in only. The
+  first launch asks whether to turn it on. With it on, each launch (never
+  while a game runs) looks at GitHub Releases for a newer build for this
+  platform and offers Install, Ask Again Later, Skip This Version or See
+  Details. Install replaces the current version, quits, and starts the new
+  one with the same arguments (US10, FR-090 to FR-097, #105).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Pick a game and play it (Priority: P1)
@@ -374,6 +383,41 @@ and compare the pattern table with the CHR data.
 
 ---
 
+### User Story 10 - Updates when I want them (Priority: P3)
+
+As a player, I can let cuteNES tell me when a new version is out and
+install it for me, and if I never opt in it never goes online.
+
+**Why this priority**: Most users never visit a releases page, so fixes do
+not reach them. It is opt-in because an emulator has no other reason to use
+the network.
+
+**Independent Test**: Point the update check at a local fake release feed
+with a newer version for this platform. Launch with no game: the prompt
+appears, and Install replaces a copy of the application, which restarts with
+the same arguments. Launch with a ROM argument: no prompt.
+
+**Acceptance Scenarios**:
+
+1. **Given** the first launch, **Then** cuteNES asks whether to check for
+   updates, and nothing is requested from the network unless the user says
+   yes. The answer can be changed later in Settings.
+2. **Given** update checks on and a newer release with a build for this
+   platform, **When** cuteNES launches and no game is running, **Then** it
+   shows the new version with Install, Ask Again Later, Skip This Version and
+   See Details.
+3. **Given** a game started from the command line, or started before the
+   check finishes, **Then** no prompt appears on that launch.
+4. **Given** Install, **Then** the build is downloaded and verified, replaces
+   the current version, and cuteNES quits and starts the new version with the
+   same command-line arguments.
+5. **Given** Skip This Version, **Then** that version is never offered again,
+   and a newer one is. **Given** Ask Again Later, **Then** the next launch
+   asks again. **Given** See Details, **Then** the release's GitHub page
+   opens in the browser.
+
+---
+
 ### Edge Cases
 
 - **Same ROM content in several files.** Both are listed, and they share one
@@ -407,6 +451,12 @@ and compare the pattern table with the CHR data.
   the hotkey wins only if the user confirms.
 - **The library folder is on a read-only medium.** The library browser still
   lists ROMs. Saving reports the error and offers Settings > Library.
+- **An update download fails, is cut short or does not verify.** Nothing is
+  replaced; the current version keeps running, and the user is told.
+- **cuteNES cannot write where it is installed** (a system folder, a
+  distro package). The prompt offers See Details instead of Install.
+- **Offline, or GitHub unreachable.** The check fails quietly; launch is
+  never delayed or blocked by it.
 
 ## Requirements *(mandatory)*
 
@@ -616,6 +666,37 @@ and compare the pattern table with the CHR data.
   keyboard alone, and controls MUST carry accessible names for screen
   readers.
 
+**Updates (#105)**
+
+- **FR-090**: Update checks MUST be off until the user turns them on. The
+  first launch MUST ask once, and Settings MUST let the user change the
+  answer. With them off, the application MUST make no network request for
+  updates.
+- **FR-091**: With checks on, the application MUST check once per launch,
+  in the background, without delaying the window or play. It MUST ask only
+  when no game is running; a game started from the command line or before
+  the check finishes suppresses the prompt for that launch.
+- **FR-092**: The check MUST look at this project's GitHub Releases for the
+  newest non-prerelease version above the running one that has a build for
+  the running OS, architecture and package type, and nothing else (no
+  telemetry, no identifiers beyond what an HTTPS request carries).
+- **FR-093**: The prompt MUST show the new version and offer Install, Ask
+  Again Later, Skip This Version and See Details. Skip MUST be remembered per
+  version; See Details MUST open the release page in the browser.
+- **FR-094**: Install MUST download over HTTPS and verify the build against
+  a checksum published with the release before replacing anything. Any
+  failure MUST leave the installed version untouched.
+- **FR-095**: After a verified download, the new version MUST replace the
+  current one in place, and the application MUST quit (with the usual
+  battery save) and start the new version with the same command-line
+  arguments.
+- **FR-096**: Where the application cannot replace itself (no write access,
+  a package-manager install), the prompt MUST offer See Details instead of
+  Install.
+- **FR-097**: The update setting MUST be readable and settable through
+  `gui.get_settings`/`gui.set_setting` (FR-070). No automation command may
+  install an update: replacing the application needs the user's click.
+
 ### Core additions this feature needs
 
 These menu features need core capabilities the core API does not have yet.
@@ -649,6 +730,9 @@ keeps parity.
 - **Settings**: video, audio, input bindings, hotkeys, emulation, library
   location, servers. Stored per user, outside the library.
 - **GUI command**: one `gui.*` entry per menu action or setting (FR-070).
+- **Update preference**: asked or not, on or off, and the skipped versions.
+- **Release**: a version, its page and one build per platform, each with a
+  checksum.
 
 ## Success Criteria *(mandatory)*
 
@@ -677,6 +761,10 @@ keeps parity.
   AI state changes) passes in GUI mode.
 - **SC-009**: The application builds and its automated GUI tests pass on
   Windows, macOS and Linux in CI.
+- **SC-010**: With update checks off, a full session makes no network
+  request for updates. With them on, an update installed from a test
+  release restarts as the new version with the same arguments on Windows,
+  macOS and Linux, and a corrupted download leaves the old version working.
 
 ## Assumptions
 
@@ -689,8 +777,8 @@ keeps parity.
   the core.
 - **Game identity**: the content checksum excludes the header, so that a
   re-headered dump keeps its saves.
-- **No network features**: no box-art scraping, update checks, netplay or
-  achievements. Thumbnails come from the user's own screenshots and states.
+- **No network features** apart from opt-in update checks (US10): no
+  box-art scraping, netplay or achievements. Thumbnails come from the user's own screenshots and states.
 - **Accessories**: only the two standard controllers, as in the core
   (Zapper, Four Score and others are out of scope).
 - **Video recording**: needs an encoder dependency and is out of scope.
