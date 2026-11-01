@@ -329,6 +329,8 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_automationTimer = new QTimer(this);
     m_automationTimer->setInterval(250);
     connect(m_automationTimer, &QTimer::timeout, this, &MainWindow::updateAutomation);
+    // Leaving the application can pass through a moment with no active window.
+    connect(qApp, &QGuiApplication::applicationStateChanged, this, [this] { QTimer::singleShot(0, this, &MainWindow::followFocus); });
     connect(m_automationTimer, &QTimer::timeout, this, [this] {
         // A device that goes away never stops the game (FR-042).
         switch (m_audio->poll()) {
@@ -1838,6 +1840,15 @@ void MainWindow::followFocus()
     // Our own dialogs keep the game going; another application pauses it
     // (FR-036), and coming back resumes what this paused.
     QWidget* active = QApplication::activeWindow();
+    // No active window while one of ours is open is a handover (a dialog
+    // opening or closing, which some platforms never activate), not the
+    // player leaving; nor is it while the application is still active.
+    if (!active) {
+        if (QGuiApplication::applicationState() == Qt::ApplicationActive) return;
+        for (QWidget* top : QApplication::topLevelWidgets()) {
+            if (top != this && top->isVisible() && top->parentWidget() && top->parentWidget()->window() == this) return;
+        }
+    }
     const bool ours = active == this || (active && active->parentWidget() && active->parentWidget()->window() == this);
     if (!ours) {
         if (!m_pausedByFocus && m_settings.emulation().pauseWhenInactive && m_runState == QLatin1String("Running")) {
