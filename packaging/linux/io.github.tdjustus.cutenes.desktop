@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=cuteNES
+GenericName=NES Emulator
+Comment=Play NES games, and let automation play along
+Exec=cutenes %f
+Icon=cutenes
+Terminal=false
+Categories=Game;Emulator;
+MimeType=application/x-nes-rom;
+Keywords=NES;Nintendo;emulator;

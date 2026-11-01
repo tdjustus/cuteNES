@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The .nes file type, so file managers offer cuteNES for NES ROMs
+     (research R13). shared-mime-info already knows it on most systems;
+     this makes sure it does. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-nes-rom">
+    <comment>NES ROM</comment>
+    <glob pattern="*.nes"/>
+    <magic priority="50">
+      <match type="string" offset="0" value="NES&#x1A;"/>
+    </magic>
+  </mime-type>
+</mime-info>

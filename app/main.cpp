@@ -7,6 +7,7 @@
 #include <cutenes/qt/media_runtime.hpp>
 
 #include <QApplication>
+#include <QIcon>
 #include <QMessageBox>
 
 #include <cstdio>
@@ -17,6 +18,7 @@ int main(int argc, char* argv[])
     QApplication::setApplicationName(QStringLiteral("cuteNES"));
     QApplication::setOrganizationName(QStringLiteral("cuteNES"));
     QApplication::setApplicationVersion(QStringLiteral(CUTENES_APP_VERSION));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/cutenes.png")));
 
     const cutenes::app::CommandLine cli = cutenes::app::parseCommandLine(QApplication::arguments());
     if (cli.exitCode) {

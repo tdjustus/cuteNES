@@ -387,3 +387,28 @@ needs one look by hand:
 3. Settings > Video shows "Now: in step with the 60.00 Hz display" under
    the pacing setting.
 
+
+### Packages (G093, #101)
+
+Automated by the CI `package` job (on tags, the weekly scheduled run and
+by hand, never on pull requests): each platform's package is built from the installed app
+component, the app starts from it (`--version`; on Windows it stays up for
+ten seconds) and `cutenes-server --help` runs, then SHA256SUMS lists all
+three. The macOS zip was also downloaded and checked against SHA256SUMS,
+and ran from its own bundled frameworks. What only a person can judge:
+
+1. From the artifacts of the latest run that packaged (Actions > Build > Artifacts),
+   download the package for each machine you have and check it against
+   SHA256SUMS.
+2. macOS: unzip, then open cutenes.app. Gatekeeper asks once (ad-hoc
+   signed: right-click > Open). The Dock and Finder show the cuteNES icon.
+3. Windows: unzip anywhere, run cutenes.exe on a machine without Qt or the
+   Visual C++ redistributable. SmartScreen may warn (unsigned). The window
+   and taskbar show the icon.
+4. Linux: `chmod +x` the AppImage and run it (libfuse2 needed). The window
+   shows the icon.
+5. On each: open a game, hear sound, use a gamepad, and connect an MCP
+   client to the packaged `cutenes-server --attach` (in the bundle on
+   macOS, beside the app elsewhere; on Linux it cannot yet be started
+   from the AppImage (#134), so attach from a build for now). Note anything missing (a plugin, a
+   codec, a font).
