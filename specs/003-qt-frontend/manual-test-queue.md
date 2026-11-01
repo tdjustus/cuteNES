@@ -403,7 +403,9 @@ and ran from its own bundled frameworks. What only a person can judge:
 2. macOS: unzip, then open cutenes.app. Gatekeeper asks once (ad-hoc
    signed: right-click > Open). The Dock and Finder show the cuteNES icon.
 3. Windows: unzip anywhere, run cutenes.exe on a machine without Qt or the
-   Visual C++ redistributable. SmartScreen may warn (unsigned). The window
+   Visual C++ redistributable. (The first zips had Qt in a `bin/` folder
+   and started only where Qt was on PATH; the zip is now one flat folder
+   and the CI smoke test runs without Qt on PATH, so this checks the fix.) SmartScreen may warn (unsigned). The window
    and taskbar show the icon.
 4. Linux: `chmod +x` the AppImage and run it (libfuse2 needed). The window
    shows the icon.
