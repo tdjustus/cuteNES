@@ -363,9 +363,9 @@ jobs:
           xvfb-run -a "./$name" --version
           # The server is reachable both ways AppRun offers (#134), and
           # without them the app still starts.
-          "./$name" server --help | grep -- --attach >/dev/null
+          "./$name" server --help 2>&1 | grep -- --attach >/dev/null
           ln -s "$name" cutenes-server
-          ./cutenes-server --help | grep -- --attach >/dev/null
+          ./cutenes-server --help 2>&1 | grep -- --attach >/dev/null
           rm cutenes-server
           echo "PACKAGE=$name" >> "$GITHUB_ENV"
 
