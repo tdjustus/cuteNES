@@ -8,7 +8,7 @@ the constitution, `README.md` and `CLAUDE.md` point here.
 
 | Phase | Integration branch | Releases are cut by |
 |---|---|---|
-| **Pre-1.0** (now) | `main` | tagging `main` (`core-v<version>`) |
+| **Pre-1.0** (now) | `main` | tagging `main` (`v<version>` for the app, `core-v<version>` for the core; see [Versions and tags](#versions-and-tags)) |
 | **1.0 and later** | `development` (long-lived, never deleted) | merging `development` into `main`, then tagging `main` |
 
 The `development` branch does not exist until 1.0 ships. Version 1.0 is
@@ -61,7 +61,7 @@ is resolved**, meaning the GitHub milestone `1.0` has no open issues (see
 
 Defined in `.github/workflows/build.yml`.
 
-- **Triggers:** `pull_request`, tags `core-v*`, a weekly schedule, and
+- **Triggers:** `pull_request`, tags `v*` and `core-v*`, a weekly schedule, and
   manual dispatch. There is deliberately no run on pushes to branches or on
   `main` after a merge: a PR is tested up to date with `main`, so a
   post-merge run would repeat an already-tested tree. The weekly run catches
@@ -74,7 +74,7 @@ Defined in `.github/workflows/build.yml`.
   instrumented jobs (Windows Debug and ASan + UBSan) run only the fast groups
   (`unit`, `tier1` including the golden hashes, `behavior`) on PRs; the
   on-screen-verdict groups (`playtest`, `tier2`, `corpus`) take about five times
-  as long and mostly re-exercise the same code. Tags (`core-v*`) and the weekly
+  as long and mostly re-exercise the same code. Tags (`v*`, `core-v*`) and the weekly
   schedule run everything under every job, so the full instrumented suite still
   gates a release.
 - **`ci-ok`** aggregates them and is the only required check. Docs-only PRs
@@ -102,6 +102,51 @@ roadmapped features". Labels: `bug`, `feature`, `test`, `ci`,
 - Scope is set by the maintainer: a suggested feature is not a milestone
   item until the maintainer agrees to it.
 
+## Versions and tags
+
+Two things are versioned, each with its own semantic version and tag, because
+each has its own users:
+
+| What | Version lives in | Tag | Who reads it |
+|---|---|---|---|
+| The application (GUI, servers, packages) | `project(cutenes VERSION ...)` in the top-level `CMakeLists.txt`: About, the macOS bundle, `User-Agent`, the update check and the package names all take it from there | `v<major>.<minor>.<patch>`, or `v<...>-alpha.<n>` / `-beta.<n>` / `-rc.<n>` for a prerelease | people downloading a package, and the self-update (research R16) |
+| The emulation core (the library) | `core/include/cutenes/version.hpp` and `core/src/cutenes/version.cpp` (and `tests/unit/test_version.cpp`) | `core-v<major>.<minor>.<patch>` | projects embedding the core (README "Using the core") |
+
+- **Why separate.** The core's version is written into every save state, and
+  until 1.0 a state loads only into the exact core version that wrote it
+  (`IncompatibleCoreVersion`). Raising it makes every user's save states
+  unusable, so it changes only when the core itself is released, not with
+  every app release.
+- **Which part to raise.** Pre-1.0, a release with new features raises the
+  minor version, and a release with fixes only raises the patch version.
+  From 1.0 on, an incompatible change raises the major version.
+- **Prereleases.** An alpha, beta or release candidate is tagged with the
+  `-<kind>.<n>` suffix on the version it leads to, and published as a
+  GitHub prerelease. The self-update never offers a prerelease (R16), so
+  testers opt in by downloading it by hand.
+- History: the first app alpha predates this scheme and is tagged
+  `core-v0.1.0-alpha.1`.
+
+## Publishing a release
+
+Each step publishes something, so the maintainer asks for the release
+before any of it is done.
+
+1. On a `chore/version-<version>` branch, raise the version (above) and
+   anything in the docs that names it, run the full suite, and merge the
+   pull request as usual.
+2. Tag the merge on `main` (`git tag -a v<version> -m ...`, then
+   `git push origin v<version>`). The tag's CI runs the full suite on every
+   OS and the `package` and `package-sums` jobs (`docs/packaging.md`).
+3. When that run is green, download its artifacts
+   (`gh run download <run> -D <empty folder>`) and check each package
+   against `SHA256SUMS` (`shasum -a 256 -c SHA256SUMS`).
+4. Create the release from the tag with every package and `SHA256SUMS`
+   attached (`gh release create v<version> <files> --title ... --notes-file
+   ...`, plus `--prerelease` for an alpha, beta or release candidate). The
+   notes say what changed since the last release, what is known not to
+   work, how to open an unsigned build, and the licenses.
+
 ## Releasing 1.0
 
 When the milestone has no open issues:
@@ -112,7 +157,8 @@ When the milestone has no open issues:
 3. Protect `development`: pull request required, no deletion. (Branch
    protection also stops delete-branch-on-merge from removing it when a
    release PR merges.)
-4. Tag `core-v1.0.0` from `main` once its CI is green.
+4. Tag `v1.0.0` (and `core-v1.0.0`) from `main` once its CI is green, and
+   publish the release as in [Publishing a release](#publishing-a-release).
 
 These steps change repository settings and publish a release, so the
 maintainer approves each one.
@@ -123,7 +169,8 @@ maintainer approves each one.
   at a time, with the same rules as above.
 - A release is a pull request that merges `development` into `main`. It runs
   CI once more as the release gate (one extra run per release, not per
-  change). Tag `core-v<version>` on `main` after that CI is green.
+  change). Tag `v<version>` (and `core-v<version>` when the core changed) on
+  `main` after that CI is green.
 - **After every release, merge `main` back into `development`.** The merge
   commit on `main` is not on `development`, and without the back-merge the
   "must be up to date" rule blocks the next release PR.

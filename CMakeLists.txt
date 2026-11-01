@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(cutenes VERSION 0.1.0 LANGUAGES CXX)
+# The oldest macOS the app supports (plan.md: macOS 13+). Set before
+# project(), which reads it; without it the build targets the SDK's own
+# version, and a package built on a new runner refuses to start on any
+# older macOS. A -D on the command line still wins.
+set(CMAKE_OSX_DEPLOYMENT_TARGET 13.0 CACHE STRING "Oldest macOS to run on")
+
+project(cutenes VERSION 0.2.0 LANGUAGES CXX)
 
 if(WIN32)
     # A Windows package is one flat folder: Windows finds DLLs beside the

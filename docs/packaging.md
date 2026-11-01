@@ -64,6 +64,15 @@ packaging a CMake and Qt program, not to this emulator:
   `--prefix` on Windows (`Given qt.conf path is not an absolute path`).
   The CI passes an absolute one, converted with `cygpath -m` because the
   step runs in Git Bash and CMake on Windows wants `D:/...`, not `/d/...`.
+- **The oldest macOS.** Nothing set `CMAKE_OSX_DEPLOYMENT_TARGET`, so the
+  build targeted the SDK it was built with. On the macOS 26 runner the app
+  then refused to start on anything older, and nothing in the build said
+  so. The top-level `CMakeLists.txt` sets 13.0 before `project()`, matching
+  plan.md's macOS 13+. Qt 6.8 supports macOS 12 and later. The package job
+  reads each binary's `minos` with `otool -l` and fails above 13. The
+  lesson applies to any package: the build machine's OS is not the
+  user's, so pin the oldest supported version and check the built binary
+  for it.
 - **One flat folder on Windows.** Qt's deploy script puts the Qt DLLs,
   `qt.conf` and `plugins/` relative to `CMAKE_INSTALL_BINDIR`, which
   defaults to `bin`, while the executables were installed at the top. Windows
