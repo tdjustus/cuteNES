@@ -317,3 +317,13 @@ cutenes [--fullscreen] [--library DIR] [--load-state SLOT|FILE]
   once.
 - **Windows SmartScreen warns about the app.** Choose More info, then Run
   anyway.
+
+### Reporting a problem
+
+**Help > Open Log Folder** shows cuteNES's log: `cutenes.log` for this run
+and `cutenes.previous.log` for the one before, so if cuteNES went wrong and
+you restarted it, the earlier file has what happened. Attach the right one
+to a bug report on
+[GitHub](https://github.com/tdjustus/cuteNES/issues). The log holds file
+paths (the games you opened) but never your server tokens; look it over
+before sharing it.

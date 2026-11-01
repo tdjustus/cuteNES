@@ -332,6 +332,37 @@ shortcut list is this file's: the `GuiUserGuide` test checks that the
 guide lists every shortcut the tables above give, and the game input
 defaults below, and nothing else.
 
+Open Log Folder shows the log folder in the file manager (made if missing)
+and returns its `path`.
+
+### The log
+
+A GUI program has no console, so what it saw when something went wrong is
+kept in a file, for bug reports (`app/log/app_log.hpp`):
+- **Where.** `<AppLocalData>/logs`, beside the debug folder and outside the
+  library. Qt's AppLocalDataLocation is the organization, then the
+  application (both "cuteNES"): `~/Library/Application
+  Support/cuteNES/cuteNES/logs` on macOS,
+  `%LOCALAPPDATA%\cuteNES\cuteNES\logs` on Windows and
+  `~/.local/share/cuteNES/cuteNES/logs` on Linux.
+- **Files.** Each run writes `cutenes.log` and keeps the run before as
+  `cutenes.previous.log`, so the run that went wrong survives the restart
+  after it. `--help` and `--version` leave them alone.
+- **Lines.** `<time> <level> <category>: <message>`, the time ISO 8601
+  local with milliseconds, the level `debug`, `info`, `warning`, `critical`
+  or `fatal`. A message's own newlines become ` | `, so one line is one
+  entry. The first line is the versions (as About shows them) and the
+  system.
+- **What.** Every Qt message, Qt's own included (they still reach the
+  terminal too), and the application's, category `cutenes`: each error or
+  warning it shows the user (an error with its command and error name, as
+  in `gui.quick_load: NotFound …`), the games it opens (path, mapper,
+  region) and closes, and the servers it starts (by address) and stops.
+  Never a token. Automation's own failed calls are the client's to report
+  and are not logged.
+- **Limit.** A run stops at 10 MB with the line "the log is full; nothing
+  more is logged this run".
+
 ## Items from later phases
 
 Every item above is in the menus from G034 on. An item whose feature lands
@@ -340,6 +371,10 @@ and its command is in the catalog with these arguments but returns
 `NotImplemented` (002 command catalog), with `data.phase` naming the phase.
 Settings pages that do not exist yet do the same through
 `gui.show_settings`.
+
+Since Open Log Folder (G9) no item is a later phase's: every menu item
+works. The rule stays for features added after 1.0, and the gui-audit test
+still checks it.
 
 ## Window commands
 

@@ -7,6 +7,7 @@
 #include "dialogs/ppu_viewer.hpp"
 #include "dialogs/trace_logger.hpp"
 #include "dialogs/user_guide.hpp"
+#include "log/app_log.hpp"
 #include "dialogs/key_bindings_page.hpp"
 #include "dialogs/settings_dialog.hpp"
 #include "library/library_browser.hpp"
@@ -130,7 +131,8 @@ const QStringList kImplemented = {
     QStringLiteral("gui.open_rom"), QStringLiteral("gui.show_cheats"), QStringLiteral("gui.show_cheat_search"), QStringLiteral("gui.set_region"), QStringLiteral("gui.set_palette"), QStringLiteral("gui.close_game"),
     QStringLiteral("gui.toggle_pause"), QStringLiteral("gui.reset"),
     QStringLiteral("gui.power_cycle"), QStringLiteral("gui.exit"),
-    QStringLiteral("gui.show_about"), QStringLiteral("gui.show_user_guide"), QStringLiteral("gui.show_library"),
+    QStringLiteral("gui.show_about"), QStringLiteral("gui.show_user_guide"), QStringLiteral("gui.open_log_folder"),
+    QStringLiteral("gui.show_library"),
     QStringLiteral("gui.open_library_folder"), QStringLiteral("gui.clear_recent"),
     QStringLiteral("gui.show_settings"), QStringLiteral("gui.save_state"),
     QStringLiteral("gui.load_state"), QStringLiteral("gui.quick_save"),
@@ -1091,6 +1093,7 @@ void MainWindow::showError(const QString& name, const api::Error& error)
     if (error.data.contains("error") && error.data["error"].is_string()) {
         text += QStringLiteral(" (%1)").arg(QString::fromStdString(error.data["error"].get<std::string>()));
     }
+    qCWarning(lcApp).noquote() << name + QLatin1Char(':') << QString::fromStdString(error.name) << text;
     // An empty slot, or nothing to undo, is worth a note, not a dialog
     // in the middle of play.
     if (error.name == "NotFound" && (name == QLatin1String("gui.load_state") || name == QLatin1String("gui.quick_load")
@@ -1108,6 +1111,7 @@ void MainWindow::showError(const QString& name, const api::Error& error)
 
 void MainWindow::showWarning(const QString& message)
 {
+    qCWarning(lcApp).noquote() << "Told the user:" << message;
     auto* box = new QMessageBox(QMessageBox::Information, QStringLiteral("cuteNES"), message, QMessageBox::Ok, this);
     box->setObjectName(QStringLiteral("warning"));
     box->setAttribute(Qt::WA_DeleteOnClose);
@@ -1161,6 +1165,19 @@ void MainWindow::showSettings(const QString& page)
     }, Qt::QueuedConnection);
 }
 
+QString MainWindow::openLogFolder()
+{
+    QString folder = m_options.logDir;
+    if (folder.isEmpty()) folder = AppLog::directory();
+    if (folder.isEmpty()) folder = AppLog::defaultDirectory();
+    QDir().mkpath(folder);
+    QMetaObject::invokeMethod(this, [this, folder] {
+        if (m_options.openExternally) QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+        emit logFolderOpened(folder);
+    }, Qt::QueuedConnection);
+    return folder;
+}
+
 void MainWindow::openLibraryFolder()
 {
     QMetaObject::invokeMethod(this, [this] {
@@ -1184,6 +1201,10 @@ void MainWindow::gameOpened(const QString& path, const GameIdentity&, const Batt
 {
     m_consoleRate = m_session->machine().region() == Region::Pal ? kPalFps : kNtscFps;
     playbackChanged(playback()); // the speed applies to the new game's rate
+    qCInfo(lcApp).noquote() << QStringLiteral("Opened %1 (mapper %2, %3)")
+                                   .arg(QDir::toNativeSeparators(path))
+                                   .arg(m_session->machine().cartridgeInfo().mapperId)
+                                   .arg(m_consoleRate == kPalFps ? QStringLiteral("PAL") : QStringLiteral("NTSC"));
     QMetaObject::invokeMethod(this, [this, path] {
         m_romName = QFileInfo(path).fileName();
         setWindowTitle(tr("%1 — cuteNES").arg(m_romName));
@@ -1203,6 +1224,7 @@ void MainWindow::gameOpened(const QString& path, const GameIdentity&, const Batt
 
 void MainWindow::gameClosed()
 {
+    qCInfo(lcApp) << "Closed the game";
     m_view->clearFrame();
     QMetaObject::invokeMethod(this, [this] {
         m_romName.clear();
@@ -1316,6 +1338,8 @@ void MainWindow::applyServers()
 {
     AppSettings::ServerSettings wanted = m_settings.servers();
     QString error;
+    const bool apiBefore = m_servers->api().on;
+    const bool mcpBefore = m_servers->mcp().on;
     if (!m_servers->apply(wanted.apiEnabled, wanted.apiPort, wanted.mcpEnabled, wanted.mcpPort, &error)) {
         // A port in use: what could not start is turned off (spec edge case).
         wanted.apiEnabled = m_servers->api().on;
@@ -1323,6 +1347,13 @@ void MainWindow::applyServers()
         m_settings.setServers(wanted);
         showWarning(error);
     }
+    // By address only: the tokens stay in their files.
+    const auto logChange = [](const char* name, bool before, const Servers::Listener& now) {
+        if (now.on && !before) qCInfo(lcApp).noquote() << name << "listening at" << now.url;
+        if (!now.on && before) qCInfo(lcApp).noquote() << name << "stopped";
+    };
+    logChange("API", apiBefore, m_servers->api());
+    logChange("MCP server", mcpBefore, m_servers->mcp());
     updateSettingsDialog();
     updateAutomation();
 }
