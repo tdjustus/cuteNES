@@ -7,6 +7,7 @@
 // a growing delay.
 
 #include <cutenes/media.hpp>
+#include <cutenes/qt/audio_pacer.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -21,7 +22,7 @@ namespace cutenes::qt {
 class AudioOutput final : public IAudioSink {
 public:
     // The largest nudge to the playback rate (R4).
-    static constexpr double kMaxRateAdjust = 0.005;
+    static constexpr double kMaxRateAdjust = AudioPacer::kMaxRateAdjust;
 
     explicit AudioOutput(int sampleRate = 48000);
     ~AudioOutput();
@@ -90,9 +91,7 @@ private:
     SDL_AudioStream* m_stream = nullptr;
     std::string m_error;
     std::string m_device; // the open device's name; empty: the default
-    bool m_playing = false; // the device is consuming (primed)
-    double m_rate = 1.0;
-    std::uint64_t m_underruns = 0;
+    AudioPacer m_pacer; // whether the device plays, and at what rate
     std::atomic<int> m_targetMs{64};
     std::atomic<double> m_speed{1.0};
     std::atomic<bool> m_muted{false};

@@ -61,8 +61,7 @@ bool AudioOutput::openLocked(const std::string& device)
     }
     // The device starts paused; onSamples starts it once a buffer is queued.
     m_error.clear();
-    m_playing = false;
-    m_rate = 1.0;
+    m_pacer.reset();
     applyGain();
     return true;
 }
@@ -118,7 +117,7 @@ void AudioOutput::close()
         SDL_DestroyAudioStream(m_stream);
         m_stream = nullptr;
     }
-    m_playing = false;
+    m_pacer.stop();
 }
 
 bool AudioOutput::isOpen() const
@@ -146,31 +145,17 @@ void AudioOutput::onSamples(const std::int16_t* pcm, std::size_t count, std::uin
         return;
     }
     const int target = m_sampleRate * m_targetMs.load() / 1000;
-    if (m_playing && queuedSamples() == 0) {
-        ++m_underruns;
-    }
+    const int before = queuedSamples();
     SDL_PutAudioStreamData(m_stream, pcm, static_cast<int>(count * sizeof(std::int16_t)));
-    const int queued = queuedSamples();
-
-    if (!m_playing) {
-        if (queued >= target) {
-            SDL_ResumeAudioStreamDevice(m_stream);
-            m_playing = true;
-        }
-        return;
-    }
-    if (queued > 4 * target) {
-        // Far behind (the machine was stalled): drop the backlog instead of
-        // playing it seconds late.
+    const bool wasPlaying = m_pacer.playing();
+    const AudioPacer::Action action = m_pacer.queued(before, queuedSamples(), target);
+    if (action.start) SDL_ResumeAudioStreamDevice(m_stream);
+    if (!wasPlaying) return;
+    if (action.dropBacklog) {
         SDL_ClearAudioStream(m_stream);
         SDL_PutAudioStreamData(m_stream, pcm, static_cast<int>(count * sizeof(std::int16_t)));
     }
-    // Proportional control on the queue depth, smoothed so the pitch never
-    // wobbles audibly: above target, play slightly faster; below, slower.
-    const double error = static_cast<double>(queued - target) / target;
-    const double wanted = 1.0 + std::clamp(error * kMaxRateAdjust, -kMaxRateAdjust, kMaxRateAdjust);
-    m_rate += (wanted - m_rate) * 0.05;
-    SDL_SetAudioStreamFrequencyRatio(m_stream, static_cast<float>(m_rate * m_speed.load()));
+    SDL_SetAudioStreamFrequencyRatio(m_stream, static_cast<float>(action.rate * m_speed.load()));
 }
 
 void AudioOutput::setSpeed(double speed)
@@ -192,7 +177,7 @@ void AudioOutput::clear()
     }
     SDL_PauseAudioStreamDevice(m_stream);
     SDL_ClearAudioStream(m_stream);
-    m_playing = false;
+    m_pacer.stop();
 }
 
 void AudioOutput::setTargetLatencyMs(int ms)
@@ -204,8 +189,8 @@ AudioOutput::Stats AudioOutput::stats() const
 {
     std::lock_guard lock(m_mutex);
     Stats s;
-    s.rate = m_rate;
-    s.underruns = m_underruns;
+    s.rate = m_pacer.rate();
+    s.underruns = m_pacer.underruns();
     if (m_stream) {
         s.queuedMs = queuedSamples() * 1000 / m_sampleRate;
     }

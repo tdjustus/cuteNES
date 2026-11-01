@@ -372,3 +372,18 @@ By hand, once:
 3. Turn the API off in Settings: the client's next call fails with
    ShuttingDown and the game keeps playing.
 
+### Pacing soak (G092, #101)
+
+Automated by `GuiPacing` (Release): ten simulated minutes per display (60,
+59.94, 120 and 144 Hz for NTSC, 50 Hz for PAL), with a sound card a little
+fast or slow. No underrun and no dropped or repeated frame where synced to
+the display. The simulation cannot see the real display's timing, so SC-004
+needs one look by hand:
+
+1. Release build, a 60 Hz display, Super Mario Bros. Play for ten minutes
+   (World 1-1 to 1-4 is about right) with headphones on.
+2. Listen for crackles or gaps, and watch the scrolling for a hitch or a
+   double step. Note any, with the time it happened.
+3. Settings > Video shows "Now: in step with the 60.00 Hz display" under
+   the pacing setting.
+
