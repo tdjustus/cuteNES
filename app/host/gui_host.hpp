@@ -60,6 +60,8 @@ public:
         // servers.* changed: the window starts or stops the listeners to
         // match, on its own thread (a call can turn off its own listener).
         virtual void serversChanged() = 0;
+        // updates.* changed: Settings > Updates shows it.
+        virtual void updatesChanged() = 0;
         // How the game plays now (speed, fast-forward, rewind): the window
         // sets its frame clock and the sound to match.
         struct Playback {

@@ -4,6 +4,7 @@
 #include "media/palettes.hpp"
 #include "settings/app_settings.hpp"
 #include "settings/key_bindings.hpp"
+#include "update/update_feed.hpp"
 
 #include <cutenes/api/schema.hpp>
 #include <cutenes/api/session.hpp>
@@ -34,7 +35,7 @@ namespace {
 constexpr qsizetype kChunk = 65536;
 
 const std::vector<std::string> kSettingsPages = {
-    "video", "audio", "input", "hotkeys", "emulation", "library", "servers"};
+    "video", "audio", "input", "hotkeys", "emulation", "library", "servers", "updates"};
 // The settings groups and keys implemented so far (data-model "Settings
 // keys"); later phases add theirs.
 const std::vector<std::string> kSettingKeys = {"video.scale", "video.fullscreen", "video.integerScaling",
@@ -44,7 +45,7 @@ const std::vector<std::string> kSettingKeys = {"video.scale", "video.fullscreen"
     "emulation.pauseWhenInactive", "emulation.resumeOnOpen", "emulation.fastForwardSpeed", "emulation.region",
     "library.root", "servers.apiEnabled", "servers.apiPort",
     "servers.mcpEnabled", "servers.mcpPort", "input.turboRate", "input.allowOppositeDirections",
-    "input.pauseOnGamepadDisconnect"};
+    "input.pauseOnGamepadDisconnect", "updates.check", "updates.asked", "updates.skippedVersion"};
 
 void add(api::Registry& registry, const char* name, std::string description, Json input,
     Json output, bool mutating, bool needsRom, std::function<Result(CallContext&, const Json&)> handler)
@@ -2131,11 +2132,12 @@ void GuiHost::registerCommands(api::Registry& registry)
         });
 
     add(registry, "gui.get_settings", "Every setting's value and schema, or one group's",
-        s::object({{"group", s::stringEnum({"video", "audio", "emulation", "library", "servers", "hotkeys", "input"})}}),
+        s::object({{"group", s::stringEnum({"video", "audio", "emulation", "library", "servers", "hotkeys", "input", "updates"})}}),
         s::object({{"values", Json{{"type", "object"}}}, {"schema", Json{{"type", "object"}}}}, {"values", "schema"}),
         false, false, [this, edge](CallContext&, const Json&) {
             const Library library = m_window.library();
             const AppSettings::ServerSettings servers = m_settings.servers();
+            const AppSettings::UpdateSettings updates = m_settings.updates();
             const AppSettings::InputSettings input = m_settings.input();
             const AppSettings::AudioSettings audio = m_settings.audio();
             const AppSettings::EmulationSettings emulation = m_settings.emulation();
@@ -2155,6 +2157,8 @@ void GuiHost::registerCommands(api::Registry& registry)
                                      {"romFolders", romFoldersValue(m_settings)}}},
                 {"servers", {{"apiEnabled", servers.apiEnabled}, {"apiPort", servers.apiPort},
                                 {"mcpEnabled", servers.mcpEnabled}, {"mcpPort", servers.mcpPort}}},
+                {"updates", {{"check", updates.check}, {"asked", updates.asked},
+                                {"skippedVersion", str(updates.skippedVersion)}}},
                 {"hotkeys", storedBindings(m_window.keyBindings(), false)},
                 {"input", {{"turboRate", input.turboRate}, {"allowOppositeDirections", input.allowOppositeDirections},
                               {"pauseOnGamepadDisconnect", input.pauseOnGamepadDisconnect},
@@ -2186,6 +2190,9 @@ void GuiHost::registerCommands(api::Registry& registry)
                 {"servers.apiPort", s::integer(0, 65535, "the API port; 0 picks a free one")},
                 {"servers.mcpEnabled", s::boolean("the MCP server (off by default; on turns the API on)")},
                 {"servers.mcpPort", s::integer(0, 65535, "the MCP port; 0 picks a free one")},
+                {"updates.check", s::boolean("check GitHub Releases once per launch (off until the user says yes; R16)")},
+                {"updates.asked", s::boolean("the first-launch question has been answered")},
+                {"updates.skippedVersion", s::string("a version Skip This Version declined (MAJOR.MINOR.PATCH), or empty")},
                 {"hotkeys", s::string("the menu bindings that differ from the defaults, by id (gui.set_binding)")},
                 {"input.turboRate", s::integer(2, 30, "turbo presses a second (15 by default)")},
                 {"input.allowOppositeDirections", s::boolean("Left with Right and Up with Down (off: the last pressed wins)")},
@@ -2278,6 +2285,25 @@ void GuiHost::registerCommands(api::Registry& registry)
                 }
                 m_settings.setServers(servers);
                 m_window.serversChanged();
+                return Result::ok({{"key", key}, {"value", value}});
+            }
+            if (key.rfind("updates.", 0) == 0) {
+                // Only the settings: a check follows at the next launch, and
+                // nothing here installs (FR-097).
+                AppSettings::UpdateSettings updates = m_settings.updates();
+                if (key == "updates.skippedVersion") {
+                    if (!value.is_string()) return invalid("/value", "must be a version (1.2.0) or empty");
+                    const QString version = QString::fromStdString(value.get<std::string>());
+                    if (!version.isEmpty() && !update::Version::parse(version)) {
+                        return invalid("/value", "must be a version (1.2.0) or empty");
+                    }
+                    updates.skippedVersion = version.isEmpty() ? QString() : update::Version::parse(version)->toString();
+                } else {
+                    if (!value.is_boolean()) return invalid("/value", "must be true or false");
+                    (key == "updates.check" ? updates.check : updates.asked) = value.get<bool>();
+                }
+                m_settings.setUpdates(updates);
+                m_window.updatesChanged();
                 return Result::ok({{"key", key}, {"value", value}});
             }
             if (key.rfind("input.", 0) == 0) {

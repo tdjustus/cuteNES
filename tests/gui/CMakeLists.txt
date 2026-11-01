@@ -33,7 +33,9 @@ add_executable(cutenes-gui-tests
     test_coexistence.cpp
     test_pacing.cpp
     test_user_guide.cpp
-    test_app_log.cpp)
+    test_app_log.cpp
+    test_update_feed.cpp
+    test_updates.cpp)
 target_link_libraries(cutenes-gui-tests PRIVATE cutenes-app-lib cutenes-httplib gtest)
 target_compile_definitions(cutenes-gui-tests PRIVATE
     CUTENES_TEST_ROMS="${PROJECT_SOURCE_DIR}/tests/roms"

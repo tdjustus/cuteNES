@@ -27,6 +27,7 @@
 #include <QMultiHash>
 #include <QSet>
 #include <QThreadPool>
+#include <QUrl>
 #include <QVariantMap>
 
 #include <array>
@@ -57,6 +58,10 @@ class MemoryViewerWindow;
 class PpuViewerWindow;
 class TraceLoggerWindow;
 class UserGuideWindow;
+namespace update {
+class UpdateCheck;
+struct Release;
+} // namespace update
 class CheatsWindow;
 class KeyBindings;
 class KeyBindingsPage;
@@ -79,6 +84,13 @@ struct MainWindowOptions {
     // Help > Open Log Folder's folder; empty: the running log's
     // (AppLog::directory()), else AppLog::defaultDirectory().
     QString logDir;
+    // The update feed (research R16): GitHub's release list. Empty: never
+    // check (the tests' default, so no test reaches the network).
+    QUrl updateFeed = QUrl(QStringLiteral("https://api.github.com/repos/tdjustus/cuteNES/releases?per_page=30"));
+    // Plain HTTP to a loopback feed: the tests' fake one only.
+    bool allowLoopbackFeed = false;
+    // The first-launch question (updates.asked); tests turn it off.
+    bool askAboutUpdates = true;
     // The gamepads; null: SDL's (tests give a fake).
     std::shared_ptr<qt::GamepadBackend> gamepads;
 };
@@ -122,6 +134,10 @@ public:
     // to recreate it or choose another (spec US2-5). The application calls
     // it once the window is shown.
     void checkLibrary();
+    // Updates (contract "Updates"; research R16), once the window is shown:
+    // the first-launch question, then the check when updates.check is on.
+    // A ROM on the command line puts both off to a later launch.
+    void startUpdates(bool romOnCommandLine);
 
 public slots:
     void showAbout() override;
@@ -149,6 +165,8 @@ signals:
     // Open Library Folder ran (whether or not the file manager was started).
     void libraryFolderOpened(const QString& path);
     void logFolderOpened(const QString& path);
+    // A web page was opened (the release page); with openExternally, in the browser.
+    void externalUrlOpened(const QUrl& url);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -164,6 +182,7 @@ private:
     void displayChanged() override;
     void videoChanged(bool showPage) override;
     void serversChanged() override;
+    void updatesChanged() override;
     void showMessage(const QString& text) override;
     void playbackChanged(const Playback& playback) override;
     PacingNow pacingNow() const override;
@@ -234,6 +253,10 @@ private:
     void releasePad(Port port);
     void showError(const QString& name, const api::Error& error);
     void showWarning(const QString& message);
+    void askAboutUpdates();
+    void checkForUpdates();
+    void offerUpdate(const update::Release& release);
+    void openExternal(const QUrl& url);
     void useLibrary(const Library& library);       // GUI thread
     void updateSettingsDialog();
     bool hasGame() const { return m_runState != QLatin1String("NeedsRom"); }
@@ -273,6 +296,7 @@ private:
     QPointer<PpuViewerWindow> m_ppuViewer;
     QPointer<TraceLoggerWindow> m_traceLogger;
     QPointer<UserGuideWindow> m_userGuide;
+    update::UpdateCheck* m_updateCheck = nullptr;
     // What openWindows() and currentPage() report, kept by the GUI thread
     // as windows show and hide and pages change (updateWindowList).
     void updateWindowList();

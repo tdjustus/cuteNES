@@ -43,6 +43,8 @@ inline app::MainWindow::Options windowOptions(QString* folder = nullptr)
     options.tokenDir = dir + QStringLiteral("/tokens"); // never the user's own
     options.batteryInterval = std::chrono::milliseconds(100);
     options.openExternally = false;
+    options.updateFeed = QUrl(); // never the network
+    options.askAboutUpdates = false;
     return options;
 }
 

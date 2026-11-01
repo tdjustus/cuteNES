@@ -31,6 +31,7 @@ const std::pair<const char*, const char*> kPages[] = {
     {"emulation", QT_TRANSLATE_NOOP("SettingsDialog", "Emulation")},
     {"library", QT_TRANSLATE_NOOP("SettingsDialog", "Library")},
     {"servers", QT_TRANSLATE_NOOP("SettingsDialog", "Servers")},
+    {"updates", QT_TRANSLATE_NOOP("SettingsDialog", "Updates")},
 };
 
 } // namespace
@@ -126,6 +127,8 @@ SettingsDialog::SettingsDialog(QWidget* parent)
             page = buildEmulationPage(m_stack);
         } else if (QLatin1String(key) == QLatin1String("input")) {
             page = buildInputPage(m_stack);
+        } else if (QLatin1String(key) == QLatin1String("updates")) {
+            page = buildUpdatesPage(m_stack);
         } else {
             page = new QLabel(tr("Coming in a later update."), m_stack);
             static_cast<QLabel*>(page)->setAlignment(Qt::AlignCenter);
@@ -481,6 +484,54 @@ void SettingsDialog::setEmulation(const Emulation& e)
     m_pauseInactive->setChecked(e.pauseWhenInactive);
     m_resumeOnOpen->setChecked(e.resumeOnOpen);
     m_ffSpeed->setCurrentIndex(qMax(0, m_ffSpeed->findData(e.fastForwardSpeed)));
+}
+
+QWidget* SettingsDialog::buildUpdatesPage(QWidget* parent)
+{
+    auto* page = new QWidget(parent);
+    m_updatesCheck = new QCheckBox(tr("Check for updates when cuteNES starts"), page);
+    m_updatesCheck->setObjectName(QStringLiteral("updatesCheck"));
+    connect(m_updatesCheck, &QCheckBox::toggled, this,
+        [this](bool on) { emit settingRequested(QStringLiteral("updates.check"), on); });
+    auto* what = new QLabel(tr("Once per start, cuteNES asks GitHub for the list of cuteNES releases. Nothing else "
+                               "is sent, and nothing is downloaded until you choose Install."),
+        page);
+    m_updatesSkipped = new QLabel(page);
+    m_updatesSkipped->setObjectName(QStringLiteral("updatesSkipped"));
+    m_updatesForget = new QPushButton(tr("Offer It Again"), page);
+    m_updatesForget->setObjectName(QStringLiteral("updatesForgetSkipped"));
+    connect(m_updatesForget, &QPushButton::clicked, this,
+        [this] { emit settingRequested(QStringLiteral("updates.skippedVersion"), QString()); });
+    auto* skipped = new QHBoxLayout;
+    skipped->addWidget(m_updatesSkipped, 1);
+    skipped->addWidget(m_updatesForget);
+    m_updatesInstall = new QLabel(page);
+    m_updatesInstall->setObjectName(QStringLiteral("updatesInstall"));
+    for (QLabel* note : {what, m_updatesInstall}) {
+        note->setWordWrap(true);
+        note->setForegroundRole(QPalette::PlaceholderText);
+    }
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(16, 4, 4, 4);
+    layout->addWidget(m_updatesCheck);
+    layout->addWidget(what);
+    layout->addSpacing(12);
+    layout->addLayout(skipped);
+    layout->addSpacing(12);
+    layout->addWidget(m_updatesInstall);
+    layout->addStretch();
+    setUpdates({});
+    return page;
+}
+
+void SettingsDialog::setUpdates(const Updates& u)
+{
+    const QSignalBlocker block(m_updatesCheck);
+    m_updatesCheck->setChecked(u.check);
+    m_updatesSkipped->setText(u.skippedVersion.isEmpty() ? tr("No version is skipped.")
+                                                         : tr("Skipped: version %1").arg(u.skippedVersion));
+    m_updatesForget->setEnabled(!u.skippedVersion.isEmpty());
+    m_updatesInstall->setText(u.install);
 }
 
 QWidget* SettingsDialog::buildInputPage(QWidget* parent)

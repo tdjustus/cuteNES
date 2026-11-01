@@ -176,6 +176,24 @@ void AppSettings::setServers(const ServerSettings& s)
     m_settings.setValue(QStringLiteral("servers/mcpPort"), s.mcpPort);
 }
 
+AppSettings::UpdateSettings AppSettings::updates() const
+{
+    std::lock_guard lock(m_mutex);
+    UpdateSettings u;
+    u.check = m_settings.value(QStringLiteral("updates/check"), u.check).toBool();
+    u.asked = m_settings.value(QStringLiteral("updates/asked"), u.asked).toBool();
+    u.skippedVersion = m_settings.value(QStringLiteral("updates/skippedVersion")).toString();
+    return u;
+}
+
+void AppSettings::setUpdates(const UpdateSettings& u)
+{
+    std::lock_guard lock(m_mutex);
+    m_settings.setValue(QStringLiteral("updates/check"), u.check);
+    m_settings.setValue(QStringLiteral("updates/asked"), u.asked);
+    m_settings.setValue(QStringLiteral("updates/skippedVersion"), u.skippedVersion);
+}
+
 bool AppSettings::showFps() const
 {
     std::lock_guard lock(m_mutex);

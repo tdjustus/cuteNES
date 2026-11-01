@@ -456,3 +456,37 @@ By hand:
 4. On Windows and Linux, check the folder is under
    `%LOCALAPPDATA%\cuteNES\cuteNES\logs` or
    `~/.local/share/cuteNES/cuteNES/logs`.
+
+### Updates: the check, the question and the prompt (G097, G098, #105)
+
+Automated by `UpdateFeed` (the choice: versions, drafts, prereleases, platform assets, the skipped version, SHA256SUMS lines, HTTPS only) and `GuiUpdates` against a fake feed on loopback:
+- no request with checks off;
+- the question asked once, with either answer kept;
+- Yes checks at once;
+- one request carrying only `User-Agent: cuteNES/<version>` and the JSON Accept type;
+- the prompt shows both versions and has no Install in a non-release build;
+- Skip is kept per version, and a newer version still prompts;
+- Later keeps nothing, and See Details opens the page;
+- no prompt while a game runs, and no check with a ROM on the command line;
+- a rate-limit answer is logged only;
+- the Settings > Updates page.
+
+Mutation-checked (six faults, each caught). Through the MCP on the live app: `updates` is `check: false, asked: false`, the log shows no update request, and Settings > Updates opens.
+
+**Your first launch of this build shows the question. It is your answer**: I left it unanswered.
+
+By hand:
+1. Start cuteNES. "Check for updates when cuteNES starts?" appears once
+   the window is up. Answer **No**: Settings > Updates shows the box
+   unchecked, and the next start does not ask.
+2. To see the question again, set `updates.asked` to false (`gui_set_setting`
+   or the INI file) and restart. Answer **Yes**. Until a release newer than
+   0.1.0 exists, no prompt appears; the log says "this is the newest
+   version" or why the check failed.
+3. Start cuteNES with a ROM on the command line: no question and no check
+   (the log has no update line for that run).
+4. Once a release above the running version exists (or with a local build
+   whose `CUTENES_APP_VERSION` is lowered), the prompt shows both versions,
+   the notes, and Ask Again Later, Skip This Version and See Details, with
+   the reason Install is missing. See Details opens the GitHub page.
+5. Settings > Updates: the skipped version and Offer It Again.

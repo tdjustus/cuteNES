@@ -307,6 +307,7 @@ so a library under any name works.
 | Emulation… | `gui.show_settings` | `page`: `emulation` | | |
 | Library… | `gui.show_settings` | `page`: `library` | | |
 | Servers… | `gui.show_settings` | `page`: `servers` | | |
+| Updates… | `gui.show_settings` | `page`: `updates` | | |
 
 Every setting can be read and changed without the dialog:
 - `gui.get_settings` (optional `group`) returns every value with its schema.
@@ -573,21 +574,22 @@ player 1's.
 - **First launch** (`updates.asked` false): once the window is shown, a
   question (object `updatesQuestion`) asks "Check for updates when cuteNES
   starts?" with Yes and No. Either sets `updates.asked`; Yes sets
-  `updates.check`. With a ROM on the command line it waits for a later
-  launch.
+  `updates.check`, and checks at once. With a ROM on the command line it
+  waits for a later launch.
 - **The check**, with `updates.check` on: once per launch, after the window
   is shown, in the background (R16 "Feed"). It never delays the window or a
-  game. Its result is used only if no game is running when it arrives and
-  none was started from the command line; otherwise nothing is shown this
-  launch. A failed check (no network, a bad answer) is logged and shown
-  nowhere else.
+  game. With a ROM on the command line there is no check that launch. Its
+  result is shown only if no game is running when it arrives; otherwise it
+  is logged and nothing is shown this launch. A failed check (no network, a
+  bad answer, GitHub's rate limit) is logged and shown nowhere else.
 - **The prompt** (object `updatePrompt`): "cuteNES <version> is available
   (you have <version>)", the release's notes, and the buttons **Install**,
   **Ask Again Later**, **Skip This Version** and **See Details**. Skip sets
   `updates.skippedVersion`; See Details opens the release's page. Where
   this build cannot replace itself, there is no Install button and the
   prompt says why.
-- **Install** shows the download's progress with Cancel, checks it (R16
+- **Install** (G099; until then every build is shown as unable to install)
+  shows the download's progress with Cancel, checks it (R16
   "Integrity"), then asks the usual quit questions (a recording, a movie),
   quits and starts the new version with the same arguments. A failure says
   what failed, removes the download and leaves this version as it was.

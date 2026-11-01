@@ -59,6 +59,16 @@ public:
     ServerSettings servers() const;
     void setServers(const ServerSettings& servers);
 
+    // updates.* (data-model "Settings keys"; research R16): no request at
+    // all until the user turns checks on (FR-090).
+    struct UpdateSettings {
+        bool check = false;
+        bool asked = false;     // the first-launch question has been answered
+        QString skippedVersion; // "1.2.0", or empty
+    };
+    UpdateSettings updates() const;
+    void setUpdates(const UpdateSettings& updates);
+
     // video.* (data-model "Settings"): the window scale 1-6, the aspect
     // ("square", "8:7", "4:3"), each edge's crop 0-16, the filter
     // ("nearest", "smooth", "scanlines").
