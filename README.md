@@ -174,8 +174,8 @@ Before 1.0, a MAJOR of 0 means anything may still change.
   - Larger data moves through blob handles.
   - ROM paths cannot leave the library.
 
-The Qt GUI (planned) will run the same API and MCP endpoints behind settings
-toggles, both off by default. `cutenes-server --attach` relays a stdio-only
+The Qt GUI (in progress, #32) will run the same API and MCP endpoints behind
+settings toggles (G3, #95), both off by default. `cutenes-server --attach` relays a stdio-only
 client to it.
 
 ## Testing

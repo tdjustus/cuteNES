@@ -64,7 +64,7 @@ met.
   - the sanitize job builds without the GUI (`CUTENES_BUILD_GUI=OFF`) unless
     Qt is available there.
 - [x] G008 README: build prerequisites for the GUI and how to run `cutenes`.
-- [ ] G009 Manual checklist **M0**.
+- [x] G009 Manual checklist **M0**.
 
 ## Phase G1: Play a game (branch `feature/gui-play`)
 
@@ -108,7 +108,7 @@ Real-time mode in `cutenes-api` (R3), test-first:
   `gui.reset`, `gui.power_cycle` and `gui.exit`, with menu items and default
   shortcuts. An unsupported ROM shows the core's reason and keeps the
   running game. Tests A1 (partial) and A7.
-- [ ] G019 Manual checklist **M1**.
+- [x] G019 Manual checklist **M1**.
 
 ## Phase G2: Library (branch `feature/gui-library`)
 
@@ -138,7 +138,7 @@ Real-time mode in `cutenes-api` (R3), test-first:
   - `--library DIR`.
 - [x] G025 [US1] Open Recent and drag-and-drop. The macOS `QFileOpenEvent`
   is handled.
-- [ ] G026 Manual checklist **M2**.
+- [x] G026 Manual checklist **M2**.
 
 ## Phase G3: Menus, states, servers (branch `feature/gui-menus`)
 
