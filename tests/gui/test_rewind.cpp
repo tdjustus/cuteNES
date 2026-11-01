@@ -145,7 +145,7 @@ TEST(GuiRewind, RewindMutesTheSoundAndSaysRewind)
     ASSERT_TRUE(waitUntil([&] { return frame(w) >= 60; }, 15000));
     call(w, "gui.set_rewind", {{"on", true}});
     EXPECT_TRUE(w.audio()->muted());
-    auto* status = w.findChild<QLabel*>(QStringLiteral("statusOverlay"));
+    auto* status = w.findChild<QLabel*>(QStringLiteral("speedOverlay"));
     ASSERT_NE(status, nullptr);
     EXPECT_TRUE(waitUntil([&] { return status->isVisible() && status->text() == QStringLiteral("◀◀ REWIND"); }));
     call(w, "gui.set_rewind", {{"on", false}});
@@ -163,28 +163,33 @@ TEST(GuiRewind, RewindWithFastForwardShowsFastRewind)
     call(w, "gui.set_rewind", {{"on", true}});
     call(w, "gui.set_fast_forward", {{"on", true}});
     EXPECT_NEAR(w.frameRate(), 3 * kNtsc, 0.05);
-    auto* status = w.findChild<QLabel*>(QStringLiteral("statusOverlay"));
+    auto* status = w.findChild<QLabel*>(QStringLiteral("speedOverlay"));
     EXPECT_TRUE(waitUntil([&] { return status->isVisible() && status->text() == QStringLiteral("◀◀ FAST REWIND"); }));
     call(w, "gui.set_fast_forward", {{"on", false}});
     EXPECT_TRUE(waitUntil([&] { return status->text() == QStringLiteral("◀◀ REWIND"); }));
     call(w, "gui.set_rewind", {{"on", false}});
 }
 
-// Every indicator is the PAUSED one: one label, one style, over the
-// middle of the picture (the design is the same for all of them).
-TEST(GuiSpeed, EveryIndicatorIsTheOnePausedUses)
+// The speed indicators look like PAUSED, in its size and style, but sit in
+// the top right of the picture so they keep out of the way of play.
+TEST(GuiSpeed, SpeedIndicatorsLookLikePausedInTheTopRight)
 {
     MainWindow w(windowOptions());
     play(w);
     ASSERT_TRUE(waitUntil([&] { return frame(w) > 0; }));
-    auto* status = w.findChild<QLabel*>(QStringLiteral("statusOverlay"));
-    ASSERT_NE(status, nullptr);
-    EXPECT_EQ(status->parentWidget(), w.view());
-    const QString style = status->styleSheet();
+    auto* speed = w.findChild<QLabel*>(QStringLiteral("speedOverlay"));
+    auto* paused = w.findChild<QLabel*>(QStringLiteral("pausedOverlay"));
+    ASSERT_NE(speed, nullptr);
+    ASSERT_NE(paused, nullptr);
+    EXPECT_EQ(speed->parentWidget(), w.view());
+    EXPECT_EQ(speed->styleSheet(), paused->styleSheet()) << "one design";
     auto shows = [&](const QString& text) {
         return waitUntil([&] {
-            return status->isVisible() && status->text() == text && status->styleSheet() == style
-                && status->geometry().center() == w.view()->rect().center();
+            const QRect r = speed->geometry();
+            const QRect view = w.view()->rect();
+            return speed->isVisible() && speed->text() == text && r.top() > view.top()
+                && r.top() < view.height() / 4 && r.right() < view.right()
+                && r.right() > view.right() - view.width() / 10;
         });
     };
     call(w, "gui.set_speed", {{"percent", 50}});
@@ -195,10 +200,11 @@ TEST(GuiSpeed, EveryIndicatorIsTheOnePausedUses)
     call(w, "gui.set_speed", {{"percent", "unlimited"}});
     EXPECT_TRUE(shows(QStringLiteral("▶▶ UNLIMITED")));
     call(w, "core.pause");
-    EXPECT_TRUE(shows(QStringLiteral("PAUSED"))) << "paused says paused, whatever the speed";
+    EXPECT_TRUE(waitUntil([&] { return paused->isVisible(); }));
+    EXPECT_EQ(paused->geometry().center(), w.view()->rect().center()) << "PAUSED stays in the middle";
     call(w, "core.resume");
     call(w, "gui.set_speed", {{"percent", 100}});
-    EXPECT_TRUE(waitUntil([&] { return !status->isVisible(); })) << "nothing at normal speed";
+    EXPECT_TRUE(waitUntil([&] { return !speed->isVisible(); })) << "nothing at normal speed";
 }
 
 TEST(GuiSpeed, FastForwardRunsAtThreeTimesAndMutesAboveTwo)
@@ -210,7 +216,7 @@ TEST(GuiSpeed, FastForwardRunsAtThreeTimesAndMutesAboveTwo)
     EXPECT_EQ(call(w, "gui.set_fast_forward", {{"on", true}})["fastForward"], true);
     EXPECT_NEAR(w.frameRate(), 3 * kNtsc, 0.05) << "data-model fastForwardSpeed 300";
     EXPECT_TRUE(w.audio()->muted()) << "R4: muted above 2x";
-    auto* status = w.findChild<QLabel*>(QStringLiteral("statusOverlay"));
+    auto* status = w.findChild<QLabel*>(QStringLiteral("speedOverlay"));
     EXPECT_TRUE(waitUntil([&] { return status->isVisible() && status->text() == QStringLiteral("▶▶ FAST FORWARD"); }));
     call(w, "gui.set_fast_forward", {{"on", false}});
     EXPECT_NEAR(w.frameRate(), kNtsc, 0.01);

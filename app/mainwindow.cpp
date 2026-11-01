@@ -216,13 +216,18 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_osdTimer->setSingleShot(true);
     m_osdTimer->setInterval(2500);
     connect(m_osdTimer, &QTimer::timeout, m_osd, &QWidget::hide);
-    // One indicator for pause, rewind and speed, so they all look alike.
-    m_status = new QLabel(m_view);
-    m_status->setObjectName(QStringLiteral("statusOverlay"));
-    m_status->setAttribute(Qt::WA_TransparentForMouseEvents);
-    m_status->setStyleSheet(QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150); border-radius: 10px;"
-                                           " padding: 10px 26px; font-size: 28px; font-weight: 800; letter-spacing: 4px; }"));
-    m_status->hide();
+    // PAUSED and the speed indicator share one style, so they look alike.
+    const QString overlayStyle = QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150);"
+        " border-radius: 10px; padding: 10px 26px; font-size: 28px; font-weight: 800; letter-spacing: 4px; }");
+    m_paused = new QLabel(tr("PAUSED"), m_view);
+    m_paused->setObjectName(QStringLiteral("pausedOverlay"));
+    m_speed = new QLabel(m_view);
+    m_speed->setObjectName(QStringLiteral("speedOverlay"));
+    for (QLabel* overlay : {m_paused, m_speed}) {
+        overlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+        overlay->setStyleSheet(overlayStyle);
+        overlay->hide();
+    }
     m_audio = std::make_unique<qt::AudioOutput>();
     m_audio->open(); // silent if no device (spec US7-5)
 
@@ -747,7 +752,7 @@ void MainWindow::setRunState(const QString& runState)
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
         if (kNeedGame.contains(action->property("command").toString())) action->setEnabled(game);
     }
-    updateStatus();
+    updateOverlays();
     // The menu offers what the next press does.
     m_pauseAction->setText(runState == QLatin1String("Paused") ? tr("&Resume") : tr("&Pause"));
     if (game) {
@@ -854,19 +859,22 @@ void MainWindow::playbackChanged(const Playback& playback)
     m_clock->setRate(playback.speed > 0 ? m_baseRate * playback.speed : kUnlimited);
     m_audio->setSpeed(playback.speed > 0 ? playback.speed : 1.0);
     m_audio->setMuted(playback.muted);
-    QMetaObject::invokeMethod(this, [this] { updateStatus(); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(this, [this] { updateOverlays(); }, Qt::QueuedConnection);
 }
 
-void MainWindow::updateStatus()
+void MainWindow::updateOverlays()
 {
-    // Rewind first (it runs a paused game), then pause, then speed.
+    const bool game = hasGame();
+    m_paused->setVisible(game && m_runState == QLatin1String("Paused"));
+    m_paused->adjustSize();
+    m_paused->move(m_view->rect().center() - m_paused->rect().center());
+    m_paused->raise();
+
     const Playback now = playback();
     const bool faster = now.speed == 0 || now.speed > 1;
     QString text;
     if (now.rewinding) {
         text = faster ? tr("◀◀ FAST REWIND") : tr("◀◀ REWIND");
-    } else if (m_runState == QLatin1String("Paused")) {
-        text = tr("PAUSED");
     } else if (now.fastForward) {
         text = tr("▶▶ FAST FORWARD");
     } else if (now.speed == 0) {
@@ -874,11 +882,12 @@ void MainWindow::updateStatus()
     } else if (qRound(now.speed * 100) != 100) {
         text = tr("SPEED %1%").arg(qRound(now.speed * 100));
     }
-    m_status->setText(text);
-    m_status->setVisible(!text.isEmpty() && hasGame());
-    m_status->adjustSize();
-    m_status->move(m_view->rect().center() - m_status->rect().center());
-    m_status->raise();
+    m_speed->setText(text);
+    m_speed->setVisible(game && !text.isEmpty());
+    m_speed->adjustSize();
+    constexpr int kMargin = 12;
+    m_speed->move(m_view->width() - m_speed->width() - kMargin, kMargin);
+    m_speed->raise();
 }
 
 void MainWindow::placeOsd()
@@ -1031,7 +1040,7 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
     switch (event->type()) {
     case QEvent::Resize: // the application's filter sees every widget's
         if (watched == m_pages) placeOsd();
-        if (watched == m_view) updateStatus();
+        if (watched == m_view) updateOverlays();
         break;
     case QEvent::FileOpen: // macOS "Open With" and drops on the Dock icon
         if (watched == qApp) {

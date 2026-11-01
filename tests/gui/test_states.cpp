@@ -335,7 +335,7 @@ TEST(GuiStates, ALoadedGameWaitsPausedAndPlaysOnWithSound)
     ASSERT_TRUE(waitUntil([&] { return frame(w) > 60; }));
     call(w, "gui.load_state", {{"slot", 1}});
     EXPECT_EQ(call(w, "core.run_state")["runState"], "Paused");
-    auto* paused = w.findChild<QLabel*>(QStringLiteral("statusOverlay"));
+    auto* paused = w.findChild<QLabel*>(QStringLiteral("pausedOverlay"));
     ASSERT_NE(paused, nullptr);
     EXPECT_TRUE(waitUntil([&] { return paused->isVisible(); }));
 
@@ -428,7 +428,7 @@ TEST(GuiStates, APausedGameShowsPaused)
     w.show();
     call(w, "gui.open_rom", {{"path", kRom.toStdString()}});
     ASSERT_TRUE(waitUntil([&] { return w.view()->isVisible(); }));
-    auto* paused = w.findChild<QLabel*>(QStringLiteral("statusOverlay"));
+    auto* paused = w.findChild<QLabel*>(QStringLiteral("pausedOverlay"));
     ASSERT_NE(paused, nullptr);
     EXPECT_FALSE(paused->isVisible());
     call(w, "gui.toggle_pause");
