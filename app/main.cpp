@@ -2,6 +2,7 @@
 // line follows contracts/cli.md; options of later phases arrive with them.
 
 #include "cli.hpp"
+#include "log/app_log.hpp"
 #include "mainwindow.hpp"
 
 #include <cutenes/qt/media_runtime.hpp>
@@ -30,6 +31,9 @@ int main(int argc, char* argv[])
 #endif
         return *cli.exitCode;
     }
+
+    // After the command line: --help and --version leave the log alone.
+    cutenes::app::AppLog::start(cutenes::app::AppLog::defaultDirectory());
 
     const cutenes::qt::MediaRuntime media;
 

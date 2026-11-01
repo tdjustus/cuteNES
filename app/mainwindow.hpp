@@ -76,6 +76,9 @@ struct MainWindowOptions {
     // Where the API and MCP token files go; empty: the user's state folder
     // (api::token::defaultDirectory(), which cutenes-server --attach reads).
     QString tokenDir;
+    // Help > Open Log Folder's folder; empty: the running log's
+    // (AppLog::directory()), else AppLog::defaultDirectory().
+    QString logDir;
     // The gamepads; null: SDL's (tests give a fake).
     std::shared_ptr<qt::GamepadBackend> gamepads;
 };
@@ -145,6 +148,7 @@ signals:
     void warningShown(const QString& message);
     // Open Library Folder ran (whether or not the file manager was started).
     void libraryFolderOpened(const QString& path);
+    void logFolderOpened(const QString& path);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -187,6 +191,7 @@ private:
     void offerResume(const QString& autoState) override;
     void recordingChanged(const QString& path) override;
     void openLibraryFolder() override;
+    QString openLogFolder() override;
     void exit() override;
     QVector<LibraryEntry> libraryEntries() const override;
     void gameOpened(const QString& path, const GameIdentity& id, const BatterySaver::Opened& battery) override;

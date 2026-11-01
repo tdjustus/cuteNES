@@ -432,3 +432,27 @@ unchecked:
    the app does is a bug in one of them.
 4. README "Using the GUI" reads well on GitHub, and its link to the guide
    works.
+
+### Log and Open Log Folder (G094a)
+
+Automated by `GuiAppLog`:
+- each run keeps the one before;
+- the line format, and whole lines from 16 threads at once;
+- the size limit;
+- the errors the window shows are logged, and the token never is;
+- `gui.open_log_folder` makes and returns the folder.
+
+Mutation-checked: no rotation, no limit, no lock, errors not logged and a logged token each fail. Checked through the MCP on the live app:
+- Open Log Folder returned `~/Library/Application Support/cuteNES/cuteNES/logs`;
+- the log had the versions and system, the API and MCP addresses, and nestest opened and closed;
+- no token, and not the client's own failed call.
+
+By hand:
+1. Help > Open Log Folder: the file manager opens on the folder, with
+   `cutenes.log` in it (Finder, Explorer, or your Linux file manager).
+2. Quit and start cuteNES again: `cutenes.previous.log` is the last run.
+3. Do something that fails from the menus (Quick Load an empty slot):
+   the log gains a `gui.quick_load: NotFound` line.
+4. On Windows and Linux, check the folder is under
+   `%LOCALAPPDATA%\cuteNES\cuteNES\logs` or
+   `~/.local/share/cuteNES/cuteNES/logs`.

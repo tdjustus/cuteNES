@@ -77,7 +77,8 @@ TEST(GuiPlay, WithoutAGameOnlyTheImplementedNonGameActionsAreEnabled)
 {
     MainWindow w(windowOptions());
     const QStringList noGame = {QStringLiteral("gui.open_rom"), QStringLiteral("gui.exit"),
-        QStringLiteral("gui.show_about"), QStringLiteral("gui.show_user_guide"), QStringLiteral("gui.show_library"),
+        QStringLiteral("gui.show_about"), QStringLiteral("gui.show_user_guide"), QStringLiteral("gui.open_log_folder"),
+        QStringLiteral("gui.show_library"),
         QStringLiteral("gui.open_library_folder"), QStringLiteral("gui.select_slot"), QStringLiteral("gui.set_speed"),
         QStringLiteral("gui.toggle_fps"), QStringLiteral("gui.toggle_osd"), QStringLiteral("gui.show_shortcuts"),
         QStringLiteral("gui.set_scale"), QStringLiteral("gui.toggle_fullscreen"),

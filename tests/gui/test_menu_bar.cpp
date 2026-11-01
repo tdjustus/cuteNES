@@ -15,8 +15,6 @@
 
 #include <gtest/gtest.h>
 
-using cutenes::api::Json;
-using cutenes::api::Result;
 using cutenes::app::MainWindow;
 using cutenes::test::waitUntil;
 using cutenes::test::windowOptions;
@@ -49,20 +47,6 @@ QList<QAction*> menuActions(MainWindow& w)
     return actions;
 }
 
-Json toJson(const QVariantMap& map)
-{
-    Json j = Json::object();
-    for (auto it = map.begin(); it != map.end(); ++it) {
-        const QVariant& v = it.value();
-        if (v.typeId() == QMetaType::Int) {
-            j[it.key().toStdString()] = v.toInt();
-        } else {
-            j[it.key().toStdString()] = v.toString().toStdString();
-        }
-    }
-    return j;
-}
-
 } // namespace
 
 TEST(GuiMenuBar, EveryContractItemIsInTheMenusAndTheCatalog)
@@ -86,23 +70,26 @@ TEST(GuiMenuBar, EveryContractItemIsInTheMenusAndTheCatalog)
     }
 }
 
-TEST(GuiMenuBar, LaterItemsAreDisabledSayWhyAndReturnNotImplemented)
+// Since Open Log Folder (G9), no item is a later phase's (contract "Items
+// from later phases"): with a game, every item is enabled but the two that
+// wait for a movie, and none says it is coming later.
+TEST(GuiMenuBar, WithAGameEveryItemWorksButTheMovieOnes)
 {
     MainWindow w(windowOptions());
     w.show();
     ASSERT_FALSE(w.session().call("gui.open_rom", {{"path", kRom.toStdString()}}).isError());
     ASSERT_TRUE(waitUntil([&] { return w.findChild<QAction*>(QStringLiteral("gui.take_screenshot"))->isEnabled(); }));
-    int later = 0;
-    // Movie > Stop and Read-Only wait for a movie, not a later phase.
     const QStringList needMovie = {QStringLiteral("gui.stop_movie"), QStringLiteral("gui.toggle_movie_read_only")};
+    int movieOnly = 0;
     for (QAction* a : menuActions(w)) {
-        if (a->isEnabled() || needMovie.contains(a->property("command").toString())) continue;
-        ++later;
-        const std::string command = a->property("command").toString().toStdString();
-        EXPECT_EQ(a->toolTip(), QStringLiteral("Coming in a later update")) << command;
-        const Result r = w.session().call(command, toJson(a->property("commandArgs").toMap()));
-        ASSERT_TRUE(r.isError()) << command;
-        EXPECT_EQ(r.error->name, "NotImplemented") << command << ": " << r.error->message;
+        const QString command = a->property("command").toString();
+        EXPECT_NE(a->toolTip(), QStringLiteral("Coming in a later update")) << command.toStdString();
+        if (needMovie.contains(command)) {
+            EXPECT_FALSE(a->isEnabled()) << command.toStdString();
+            ++movieOnly;
+        } else {
+            EXPECT_TRUE(a->isEnabled()) << command.toStdString() << " " << a->text().toStdString();
+        }
     }
-    EXPECT_GT(later, 0) << "phases G4-G9 are still to come";
+    EXPECT_EQ(movieOnly, 2);
 }

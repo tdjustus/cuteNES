@@ -135,6 +135,8 @@ public:
         virtual void debuggerStopped() = 0;
         virtual void showAbout() = 0;
         virtual void openLibraryFolder() = 0;
+        // Shows the log folder (made if missing) and returns it.
+        virtual QString openLogFolder() = 0;
         virtual void exit() = 0;
         virtual Library library() const = 0;
         virtual QVector<LibraryEntry> libraryEntries() const = 0;

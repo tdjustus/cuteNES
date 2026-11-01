@@ -1687,17 +1687,6 @@ void GuiHost::registerCommands(api::Registry& registry)
             return invalid(args.contains("path") ? "/path" : "/identity", "no such game in the library");
         });
 
-    // G034: the contract's commands whose features land in later phases.
-    // Their menu items are present but disabled; the commands are in the
-    // catalog with their contract arguments and return NotImplemented.
-    const auto later = [&registry](const char* name, std::string description, Json input, bool needsRom,
-                           const char* phase) {
-        add(registry, name, std::move(description) + " (coming in " + phase + ")", std::move(input), s::object({}),
-            true, needsRom, [name, phase](CallContext&, const Json&) {
-                return Result::fail("NotImplemented", std::string(name) + " is coming in a later update",
-                    {{"phase", phase}});
-            });
-    };
     const Json none = s::object({});
     const Json fileArgs = s::object({{"path", s::string("a file path; without it, a file dialog")}});
     const Json movieStatusSchema = s::object(
@@ -1937,7 +1926,10 @@ void GuiHost::registerCommands(api::Registry& registry)
             m_window.showUserGuide();
             return Result::ok();
         });
-    later("gui.open_log_folder", "Show the log folder in the file manager", none, false, "G9");
+    add(registry, "gui.open_log_folder", "Show the log folder (cutenes.log, cutenes.previous.log) in the file manager",
+        s::object({}), s::object({{"path", s::string()}}, {"path"}), false, false, [this](CallContext&, const Json&) {
+            return Result::ok({{"path", str(QDir::toNativeSeparators(m_window.openLogFolder()))}});
+        });
 
     add(registry, "gui.open_library_folder", "Show the library folder in the file manager",
         s::object({}), s::object({}), false, false, [this](CallContext&, const Json&) {

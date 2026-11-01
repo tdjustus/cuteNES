@@ -19,6 +19,7 @@ add_library(cutenes-app-lib STATIC
     host/gui_host.cpp
     host/servers.cpp
     library/game_identity.cpp
+    log/app_log.cpp
     library/library.cpp
     library/library_browser.cpp
     library/library_index.cpp
