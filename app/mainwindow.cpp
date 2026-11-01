@@ -216,16 +216,21 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_osdTimer->setSingleShot(true);
     m_osdTimer->setInterval(2500);
     connect(m_osdTimer, &QTimer::timeout, m_osd, &QWidget::hide);
-    // PAUSED and the speed indicator share one style, so they look alike.
-    const QString overlayStyle = QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150);"
-        " border-radius: 10px; padding: 10px 26px; font-size: 28px; font-weight: 800; letter-spacing: 4px; }");
+    // PAUSED and the speed indicator share one design; the speed is half
+    // the size, so it stays out of the way of play.
+    const auto overlayStyle = [](int scale) {
+        return QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150); border-radius: %1px;"
+                              " padding: %2px %3px; font-size: %4px; font-weight: 800; letter-spacing: %5px; }")
+            .arg(10 / scale).arg(10 / scale).arg(26 / scale).arg(28 / scale).arg(4 / scale);
+    };
     m_paused = new QLabel(tr("PAUSED"), m_view);
     m_paused->setObjectName(QStringLiteral("pausedOverlay"));
+    m_paused->setStyleSheet(overlayStyle(1));
     m_speed = new QLabel(m_view);
     m_speed->setObjectName(QStringLiteral("speedOverlay"));
+    m_speed->setStyleSheet(overlayStyle(2));
     for (QLabel* overlay : {m_paused, m_speed}) {
         overlay->setAttribute(Qt::WA_TransparentForMouseEvents);
-        overlay->setStyleSheet(overlayStyle);
         overlay->hide();
     }
     m_audio = std::make_unique<qt::AudioOutput>();

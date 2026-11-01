@@ -170,8 +170,8 @@ TEST(GuiRewind, RewindWithFastForwardShowsFastRewind)
     call(w, "gui.set_rewind", {{"on", false}});
 }
 
-// The speed indicators look like PAUSED, in its size and style, but sit in
-// the top right of the picture so they keep out of the way of play.
+// The speed indicators look like PAUSED at half its size, and sit in the
+// top right of the picture so they keep out of the way of play.
 TEST(GuiSpeed, SpeedIndicatorsLookLikePausedInTheTopRight)
 {
     MainWindow w(windowOptions());
@@ -182,7 +182,6 @@ TEST(GuiSpeed, SpeedIndicatorsLookLikePausedInTheTopRight)
     ASSERT_NE(speed, nullptr);
     ASSERT_NE(paused, nullptr);
     EXPECT_EQ(speed->parentWidget(), w.view());
-    EXPECT_EQ(speed->styleSheet(), paused->styleSheet()) << "one design";
     auto shows = [&](const QString& text) {
         return waitUntil([&] {
             const QRect r = speed->geometry();
@@ -202,6 +201,12 @@ TEST(GuiSpeed, SpeedIndicatorsLookLikePausedInTheTopRight)
     call(w, "core.pause");
     EXPECT_TRUE(waitUntil([&] { return paused->isVisible(); }));
     EXPECT_EQ(paused->geometry().center(), w.view()->rect().center()) << "PAUSED stays in the middle";
+    // One design at half the size: the same colours and weight, half the
+    // type, so half the height.
+    EXPECT_EQ(speed->font().pixelSize() * 2, paused->font().pixelSize());
+    EXPECT_EQ(speed->font().weight(), paused->font().weight());
+    EXPECT_EQ(speed->palette().color(QPalette::WindowText), paused->palette().color(QPalette::WindowText));
+    EXPECT_NEAR(speed->height() * 2, paused->height(), 4);
     call(w, "core.resume");
     call(w, "gui.set_speed", {{"percent", 100}});
     EXPECT_TRUE(waitUntil([&] { return !speed->isVisible(); })) << "nothing at normal speed";
