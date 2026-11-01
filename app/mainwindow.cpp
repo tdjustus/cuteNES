@@ -1557,6 +1557,7 @@ void MainWindow::addRomFolder()
 void MainWindow::setRunState(const QString& runState)
 {
     m_runState = runState;
+    m_runningActivity.hold(runState == QLatin1String("Running"));
     const bool game = hasGame();
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
         const QString command = action->property("command").toString();

@@ -10,6 +10,8 @@
 // open, and the game otherwise.
 
 #include "update/update_install.hpp"
+
+#include <cutenes/qt/running_activity.hpp>
 #include "dialogs/cheats_window.hpp" // CommandRunner
 #include "host/gui_host.hpp"
 #include "library/library.hpp"
@@ -125,6 +127,8 @@ public:
     LibraryIndex* libraryIndex() const { return m_index; }
     AppSettings& settings() { return m_settings; }
     Library library() const override;
+    // Whether the OS is told a game is running, so it is not throttled (#124).
+    bool holdsRunningActivity() const { return m_runningActivity.held(); }
     bool isShowingLibrary() const;
 
     // The frame clock's rate now (the console's rate times the speed) and
@@ -368,6 +372,7 @@ private:
     QThreadPool m_commands;
     QString m_romName;
     QString m_runState = QStringLiteral("NeedsRom");
+    cutenes::qt::RunningActivity m_runningActivity;
     bool m_resumeOnReturn = false;
     bool m_closing = false;
 };

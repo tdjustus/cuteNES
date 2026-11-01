@@ -540,3 +540,18 @@ By hand, on Linux with the AppImage:
    `./cutenes-server --help` prints the server's help.
 3. Double-clicking the AppImage, or opening a `.nes` with it, still starts
    the app.
+
+### macOS: a hidden or unattended game keeps its speed (#124)
+
+Automated:
+- `GuiWindowCommands.AnActivityIsHeldExactlyWhileAGameRuns`: the window holds the activity while a game runs, and not with no game, paused or closed. A version that never holds it fails.
+- Checked live through the MCP (Pause When Inactive turned off for the test, then back on): with the app hidden for 45 s, nestest ran 977 frames in 16.3 s, 60 fps.
+
+By hand, on macOS (the original report was with the display asleep, which the automated check could not cause):
+1. Turn off Settings > Emulation > Pause When Inactive, and open a game.
+2. Connect an MCP client (or just watch the FPS counter, View > Show FPS),
+   then put the display to sleep (`pmset displaysleepnow`) for a minute.
+3. Wake it: the game has kept going at full speed. Through the MCP,
+   `core.run_state`'s frame grows by about 60 a second throughout, not 1.
+4. Pause the game: in Activity Monitor's CPU tab, cuteNES may show
+   App Nap "Yes" after a while (an idle app is allowed to nap).
