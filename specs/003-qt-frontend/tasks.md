@@ -227,10 +227,10 @@ documented ROM behavior. `contracts/core-additions.md`.
 Split in two, one after the other: cheats (G071 and G070's cheat tests),
 then movies (G072 and G070's movie tests).
 
-- [ ] G070 [US8] Tests first (A11, A12):
-  - a movie from power-on and one from a state each replay to the same hash;
-  - a movie for a different game is refused;
-  - a read-only takeover truncates the movie;
+- [x] G070 [US8] Tests first (A11, A12):
+  - [x] a movie from power-on and one from a state each replay to the same hash;
+  - [x] a movie for a different game is refused;
+  - [x] a read-only takeover truncates the movie;
   - [x] cheat search on a test ROM finds a counter, by value, while the game
     runs (US8-2), with 1- and 2-byte values;
   - [x] an edited value reaches the game at the next frame boundary, without a
@@ -240,8 +240,9 @@ then movies (G072 and G070's movie tests).
   each switchable on and off. The cheat search window and its commands,
   usable while the game runs, with live values, in-place editing and a
   per-game watch list (FR-053).
-- [ ] G072 [US8] Movies: record from power-on or a state, play, stop,
-  read-only and takeover, the `.cnm` format, and the status bar.
+- [x] G072 [US8] Movies: record from power-on or a state, play, stop,
+  read-only and takeover, the `.cnm` format, and the movie overlay (there
+  is no status bar).
 - [ ] G073 Manual checklist **M7**.
 
 ## Phase G8: Debug tools (branch `feature/gui-debug`)

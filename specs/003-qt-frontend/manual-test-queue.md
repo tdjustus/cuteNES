@@ -211,3 +211,35 @@ Game Genie and saving per game are covered by the `GuiCheatSearch` and
    HELLO1, is refused with the reason.
 6. Untick a cheat: it stops. Close and reopen the game: the cheats and the
    watch list are back, ticked as you left them.
+
+### Movies (G072, #99)
+
+Checked through MCP: on Super Mario Bros. a 1349-frame movie from power-on
+(Start, then running and jumping) replayed to the same final hash and
+master cycle while Left was held, then paused on its last frame.
+Replays from power-on and from a state, refusal for another game,
+takeover, the refused commands and the file format are covered by the
+`GuiMovies` tests on an input-summing ROM.
+
+1. Super Mario Bros.: Tools > Movie > Record from Power-On…. The save
+   dialog opens in the library's `movies/<game>/` folder with a dated name;
+   save. The game restarts, and "● REC 0" counts up under the FPS (or at
+   the top left).
+2. Play for 20 to 30 seconds, press Reset once (Emulation > Reset), play on,
+   then Tools > Movie > Stop: "Movie saved (N frames)". Stop and Read-Only
+   are greyed out again.
+3. Tools > Movie > Play…, choose the file: the game restarts, "▶ n / N"
+   counts up, and Read-Only is checked. Press buttons: nothing you press
+   changes what Mario does. The reset happens where you pressed it. At the
+   end the game pauses on the last frame: "Movie finished".
+4. While it plays, try Emulation > Reset, Quick Load and holding Rewind:
+   each is refused with a message.
+5. Play it again, and part way through untick Tools > Movie > Read-Only:
+   "Recording from frame n", the overlay turns to "● REC". Play on, then
+   Stop. Play the file: it follows the original up to that frame and your
+   new input after it.
+6. Pause a game, Tools > Movie > Record from Current State…, play a little,
+   Stop. Keep playing elsewhere, then Play… the file: it jumps back to where
+   the recording began and replays.
+7. Open another game and Play… the Super Mario Bros. movie: refused (it was
+   recorded on another game); the game keeps running.

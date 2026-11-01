@@ -22,7 +22,8 @@ add_executable(cutenes-gui-tests
     test_tools.cpp
     test_video.cpp
     test_region_palette.cpp
-    test_cheats.cpp)
+    test_cheats.cpp
+    test_movies.cpp)
 target_link_libraries(cutenes-gui-tests PRIVATE cutenes-app-lib cutenes-httplib gtest)
 target_compile_definitions(cutenes-gui-tests PRIVATE
     CUTENES_TEST_ROMS="${PROJECT_SOURCE_DIR}/tests/roms")

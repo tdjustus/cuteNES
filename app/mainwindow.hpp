@@ -157,6 +157,8 @@ private:
     PacingNow pacingNow() const override;
     void showCheats(bool search) override;
     void cheatsChanged() override;
+    void showMovieDialog(bool record, const QString& from, const QString& folder) override;
+    void movieChanged() override;
     void showLibrary(const QString& select, bool paused) override;
     void showSettings(const QString& page) override;
     void showKeyBindings(const QString& section, bool paused) override;
@@ -250,6 +252,7 @@ private:
     QTimer* m_automationTimer = nullptr;
     std::atomic<bool> m_pausedByAutomation{false};
     QLabel* m_fps = nullptr; // "60 FPS", top left, like the speed indicator (Show FPS)
+    QLabel* m_movie = nullptr; // "● REC 120", "▶ 120 / 900": under the FPS, while a movie records or plays
     QTimer* m_fpsTimer = nullptr;
     struct FrameSample {
         std::uint64_t frame = 0; // the core's frame counter
