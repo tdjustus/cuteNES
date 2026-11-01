@@ -120,10 +120,14 @@ each has its own users:
 - **Which part to raise.** Pre-1.0, a release with new features raises the
   minor version, and a release with fixes only raises the patch version.
   From 1.0 on, an incompatible change raises the major version.
-- **Prereleases.** An alpha, beta or release candidate is tagged with the
-  `-<kind>.<n>` suffix on the version it leads to, and published as a
-  GitHub prerelease. The self-update never offers a prerelease (R16), so
-  testers opt in by downloading it by hand.
+- **Alphas, betas and release candidates.** Each is tagged with the
+  `-<kind>.<n>` suffix on the version it leads to. Until 1.0 it is published
+  as a normal GitHub release marked **Latest**, not as a GitHub prerelease,
+  because every pre-1.0 build is a test build. GitHub never shows a
+  prerelease as Latest, so the newest build would otherwise be hidden behind
+  an older one. The self-update still never offers it: it skips any tag with
+  a `-` suffix as well as GitHub's prerelease flag (R16), so testers download
+  it by hand.
 - History: the first app alpha predates this scheme and is tagged
   `core-v0.1.0-alpha.1`.
 
@@ -143,7 +147,8 @@ before any of it is done.
    against `SHA256SUMS` (`shasum -a 256 -c SHA256SUMS`).
 4. Create the release from the tag with every package and `SHA256SUMS`
    attached (`gh release create v<version> <files> --title ... --notes-file
-   ...`, plus `--prerelease` for an alpha, beta or release candidate). The
+   ...`, plus `--latest`; before 1.0 an alpha, beta or release candidate is
+   not marked `--prerelease`, as above). The
    notes say what changed since the last release, what is known not to
    work, how to open an unsigned build, and the licenses.
 
