@@ -23,6 +23,7 @@
 
 #include <QFile>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 #include <atomic>
@@ -121,6 +122,15 @@ public:
         virtual void showMemoryViewer() = 0;
         virtual void showPpuViewer(const QString& view) = 0;
         virtual void showTraceLogger() = 0;
+        // The windows a gui.show_* opened that are shown now, by name
+        // (thread-safe): about, settings, cheats, cheat_search, debugger,
+        // memory_viewer, ppu_viewer, trace_logger. closeWindows posts their
+        // closing; the list follows once they have closed.
+        virtual QStringList openWindows() const = 0;
+        virtual void closeWindows(const QStringList& names) = 0;
+        // What the main window shows (thread-safe): library, game or
+        // key_bindings.
+        virtual QString currentPage() const = 0;
         virtual void debuggerStopped() = 0;
         virtual void showAbout() = 0;
         virtual void openLibraryFolder() = 0;

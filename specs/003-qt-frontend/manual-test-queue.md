@@ -336,3 +336,16 @@ layout are covered by the `GuiTraceLogger` tests.
    is in the `debug` folder (about 90 KB for Super Mario Bros.).
 5. Delete the trace files when done; they are big.
 
+### Menu audit and window commands (G090, #101)
+
+Automated: the `GuiAudit` tests read the menu contract and compare it with
+the menus, shortcuts, Game column and the `gui.*` catalog. They found three
+contract commands that had never been built (`gui.state`,
+`gui.list_windows`, `gui.close_window`), which are now added and covered by
+the `GuiWindowCommands` tests. Nothing to do by hand but a look:
+
+1. Open a game and Debug > Debugger, Debug > Memory Viewer and Help >
+   About. Through the MCP, `gui.list_windows` names them, and
+   `gui.close_window` with `all` closes them.
+2. Every menu item shows the shortcut the Keyboard Shortcuts page lists.
+

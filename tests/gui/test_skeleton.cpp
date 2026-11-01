@@ -122,46 +122,9 @@ TEST(GuiMediaRuntime, LeavesSigtermToTheProcess)
 }
 #endif
 
-// The menu inventory (contracts/menus-and-commands.md): every command in the
-// contract's menu tables, and no other, is on some menu action. Open
-// Recent's entries (gui.open_recent) appear only once there are recent games.
-TEST(GuiMenus, EveryContractCommandIsOnTheMenus)
-{
-    MainWindow w(windowOptions());
-    QSet<QString> found;
-    for (QAction* a : w.menuBar()->findChildren<QAction*>()) {
-        const QString command = a->property("command").toString();
-        if (!command.isEmpty()) found.insert(command);
-    }
-    const QSet<QString> expected = {
-        // File
-        "gui.open_rom", "gui.clear_recent", "gui.show_library", "gui.close_game",
-        "gui.save_state", "gui.load_state", "gui.quick_save", "gui.quick_load",
-        "gui.select_slot", "gui.undo_load_state", "gui.save_state_file", "gui.load_state_file",
-        "gui.import_battery_save", "gui.export_battery_save", "gui.take_screenshot",
-        "gui.open_library_folder", "gui.exit",
-        // Emulation
-        "gui.toggle_pause", "gui.reset", "gui.power_cycle", "gui.frame_advance",
-        "gui.set_fast_forward", "gui.toggle_fast_forward", "gui.set_rewind", "gui.set_speed",
-        "gui.set_region",
-        // View
-        "gui.set_scale", "gui.toggle_fullscreen", "gui.toggle_integer_scaling", "gui.set_aspect",
-        "gui.set_overscan", "gui.set_filter", "gui.set_palette", "gui.toggle_fps",
-        "gui.toggle_osd", "gui.toggle_always_on_top",
-        // Tools
-        "gui.show_cheats", "gui.show_cheat_search", "gui.record_movie", "gui.play_movie",
-        "gui.stop_movie", "gui.toggle_movie_read_only", "gui.toggle_audio_recording",
-        // Debug
-        "gui.show_debugger", "gui.show_memory_viewer", "gui.show_ppu_viewer",
-        "gui.show_trace_logger", "gui.write_memory_dump",
-        // Settings
-        "gui.show_settings",
-        // Help
-        "gui.show_shortcuts", "gui.show_user_guide", "gui.open_log_folder", "gui.show_about",
-    };
-    EXPECT_EQ(found, expected) << "missing: " << (expected - found).values().join(", ").toStdString()
-                               << "; extra: " << (found - expected).values().join(", ").toStdString();
-}
+// The menu inventory itself (contracts/menus-and-commands.md) is checked
+// against the menus and the catalog by the gui-audit test (test_audit.cpp),
+// which reads the contract file.
 
 // macOS hides an empty top-level menu, and moves Quit, About and Settings
 // to the application menu (FR-024). A menu holding only role items would

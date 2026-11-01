@@ -1887,6 +1887,51 @@ void GuiHost::registerCommands(api::Registry& registry)
             m_window.showMessage(QObject::tr("Memory dump written: %1").arg(QFileInfo(path).fileName()));
             return Result::ok({{"path", str(path)}});
         });
+    const Json windowNames = s::stringEnum({"about", "settings", "cheats", "cheat_search", "debugger", "memory_viewer",
+        "ppu_viewer", "trace_logger"});
+    const Json windowList = s::array(windowNames, 16, "in name order");
+    add(registry, "gui.list_windows", "The windows a gui.show_* opened that are open now", none,
+        s::object({{"windows", windowList}}, {"windows"}), false, false, [this](CallContext&, const Json&) {
+            Json list = Json::array();
+            for (const QString& name : m_window.openWindows()) list.push_back(str(name));
+            return Result::ok({{"windows", list}});
+        });
+    Json closable = windowNames;
+    closable["enum"].push_back("all");
+    add(registry, "gui.close_window",
+        "Close a window a gui.show_* opened (all: every one); returns the ones it closes, which gui.list_windows "
+        "drops once they have closed",
+        s::object({{"window", closable}}, {"window"}), s::object({{"closed", windowList}}, {"closed"}), false, false,
+        [this](CallContext&, const Json& args) {
+            const QString window = QString::fromStdString(args["window"].get<std::string>());
+            const QStringList open = m_window.openWindows();
+            if (window != QLatin1String("all") && !open.contains(window)) return invalid("/window", "that window is not open");
+            const QStringList closing = window == QLatin1String("all") ? open : QStringList{window};
+            m_window.closeWindows(closing);
+            Json list = Json::array();
+            for (const QString& name : closing) list.push_back(str(name));
+            return Result::ok({{"closed", list}});
+        });
+    add(registry, "gui.state",
+        "The window's state: the page shown, whether a game is open, fullscreen, scale, speed, fast-forward, "
+        "rewind, the movie, the selected slot and the open windows",
+        none,
+        s::object({{"page", s::stringEnum({"library", "game", "key_bindings"})}, {"game", s::boolean("a game is open")},
+                      {"fullscreen", s::boolean()}, {"scale", s::integer(1, 6)},
+                      {"speed", s::integer(0, 400, "percent; 0 is Unlimited")}, {"fastForward", s::boolean()},
+                      {"rewinding", s::boolean()}, {"movie", Json{{"type", "object"}}},
+                      {"selectedSlot", s::integer(1, 10)}, {"windows", windowList}},
+            {"page", "game", "fullscreen", "scale", "speed", "fastForward", "rewinding", "movie", "selectedSlot",
+                "windows"}),
+        false, false, [this](CallContext&, const Json&) {
+            Json windows = Json::array();
+            for (const QString& name : m_window.openWindows()) windows.push_back(str(name));
+            const auto video = m_settings.video();
+            Json movie = movieJson();
+            return Result::ok({{"page", str(m_window.currentPage())}, {"game", m_gameOpen}, {"fullscreen", video.fullscreen},
+                {"scale", video.scale}, {"speed", m_speed}, {"fastForward", m_fastForward}, {"rewinding", m_rewinding},
+                {"movie", movie}, {"selectedSlot", m_selectedSlot.load()}, {"windows", windows}});
+        });
     later("gui.show_user_guide", "Open the user guide", none, false, "G9");
     later("gui.open_log_folder", "Show the log folder in the file manager", none, false, "G9");
 
