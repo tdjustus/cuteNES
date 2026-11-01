@@ -321,7 +321,10 @@ jobs:
           # the smoke test is that the program starts and stays up: a
           # missing DLL ends it at once (STATUS_DLL_NOT_FOUND).
           # The update check needs a TLS backend (R16; docs/packaging.md).
-          if (-not (Get-ChildItem stage\tls\*.dll)) { throw "no Qt TLS plugin in the package" }
+          if (-not (Get-ChildItem stage\plugins\tls\*.dll -ErrorAction SilentlyContinue)) { throw "no Qt TLS plugin in the package" }
+          if (-not (Test-Path stage\Qt6Core.dll)) { throw "Qt is not beside cutenes.exe" }
+          # The runner has Qt on PATH; a user's machine does not.
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notmatch '[\\/]Qt[\\/]' }) -join ';'
           $p = Start-Process -FilePath stage\cutenes.exe -ArgumentList '--version' -PassThru
           Start-Sleep -Seconds 10
           if ($p.HasExited) { throw "cutenes.exe exited with $($p.ExitCode)" }

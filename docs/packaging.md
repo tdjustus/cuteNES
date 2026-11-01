@@ -64,6 +64,17 @@ packaging a CMake and Qt program, not to this emulator:
   `--prefix` on Windows (`Given qt.conf path is not an absolute path`).
   The CI passes an absolute one, converted with `cygpath -m` because the
   step runs in Git Bash and CMake on Windows wants `D:/...`, not `/d/...`.
+- **One flat folder on Windows.** Qt's deploy script puts the Qt DLLs,
+  `qt.conf` and `plugins/` relative to `CMAKE_INSTALL_BINDIR`, which
+  defaults to `bin`, while the executables were installed at the top. Windows
+  looks for DLLs beside the executable, not in a `bin/` under it, so the
+  first zips started only where Qt was on `PATH`. That includes the CI
+  runner, so the smoke test passed anyway. `CMAKE_INSTALL_BINDIR` is `.` on
+  Windows. The smoke test now removes Qt from `PATH` first, and checks that
+  `Qt6Core.dll` sits beside `cutenes.exe`. The lesson applies to any package:
+  run the smoke test without the build machine's paths. windeployqt also gets
+  `--no-compiler-runtime`, because the runtime DLLs are already installed;
+  otherwise it adds the 18 MB `vc_redist` installer.
 - **The supported compiler on an old base system.** The AppImage is built
   on Ubuntu 22.04 for glibc reach, but 22.04's default GCC 11 is older than
   the supported GCC 12 and its `-Wstringop-overflow` false positives break

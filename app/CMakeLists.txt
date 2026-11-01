@@ -119,6 +119,14 @@ endforeach()
 # macdeployqt; on Linux linuxdeploy does that work. cutenes-server, for MCP
 # clients (`cutenes-server --attach`), goes beside the app: inside the
 # bundle on macOS. The licenses go with them.
+if(WIN32)
+    # One flat folder: Windows finds DLLs beside the executable (not in a
+    # bin/ under it), and Qt's deploy script puts Qt, qt.conf and plugins/
+    # relative to CMAKE_INSTALL_BINDIR. With the default bin/, Qt landed
+    # in bin/ and cutenes.exe at the top, and it started only where Qt was
+    # on PATH, as on the CI runner.
+    set(CMAKE_INSTALL_BINDIR . CACHE PATH "" FORCE)
+endif()
 include(GNUInstallDirs)
 if(APPLE)
     # A Qt from Qt's own installer (as CI uses) names its frameworks
@@ -129,10 +137,10 @@ if(APPLE)
     install(TARGETS cutenes-server RUNTIME DESTINATION cutenes.app/Contents/MacOS COMPONENT app)
     set(license_destination cutenes.app/Contents/Resources/licenses)
 elseif(WIN32)
-    install(TARGETS cutenes cutenes-server RUNTIME DESTINATION . COMPONENT app)
+    install(TARGETS cutenes cutenes-server RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT app)
     # The MSVC runtime DLLs beside the executables, so the zip runs on a
     # machine without the Visual C++ redistributable.
-    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT app)
     include(InstallRequiredSystemLibraries)
     set(license_destination licenses)
@@ -155,6 +163,10 @@ if(APPLE OR WIN32)
     set(deploy_options "")
     if(APPLE)
         set(deploy_options DEPLOY_TOOL_OPTIONS "-libpath=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_LIBS}")
+    else()
+        # The runtime DLLs are installed above; windeployqt would add the
+        # 18 MB vc_redist installer as well.
+        set(deploy_options DEPLOY_TOOL_OPTIONS "--no-compiler-runtime")
     endif()
     qt_generate_deploy_app_script(TARGET cutenes
         OUTPUT_SCRIPT deploy_script
