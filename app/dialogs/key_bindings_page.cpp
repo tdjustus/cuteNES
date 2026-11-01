@@ -122,9 +122,9 @@ KeyBindingsPage::KeyBindingsPage(QWidget* parent) : QWidget(parent)
 
 void KeyBindingsPage::setEntries(const QVector<KeyBindings::Entry>& entries)
 {
-    if (m_capture) endCapture();
     // The same entries with new bindings: the rows stay, and so do the
-    // selection and the scroll position.
+    // selection, the scroll position and a capture in progress (a change
+    // made just before it may arrive after it began).
     bool same = entries.size() == m_entries.size();
     for (qsizetype i = 0; same && i < entries.size(); ++i) same = entries[i].definition.id == m_entries[i].definition.id;
     if (same && m_tree->topLevelItemCount() > 0) {
@@ -133,11 +133,15 @@ void KeyBindingsPage::setEntries(const QVector<KeyBindings::Entry>& entries)
         for (const KeyBindings::Entry& e : m_entries) byId.insert(e.definition.id, &e);
         for (QTreeWidgetItemIterator it(m_tree); *it; ++it) {
             const KeyBindings::Entry* e = byId.value((*it)->data(0, kIdRole).toString());
-            if (e) setBindingTexts(*it, *e);
+            if (!e) continue;
+            const QString capturing = *it == m_capture ? m_capture->text(m_captureColumn) : QString();
+            setBindingTexts(*it, *e);
+            if (*it == m_capture) m_capture->setText(m_captureColumn, capturing);
         }
         updateButtons();
         return;
     }
+    if (m_capture) endCapture();
     const QString current = currentId();
     const int column = qMax(1, m_tree->currentColumn());
     m_entries = entries;

@@ -305,6 +305,20 @@ TEST(GuiKeyBindings, ThePageRebindsByKeyPressAndReturns)
     EXPECT_EQ(bindings(w, "gui.quick_save"), Json::array({"Ctrl+J", ""}));
     EXPECT_TRUE(page(w)->isVisible());
 
+    // A change from elsewhere (automation, or the last capture's command
+    // arriving late) updates the rows and leaves a capture running.
+    tree->setCurrentItem(quickSave, 2);
+    key(tree, QEvent::KeyPress, Qt::Key_Return);
+    ASSERT_TRUE(waitUntil([&] { return quickSave->text(2).contains(QStringLiteral("Press")); }));
+    ASSERT_FALSE(w.session().call("gui.set_binding", {{"id", "gui.reset"}, {"binding", "Ctrl+Shift+Y"}}).isError());
+    ASSERT_TRUE(waitUntil([&] {
+        return row(tree, QStringLiteral("gui.reset"))->text(1)
+            == QKeySequence(QStringLiteral("Ctrl+Shift+Y")).toString(QKeySequence::NativeText);
+    }));
+    EXPECT_TRUE(quickSave->text(2).contains(QStringLiteral("Press"))) << quickSave->text(2).toStdString();
+    key(tree, QEvent::KeyPress, Qt::Key_Escape);
+    ASSERT_TRUE(waitUntil([&] { return !quickSave->text(2).contains(QStringLiteral("Press")); }));
+
     // A conflict asks; Yes takes the key from the other action.
     tree->setCurrentItem(quickSave, 2);
     key(tree, QEvent::KeyPress, Qt::Key_Return);
