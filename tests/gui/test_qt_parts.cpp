@@ -166,16 +166,21 @@ TEST(GuiFrameClock, NeverRunsAheadOfItsRate)
         std::lock_guard lock(mutex);
         times.push_back(clock::now());
     });
+    const clock::time_point started = clock::now();
     frameClock.start(100.0);
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     frameClock.stop();
+    const clock::time_point stopped = clock::now();
     EXPECT_NEAR(frameClock.rate(), 100.0, 0.01);
 
     std::lock_guard lock(mutex);
     ASSERT_GE(times.size(), 5u);
-    const double seconds = std::chrono::duration<double>(times.back() - times.front()).count();
-    const double hz = static_cast<double>(times.size() - 1) / seconds;
-    EXPECT_LT(hz, 105.0);
+    // Against the whole run, start() to stop(): the schedule allows one tick
+    // per period plus the first. Measuring from the first tick instead read
+    // a late first tick, and the catch-up the schedule allows after it, as
+    // running ahead (106 Hz on CI, #148).
+    const double seconds = std::chrono::duration<double>(stopped - started).count();
+    EXPECT_LE(static_cast<double>(times.size()), 100.0 * seconds + 1.0) << times.size() << " ticks in " << seconds << " s";
     for (std::size_t i = 8; i < times.size(); ++i) {
         EXPECT_GE(times[i] - times[i - 8], std::chrono::milliseconds(10)) << "a burst at tick " << i;
     }
