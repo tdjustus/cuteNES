@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <algorithm>
 #include <vector>
 
 namespace {
@@ -329,6 +330,218 @@ TEST(Region, PalFramesCarryMoreAudioThanNtscFrames)
     // PAL 50.0070 fps = 2.3997 s = ~115.2k samples (within 1%).
     EXPECT_NEAR(static_cast<double>(samples[0]), 95840.0, 960.0);
     EXPECT_NEAR(static_cast<double>(samples[1]), 115186.0, 1152.0);
+}
+
+// Region override (specs/003-qt-frontend/contracts/core-additions.md). A
+// PAL frame is 312 scanlines of 341 dots at master/5 (nesdev "Cycle
+// reference chart", "Clock rate"): 531,960 master cycles; NTSC is 262 x 341
+// at master/4, 357,368 with rendering off (no odd-frame skip).
+namespace {
+
+// A frame ends at the instruction boundary after its last pixel, so one
+// frame's length jitters by up to an instruction (at most 112 master
+// cycles on PAL); the average over 100 frames is within 2 of the nominal.
+double masterCyclesPerFrame(cutenes::Machine& machine)
+{
+    machine.runFrames(2); // past the power-on partial frame
+    const std::uint64_t start = machine.masterCycle();
+    machine.runFrames(100);
+    return static_cast<double>(machine.masterCycle() - start) / 100.0;
+}
+
+} // namespace
+
+TEST(Region, AnOverrideForcesPalTimingOnAnNtscCartridge)
+{
+    auto rom = makeNes2Rom(0); // the header says NTSC
+    cutenes::Machine machine;
+    EXPECT_EQ(machine.regionOverride(), std::nullopt);
+    machine.setRegionOverride(cutenes::Region::Pal);
+    EXPECT_EQ(machine.regionOverride(), cutenes::Region::Pal);
+    ASSERT_EQ(machine.loadCartridge(rom.data(), rom.size()).error, cutenes::LoadError::Ok);
+    EXPECT_EQ(machine.region(), cutenes::Region::Pal);
+    EXPECT_EQ(machine.cartridgeInfo().region, cutenes::Region::Ntsc) << "the header is unchanged";
+    machine.powerOn();
+    EXPECT_NEAR(masterCyclesPerFrame(machine), 341u * 312u * 5u, 2.0);
+}
+
+TEST(Region, AnOverrideAppliesAtTheNextPowerOnNotMidGame)
+{
+    auto rom = makeNes2Rom(1); // the header says PAL
+    cutenes::Machine machine;
+    ASSERT_EQ(machine.loadCartridge(rom.data(), rom.size()).error, cutenes::LoadError::Ok);
+    machine.powerOn();
+    machine.runFrames(3);
+
+    machine.setRegionOverride(cutenes::Region::Ntsc);
+    EXPECT_EQ(machine.region(), cutenes::Region::Pal) << "a running game is not retimed";
+    EXPECT_NEAR(masterCyclesPerFrame(machine), 341u * 312u * 5u, 2.0);
+
+    machine.powerOn();
+    EXPECT_EQ(machine.region(), cutenes::Region::Ntsc);
+    EXPECT_NEAR(masterCyclesPerFrame(machine), 341u * 262u * 4u, 2.0);
+
+    machine.setRegionOverride(std::nullopt); // back to the header
+    machine.powerOn();
+    EXPECT_EQ(machine.region(), cutenes::Region::Pal);
+    EXPECT_NEAR(masterCyclesPerFrame(machine), 341u * 312u * 5u, 2.0);
+}
+
+// Palette (core-additions.md "Palette"). A frame with rendering off shows
+// the backdrop, $3F00; with every palette entry $0F, every pixel is colour
+// $0F. The palette changes only the output colours: referencePixels keeps
+// the default palette, so frame hashes never depend on it.
+namespace {
+
+struct LastFrame final : cutenes::IVideoSink {
+    void onFrame(const cutenes::VideoFrame& frame) override
+    {
+        pixels.assign(frame.pixels, frame.pixels + 256 * 240);
+        reference.assign(frame.referencePixels, frame.referencePixels + 256 * 240);
+    }
+    std::vector<std::uint32_t> pixels;
+    std::vector<std::uint32_t> reference;
+};
+
+// One frame of colour $0F everywhere, with PPUMASK = `mask`.
+LastFrame blackFrame(cutenes::Machine& machine, std::uint8_t mask)
+{
+    auto rom = makeEchoRom();
+    LastFrame sink;
+    machine.setVideoSink(&sink);
+    EXPECT_EQ(machine.loadCartridge(rom.data(), rom.size()).error, cutenes::LoadError::Ok);
+    machine.powerOn();
+    machine.runFrames(2); // past the PPU's post-reset write-ignore window (nesdev "PPU power up state")
+    std::uint8_t entries[32];
+    std::fill(std::begin(entries), std::end(entries), std::uint8_t{0x0F});
+    machine.writePalette(entries);
+    EXPECT_EQ(machine.writeCpuRegister(0x2001, mask), cutenes::WriteError::Ok);
+    machine.runFrames(2);
+    machine.setVideoSink(nullptr);
+    return sink;
+}
+
+bool all(const std::vector<std::uint32_t>& pixels, std::uint32_t colour)
+{
+    return !pixels.empty()
+        && std::all_of(pixels.begin(), pixels.end(), [colour](std::uint32_t p) { return (p & 0xFFFFFF) == colour; });
+}
+
+} // namespace
+
+TEST(Palette, A64EntryPaletteColoursTheOutput)
+{
+    cutenes::Machine machine;
+    std::vector<std::uint32_t> palette(64, 0x000000);
+    palette[0x0F] = 0x123456;
+    ASSERT_TRUE(machine.setPalette(palette));
+    const LastFrame frame = blackFrame(machine, 0x00);
+    EXPECT_TRUE(all(frame.pixels, 0x123456));
+    EXPECT_TRUE(all(frame.reference, 0x000000)) << "the default palette's $0F is black";
+}
+
+TEST(Palette, A512EntryPaletteIsIndexedByTheEmphasisBits)
+{
+    cutenes::Machine machine;
+    std::vector<std::uint32_t> palette(512, 0x000000);
+    palette[0x0F] = 0x111111;          // no emphasis
+    palette[64 * 5 + 0x0F] = 0xABCDEF; // emphasis bits 5 and 7: e = 0b101
+    ASSERT_TRUE(machine.setPalette(palette));
+    EXPECT_TRUE(all(blackFrame(machine, 0x00).pixels, 0x111111));
+    EXPECT_TRUE(all(blackFrame(machine, 0xA0).pixels, 0xABCDEF));
+}
+
+TEST(Palette, OnlyWholePalettesAreTakenAndEmptyRestoresTheDefault)
+{
+    cutenes::Machine machine;
+    EXPECT_FALSE(machine.setPalette(std::vector<std::uint32_t>(63)));
+    EXPECT_FALSE(machine.setPalette(std::vector<std::uint32_t>(192)));
+    std::vector<std::uint32_t> palette(64, 0xFFFFFF);
+    ASSERT_TRUE(machine.setPalette(palette));
+    EXPECT_TRUE(all(blackFrame(machine, 0x00).pixels, 0xFFFFFF));
+    ASSERT_TRUE(machine.setPalette({}));
+    const LastFrame frame = blackFrame(machine, 0x00);
+    EXPECT_TRUE(all(frame.pixels, 0x000000));
+    EXPECT_EQ(frame.pixels, frame.reference);
+}
+
+TEST(Palette, TheReferenceFrameIsTheSameWithAnyPalette)
+{
+    cutenes::Machine plain;
+    const LastFrame without = blackFrame(plain, 0x40);
+    cutenes::Machine coloured;
+    ASSERT_TRUE(coloured.setPalette(std::vector<std::uint32_t>(64, 0x00FF00)));
+    const LastFrame with = blackFrame(coloured, 0x40);
+    EXPECT_EQ(with.reference, without.pixels);
+    EXPECT_NE(with.pixels, without.pixels);
+}
+
+// Game Genie (core-additions.md; nesdev "Game Genie"). The worked examples
+// are the page's: GOSSIP is $D1DD = $14, and ZEXPYGLA is $94A7 = $02 when
+// the cartridge byte is $03.
+TEST(GameGenie, DecodesTheNesdevWorkedExamples)
+{
+    const auto six = cutenes::decodeGameGenie("GOSSIP");
+    ASSERT_TRUE(six.has_value());
+    EXPECT_EQ(six->address, 0xD1DD);
+    EXPECT_EQ(six->value, 0x14);
+    EXPECT_FALSE(six->compare.has_value());
+
+    const auto eight = cutenes::decodeGameGenie("ZEXPYGLA");
+    ASSERT_TRUE(eight.has_value());
+    EXPECT_EQ(eight->address, 0x94A7);
+    EXPECT_EQ(eight->value, 0x02);
+    EXPECT_EQ(eight->compare, std::optional<std::uint8_t>(0x03));
+
+    EXPECT_EQ(cutenes::decodeGameGenie("gossip"), six) << "letters in either case";
+    EXPECT_FALSE(cutenes::decodeGameGenie("GOSSI").has_value());
+    EXPECT_FALSE(cutenes::decodeGameGenie("GOSSIPP").has_value());
+    EXPECT_FALSE(cutenes::decodeGameGenie("GOSSIB").has_value()) << "B is not a Game Genie letter";
+    EXPECT_FALSE(cutenes::decodeGameGenie("").has_value());
+}
+
+// The echo program's STA $10 has its operand at $C00E (makeEchoRom). A code
+// there changes what the CPU executes: button A's read lands in $11.
+TEST(GameGenie, TheCpuReadsTheSubstitutedByte)
+{
+    FullControlHarness h;
+    cutenes::ButtonSet a;
+    a.set(static_cast<std::size_t>(cutenes::Button::A));
+    h.machine.setController(cutenes::Port::One, a);
+    const cutenes::GameGenieCode code{0xC00E, 0x11, std::nullopt};
+    h.machine.setGameGenieCodes(std::span(&code, 1));
+    h.machine.runFrames(2);
+    std::uint8_t zp[2] = {};
+    h.machine.readMemory(0x0010, 2, zp);
+    EXPECT_EQ(zp[0], 0x00) << "$10 is no longer written";
+    EXPECT_EQ(zp[1] & 0x01, 0x01) << "button A, stored at $11";
+}
+
+TEST(GameGenie, ACompareValueMustMatchTheCartridgeByte)
+{
+    FullControlHarness h; // $C000 holds $A9 (LDA #), mirrored at $8000
+    std::uint8_t byte = 0;
+    const auto read = [&](std::uint16_t addr) {
+        h.machine.readMemory(addr, 1, &byte);
+        return byte;
+    };
+    const cutenes::GameGenieCode match{0xC000, 0xEA, 0xA9};
+    h.machine.setGameGenieCodes(std::span(&match, 1));
+    EXPECT_EQ(read(0xC000), 0xEA);
+    EXPECT_EQ(h.machine.peek(0xC000), 0xEA) << "peek sees what the CPU sees";
+    EXPECT_EQ(read(0x8000), 0xA9) << "only the code's address";
+
+    const cutenes::GameGenieCode noMatch{0xC000, 0xEA, 0x00};
+    h.machine.setGameGenieCodes(std::span(&noMatch, 1));
+    EXPECT_EQ(read(0xC000), 0xA9);
+
+    const cutenes::GameGenieCode ram{0x0010, 0x55, std::nullopt};
+    h.machine.setGameGenieCodes(std::span(&ram, 1));
+    EXPECT_EQ(read(0x0010), 0x00) << "codes act on $8000-$FFFF only";
+
+    h.machine.setGameGenieCodes(std::span(&match, 1));
+    h.machine.setGameGenieCodes({});
+    EXPECT_EQ(read(0xC000), 0xA9) << "an empty set removes them";
 }
 
 // Memory dump (issue #68; specs/001-emulation-core/memdump-design.md and

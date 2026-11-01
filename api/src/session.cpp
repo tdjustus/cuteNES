@@ -17,7 +17,8 @@ const std::set<std::string>& stateChangingCommands()
         "core.power_on", "core.reset", "core.load_state", "core.write_memory",
         "core.write_cpu_register", "core.set_cpu", "core.write_vram",
         "core.write_oam", "core.write_palette", "core.load_sram",
-        "session.load_slot", "core.set_mmc3_revision"};
+        "session.load_slot", "core.set_mmc3_revision", "core.set_region_override",
+        "core.set_game_genie"};
     return s;
 }
 

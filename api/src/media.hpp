@@ -40,14 +40,17 @@ public:
     bool hasFrame() const { return m_hasFrame; }
     const std::vector<std::uint32_t>& pixels() const { return m_pixels; }
     std::uint64_t frameIndex() const { return m_frameIndex; }
+    // FNV-1a of the frame in the default palette (VideoFrame::referencePixels),
+    // so it never depends on the palette.
     std::uint32_t hash() const;
-    std::vector<std::uint8_t> bytes() const; // little-endian XRGB8888
+    std::vector<std::uint8_t> bytes() const; // little-endian XRGB8888, as shown
     void clear();
 
 private:
     std::vector<std::uint32_t> m_pixels = std::vector<std::uint32_t>(kFramePixels);
     std::uint64_t m_frameIndex = 0;
     bool m_hasFrame = false;
+    std::uint32_t m_hash = 0;
 };
 
 // The last ~10 s of audio, kept as the core delivers it (IAudioSink).

@@ -1,7 +1,10 @@
 #pragma once
 
+#include <cutenes/game_genie.hpp>
+
 #include <array>
 #include <cstdint>
+#include <vector>
 
 namespace cutenes {
 
@@ -45,6 +48,10 @@ public:
 
     const std::array<std::uint8_t, 2048>& ram() const { return m_ram; }
 
+    // Game Genie: reads in $8000-$FFFF at a code's address are substituted
+    // (Machine::setGameGenieCodes).
+    void setGameGenieCodes(std::vector<GameGenieCode> codes) { m_genie = std::move(codes); }
+
     // The CPU data-bus open-bus latch: the last byte driven on the bus.
     // Read drivers with no register behind them return this (write-only
     // APU ports, $4018-$401F — blargg cpu_exec_space).
@@ -60,6 +67,8 @@ private:
     CpuBusDevice* m_ppu = nullptr;
     CpuBusDevice* m_apuIo = nullptr;
     CpuBusDevice* m_cartridge = nullptr;
+    std::vector<GameGenieCode> m_genie;
+    std::uint8_t applyGameGenie(std::uint16_t addr, std::uint8_t cartridge) const;
 };
 
 } // namespace cutenes

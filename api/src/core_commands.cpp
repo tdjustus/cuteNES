@@ -302,10 +302,58 @@ void registerCartridge(Registry& r)
                                                                             : "auto"}});
         });
 
-    addCommand(r, "core.region", "The timing region of the loaded cartridge", noArguments(),
-        resultSchema({{"region", s::stringEnum({"NTSC", "PAL", "Unspecified"})}}, {"region"}), false,
-        false, [](CallContext& ctx, const Json&) {
-            return Result::ok({{"region", regionName(state(ctx).machine.region())}});
+    addCommand(r, "core.decode_game_genie", "Decode a 6- or 8-letter Game Genie code",
+        s::object({{"code", s::string("letters APZLGITYEOXUKSVN")}}, {"code"}),
+        resultSchema({{"address", s::u16()}, {"value", s::integer(0, 255)}, {"compare", s::integer(0, 255)}},
+            {"address", "value"}),
+        false, false, [](CallContext&, const Json& args) {
+            const auto code = decodeGameGenie(args["code"].get<std::string>());
+            if (!code) return invalidArgument("/code", "must be 6 or 8 of the letters APZLGITYEOXUKSVN");
+            Json v = {{"address", code->address}, {"value", code->value}};
+            if (code->compare) v["compare"] = *code->compare;
+            return Result::ok(v);
+        });
+
+    addCommand(r, "core.set_game_genie",
+        "Replace the active Game Genie codes (any number; an empty list removes them)",
+        s::object({{"codes", s::array(s::string("6 or 8 letters"), 1000, "the codes")}}, {"codes"}),
+        resultSchema({{"codes", s::u64()}}, {"codes"}), true, false, [](CallContext& ctx, const Json& args) {
+            std::vector<GameGenieCode> codes;
+            Json invalid = Json::array();
+            for (std::size_t i = 0; i < args["codes"].size(); ++i) {
+                const auto code = decodeGameGenie(args["codes"][i].get<std::string>());
+                code ? codes.push_back(*code) : invalid.push_back(i);
+            }
+            if (!invalid.empty()) {
+                const std::string path = "/codes/" + std::to_string(invalid[0].get<std::size_t>());
+                return Result::fail("InvalidArguments",
+                    path + " must be 6 or 8 of the letters APZLGITYEOXUKSVN; no codes were changed",
+                    {{"path", path}, {"invalid", invalid}});
+            }
+            state(ctx).machine.setGameGenieCodes(codes);
+            return Result::ok({{"codes", codes.size()}});
+        });
+
+    addCommand(r, "core.region", "The timing region in effect, and the override setting", noArguments(),
+        resultSchema({{"region", s::stringEnum({"NTSC", "PAL", "Unspecified"})},
+                         {"override", s::stringEnum({"auto", "ntsc", "pal"})}},
+            {"region", "override"}),
+        false, false, [](CallContext& ctx, const Json&) {
+            const Machine& machine = state(ctx).machine;
+            const auto forced = machine.regionOverride();
+            return Result::ok({{"region", regionName(machine.region())},
+                {"override", !forced ? "auto" : *forced == Region::Pal ? "pal" : "ntsc"}});
+        });
+
+    addCommand(r, "core.set_region_override",
+        "Force NTSC or PAL timing (auto follows the header); applies at the next load or power-on",
+        s::object({{"region", s::stringEnum({"auto", "ntsc", "pal"})}}, {"region"}), resultSchema(), true,
+        false, [](CallContext& ctx, const Json& args) {
+            const std::string region = args["region"];
+            state(ctx).machine.setRegionOverride(region == "pal" ? std::optional(Region::Pal)
+                    : region == "ntsc"                           ? std::optional(Region::Ntsc)
+                                                                 : std::nullopt);
+            return Result::ok();
         });
 }
 
@@ -708,6 +756,34 @@ void registerMedia(Registry& r)
                 v["blobId"] = st.addBlob(std::move(bytes));
             }
             return Result::ok(v);
+        });
+
+    addCommand(r, "core.set_palette",
+        "Set the output colours: 64 or 512 XRGB entries, or a .pal file (192 or 1536 bytes); empty restores "
+        "the default. Frame hashes stay the default palette's",
+        s::object({{"entries", s::array(s::integer(0, 0xFFFFFF), 512, "XRGB8888: 64, or 512 by emphasis bits")},
+            {"bytes", s::bytes()}}),
+        resultSchema({{"entries", s::u64()}}, {"entries"}), true, false, [](CallContext& ctx, const Json& args) {
+            if (args.contains("entries") == args.contains("bytes")) {
+                return invalidArgument("", "give exactly one of entries and bytes");
+            }
+            std::vector<std::uint32_t> palette;
+            if (args.contains("entries")) {
+                for (const Json& entry : args["entries"]) palette.push_back(entry.get<std::uint32_t>());
+            } else {
+                // nesdev "PPU palettes": RGB triplets, 64 colours or 8 x 64 by emphasis.
+                const auto data = decodeBytes(args["bytes"]);
+                if (data.size() != 192 && data.size() != 1536) {
+                    return invalidArgument("/bytes", "a .pal file is 192 or 1536 bytes");
+                }
+                for (std::size_t i = 0; i < data.size(); i += 3) {
+                    palette.push_back(std::uint32_t(data[i]) << 16 | std::uint32_t(data[i + 1]) << 8 | data[i + 2]);
+                }
+            }
+            if (!state(ctx).machine.setPalette(palette)) {
+                return invalidArgument("/entries", "must be 64 or 512 entries, or none");
+            }
+            return Result::ok({{"entries", palette.size()}});
         });
 
     addCommand(r, "core.frame_hash", "FNV-1a of the last frame (the playtest harness hash)", noArguments(),

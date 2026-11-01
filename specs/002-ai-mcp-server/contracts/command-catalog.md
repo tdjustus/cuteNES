@@ -50,7 +50,11 @@ Conventions:
 | `core.capture_state` | none | `blobId`, `size` | `captureState` | Read the bytes with `session.blob_read` |
 | `core.load_state` | `bytes` or `blobId` | none | `loadState` | Errors: `LoadStateError` name |
 | `core.read_sram` / `core.load_sram` | `offset`, `length` / `bytes` | `bytes`, `size` / none | `sram` / `loadSram` | needs ROM; `NoBattery` unless the header sets the battery flag |
-| `core.region` | none | `region` | `region` | |
+| `core.region` | none | `region`, `override` (`auto` \| `ntsc` \| `pal`) | `region` / `regionOverride` | |
+| `core.set_region_override` | `region`: `auto` \| `ntsc` \| `pal` | none | `setRegionOverride` | Applies at the next load or power-on (003) |
+| `core.set_palette` | `entries` (64 or 512 XRGB integers; empty = default) **or** `bytes` (a 192- or 1536-byte `.pal`) | `entries` count | `setPalette` | Colours `core.screen`; `frameHash` stays the default palette's (003) |
+| `core.decode_game_genie` | `code` (6 or 8 letters) | `address`, `value`, `compare` (8 letters) | `decodeGameGenie` | (003) |
+| `core.set_game_genie` | `codes` (strings) | `codes` count | `setGameGenieCodes` | Replaces the set; any invalid code refuses the whole set, with `data.invalid` listing their indexes (003) |
 | `core.counters` | none | `frame`, `masterCycle` | `frameCounter` / `masterCycle` | |
 | `core.trace` | `instructions` (1-256) | `lines[]`: `cpu`, `scanline`, `dot`, `text` (nestest format) | `setInstructionTrace` around `stepInstruction` | Bounded capture (256 keeps a result under 64 KiB); the callback never leaves the emulation thread |
 | `core.screen` | `format`: `png` (default) \| `raw` | `png` inline, or `blobId`/`size` (XRGB8888 little-endian); `frameIndex`, `hasFrame`, `frameHash` | last `IVideoSink::onFrame` frame | MCP returns an `image` content block. A PNG is returned whole |

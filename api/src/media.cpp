@@ -127,6 +127,13 @@ std::vector<std::uint8_t> encodePng(const std::uint32_t* pixels)
 void FrameCapture::onFrame(const VideoFrame& frame)
 {
     std::copy(frame.pixels, frame.pixels + kFramePixels, m_pixels.begin());
+    // The hash is of the default-palette frame (core-additions.md).
+    const std::uint32_t* reference = frame.referencePixels ? frame.referencePixels : frame.pixels;
+    std::vector<std::uint8_t> bytes(kFramePixels * 4);
+    for (std::size_t i = 0; i < kFramePixels; ++i) {
+        for (std::size_t b = 0; b < 4; ++b) bytes[i * 4 + b] = static_cast<std::uint8_t>(reference[i] >> (8 * b));
+    }
+    m_hash = fnv1a32(bytes.data(), bytes.size());
     m_frameIndex = frame.frameIndex;
     m_hasFrame = true;
 }
@@ -146,8 +153,7 @@ std::vector<std::uint8_t> FrameCapture::bytes() const
 
 std::uint32_t FrameCapture::hash() const
 {
-    const auto b = bytes();
-    return fnv1a32(b.data(), b.size());
+    return m_hasFrame ? m_hash : fnv1a32(bytes().data(), kFramePixels * 4);
 }
 
 void FrameCapture::clear()
@@ -155,6 +161,7 @@ void FrameCapture::clear()
     std::fill(m_pixels.begin(), m_pixels.end(), 0u);
     m_frameIndex = 0;
     m_hasFrame = false;
+    m_hash = 0;
 }
 
 AudioRing::AudioRing(std::uint32_t sampleRate)

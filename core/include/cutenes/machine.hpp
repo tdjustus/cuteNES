@@ -2,6 +2,7 @@
 
 #include <cutenes/cartridge.hpp>
 #include <cutenes/controller.hpp>
+#include <cutenes/game_genie.hpp>
 #include <cutenes/media.hpp>
 #include <cutenes/save_state.hpp>
 #include <cutenes/state_view.hpp>
@@ -10,6 +11,8 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -100,6 +103,20 @@ public:
     void readPalette(std::uint8_t dst[32]) const; // $3F00-$3F1F, aliases resolved
     void writePalette(const std::uint8_t src[32]);
 
+    // The output colours (XRGB8888). 64 entries: emphasis applied as with
+    // the default palette; 512: entry 64 * e + i for emphasis bits
+    // e = (PPUMASK >> 5) & 7. Empty: the default palette. Any other size is
+    // refused (false). Only the colours change: never emulation state,
+    // save states or VideoFrame::referencePixels.
+    bool setPalette(std::span<const std::uint32_t> xrgb);
+
+    // Replaces the active Game Genie codes (core-additions.md). CPU reads at
+    // a code's address in $8000-$FFFF return its value (for 8-letter codes,
+    // only when the cartridge byte equals the compare); peek and
+    // readMemory see the same. Any number of codes, beyond the accessory's
+    // three. Codes are session configuration, not part of save states.
+    void setGameGenieCodes(std::span<const GameGenieCode> codes);
+
     std::uint8_t peek(std::uint16_t addr) const;  // side-effect-free bus read
     std::string  disassemble(std::uint16_t pc) const; // trace-format, no exec
 
@@ -136,6 +153,11 @@ public:
     std::string dumpMemory(const std::string& debugDir = "debug") const;
 
     // --- Region & counters -------------------------------------------------
+    // Forces NTSC or PAL timing over the header's (nullopt: the header's).
+    // It takes effect at the next loadCartridge or powerOn; a running game
+    // is not retimed. region() reports the effective region.
+    void setRegionOverride(std::optional<Region> region);
+    std::optional<Region> regionOverride() const;
     Region region() const;
     std::uint64_t frameCounter() const;
     std::uint64_t masterCycle() const; // the sole time source
