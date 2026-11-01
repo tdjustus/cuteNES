@@ -26,7 +26,7 @@
 |---|---|
 | `video` | `scale` (3), `fullscreen` (false), `integerScaling` (true), `aspect` (`8:7`), `overscan` (top 8, bottom 8, left 0, right 0), `filter` (`nearest`), `palette` (`default`), `showFps` (false), `showOsd` (true), `alwaysOnTop` (false), `syncMode` (`auto`: display or audio, R4) |
 | `audio` | `device` (`default`), `volume` (100), `muted` (false), `latencyMs` (64), `fastForwardAudio` (`stretch`: or `mute`) |
-| `input` | bindings (InputBinding list), `turboRate` (15), `allowOppositeDirections` (false), `pauseOnGamepadDisconnect` (true) |
+| `input` | bindings (InputBinding list), `turboRate` (15, 2-30), `allowOppositeDirections` (false), `pauseOnGamepadDisconnect` (true); the GUID of the pad that last drove each player |
 | `hotkeys` | Hotkey list |
 | `emulation` | `pauseWhenInactive` (true), `rewindEnabled` (true), `rewindBudgetMiB` (64), `fastForwardSpeed` (300), `resumeOnOpen` (false), `region` (`auto`) |
 | `library` | `root` (`<Documents>/cuteNES`), `romFolders` (empty; changed with `gui.add_rom_folder` / `gui.remove_rom_folder`) |

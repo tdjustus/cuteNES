@@ -2,6 +2,9 @@
 
 #include <QKeySequence>
 #include <QObject>
+#include <QRegularExpression>
+
+#include <algorithm>
 
 namespace cutenes::app {
 
@@ -59,6 +62,17 @@ QStringList toList(const KeyBindings::Pair& pair)
     return {pair[0], pair[1]};
 }
 
+QString player(const KeyBindings::Definition& d)
+{
+    return d.control ? d.id.section(QLatin1Char('.'), 0, 0) : QString();
+}
+
+// "LeftShoulder" as "Left Shoulder".
+QString spaced(const char* name)
+{
+    return QString::fromLatin1(name).replace(QRegularExpression(QStringLiteral("(?<=[a-z])(?=[A-Z])")), QStringLiteral(" "));
+}
+
 } // namespace
 
 KeyBindings::KeyBindings(AppSettings& settings) : m_settings(settings) {}
@@ -90,6 +104,11 @@ int KeyBindings::indexOf(const QString& id) const
     return -1;
 }
 
+bool KeyBindings::clashes(const Definition& a, const Definition& b, const QString& binding)
+{
+    return !(isPad(binding) && a.control && b.control && player(a) != player(b));
+}
+
 QVector<KeyBindings::Entry> KeyBindings::entries() const
 {
     std::lock_guard lock(m_mutex);
@@ -111,7 +130,10 @@ QVector<KeyBindings::Conflict> KeyBindings::conflicts(const QString& id, const Q
     std::lock_guard lock(m_mutex);
     for (const Entry& e : m_entries) {
         if (e.definition.id == id) continue;
-        if (e.bindings[0] == binding || e.bindings[1] == binding) out.push_back({e.definition.id, e.definition.label});
+        if (e.bindings[0] != binding && e.bindings[1] != binding) continue;
+        const int self = indexOf(id);
+        if (self >= 0 && !clashes(m_entries[self].definition, e.definition, binding)) continue;
+        out.push_back({e.definition.id, e.definition.label});
     }
     if (reserved().contains(binding) && !keepsOwn(id, binding)) {
         out.push_back({QStringLiteral("system"), QObject::tr("the system (%1)").arg(displayText(binding, false))});
@@ -145,7 +167,7 @@ KeyBindings::Change KeyBindings::set(const QString& id, int index, const QString
     for (Entry& e : m_entries) {
         bool changed = false;
         for (QString& b : e.bindings) {
-            if (e.definition.id != id && b == *normalized) {
+            if (e.definition.id != id && b == *normalized && clashes(target->definition, e.definition, b)) {
                 b.clear();
                 changed = true;
             }
@@ -195,7 +217,8 @@ std::optional<QVector<KeyBindings::Entry>> KeyBindings::reset(const QString& id)
         bool lost = false;
         for (QString& b : e.bindings) {
             for (const Entry& c : changed) {
-                if (!b.isEmpty() && (c.bindings[0] == b || c.bindings[1] == b) && c.definition.id != e.definition.id) {
+                if (!b.isEmpty() && (c.bindings[0] == b || c.bindings[1] == b) && c.definition.id != e.definition.id
+                    && clashes(c.definition, e.definition, b)) {
                     b.clear();
                     lost = true;
                 }
@@ -237,6 +260,20 @@ std::optional<QString> KeyBindings::normalize(const QString& text, bool control,
         if (why) *why = reason;
         return std::nullopt;
     };
+    if (isPad(text)) {
+        QVector<qt::PadControl> controls;
+        for (const QString& name : text.mid(4).split(QLatin1Char('+'))) {
+            const auto c = qt::padControlFromName(name.trimmed().toStdString());
+            if (!c) return fail(QStringLiteral("%1 is not a gamepad control, such as South or LeftShoulder").arg(name));
+            if (!controls.contains(*c)) controls.push_back(*c);
+        }
+        if (control && controls.size() != 1) return fail(QStringLiteral("a game button takes one gamepad control"));
+        if (controls.size() > 2) return fail(QStringLiteral("a hotkey takes one or two gamepad controls"));
+        std::sort(controls.begin(), controls.end());
+        QStringList names;
+        for (const qt::PadControl c : controls) names << QLatin1String(qt::padControlName(c));
+        return QStringLiteral("Pad:") + names.join(QLatin1Char('+'));
+    }
     if (control) {
         const int key = keyOf(text);
         if (key == 0) return fail(QStringLiteral("a game button takes one key without modifiers"));
@@ -251,8 +288,19 @@ std::optional<QString> KeyBindings::normalize(const QString& text, bool control,
     return sequence.toString(QKeySequence::PortableText);
 }
 
+QVector<qt::PadControl> KeyBindings::padControls(const QString& binding)
+{
+    QVector<qt::PadControl> out;
+    if (!isPad(binding)) return out;
+    for (const QString& name : binding.mid(4).split(QLatin1Char('+'))) {
+        if (const auto c = qt::padControlFromName(name.toStdString())) out.push_back(*c);
+    }
+    return out;
+}
+
 int KeyBindings::keyOf(const QString& name)
 {
+    if (isPad(name)) return 0;
     for (const auto& m : kModifierKeys) {
         if (name == QLatin1String(m.name)) return m.key;
     }
@@ -273,6 +321,11 @@ QString KeyBindings::keyName(int key)
 QString KeyBindings::displayText(const QString& binding, bool control)
 {
     if (binding.isEmpty()) return {};
+    if (isPad(binding)) {
+        QStringList names;
+        for (const qt::PadControl c : padControls(binding)) names << spaced(qt::padControlName(c));
+        return QObject::tr("Pad %1").arg(names.join(QStringLiteral(" + ")));
+    }
     if (control && isModifier(keyOf(binding))) {
         // A modifier alone has no native text of its own: take it from
         // "Shift+A" (⇧A on macOS, Shift+A elsewhere) less the A.

@@ -4,6 +4,8 @@
 add_executable(cutenes-gui-tests
     gui_main.cpp
     test_battery.cpp
+    test_gamepads.cpp
+    test_input.cpp
     test_key_bindings.cpp
     test_library.cpp
     test_library_index.cpp

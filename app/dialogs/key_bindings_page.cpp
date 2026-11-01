@@ -47,8 +47,8 @@ KeyBindingsPage::KeyBindingsPage(QWidget* parent) : QWidget(parent)
     big.setPointSizeF(big.pointSizeF() * 1.45);
     big.setWeight(QFont::DemiBold);
     title->setFont(big);
-    auto* hint = new QLabel(tr("Click a binding, or select it and press Enter, then press the new key. "
-                               "Esc cancels. Delete clears the selected binding."),
+    auto* hint = new QLabel(tr("Click a binding, or select it and press Enter, then press the new key or "
+                               "gamepad button. Esc cancels. Delete clears the selected binding."),
         this);
     hint->setWordWrap(true);
     m_filter = new QLineEdit(this);
@@ -230,7 +230,8 @@ void KeyBindingsPage::startCapture(QTreeWidgetItem* item, int column)
     m_capture = item;
     m_captureColumn = column;
     m_tree->setCurrentItem(item, column);
-    item->setText(column, tr("Press a key… (Esc cancels)"));
+    item->setText(column, tr("Press a key or button… (Esc cancels)"));
+    m_padCapture.clear();
     m_tree->setFocus();
 }
 
@@ -245,6 +246,27 @@ void KeyBindingsPage::endCapture()
         }
     }
     m_capture = nullptr;
+}
+
+void KeyBindingsPage::padControl(qt::PadControl control, bool pressed)
+{
+    if (!m_capture) return;
+    const bool game = m_capture->data(0, kControlRole).toBool();
+    QString binding;
+    if (pressed) {
+        if (!m_padCapture.contains(control)) m_padCapture.push_back(control);
+        if (!game) return; // a combination ends at the first release
+        binding = QStringLiteral("Pad:") + QLatin1String(qt::padControlName(control));
+    } else {
+        if (!m_padCapture.contains(control)) return; // held from before
+        QStringList names;
+        for (const qt::PadControl c : m_padCapture) names << QLatin1String(qt::padControlName(c));
+        binding = QStringLiteral("Pad:") + names.join(QLatin1Char('+'));
+    }
+    const QString id = m_capture->data(0, kIdRole).toString();
+    const int index = m_captureColumn - 1;
+    endCapture();
+    emit bindRequested(id, index, binding);
 }
 
 bool KeyBindingsPage::eventFilter(QObject* watched, QEvent* event)

@@ -23,7 +23,6 @@ const std::pair<const char*, const char*> kPages[] = {
     {"video", QT_TRANSLATE_NOOP("SettingsDialog", "Video")},
     {"audio", QT_TRANSLATE_NOOP("SettingsDialog", "Audio")},
     {"input", QT_TRANSLATE_NOOP("SettingsDialog", "Input")},
-    {"hotkeys", QT_TRANSLATE_NOOP("SettingsDialog", "Hotkeys")},
     {"emulation", QT_TRANSLATE_NOOP("SettingsDialog", "Emulation")},
     {"library", QT_TRANSLATE_NOOP("SettingsDialog", "Library")},
     {"servers", QT_TRANSLATE_NOOP("SettingsDialog", "Servers")},
@@ -114,6 +113,8 @@ SettingsDialog::SettingsDialog(QWidget* parent)
             layout->addLayout(folderButtons);
         } else if (QLatin1String(key) == QLatin1String("servers")) {
             page = buildServersPage(m_stack);
+        } else if (QLatin1String(key) == QLatin1String("input")) {
+            page = buildInputPage(m_stack);
         } else {
             page = new QLabel(tr("Coming in a later update."), m_stack);
             static_cast<QLabel*>(page)->setAlignment(Qt::AlignCenter);
@@ -190,10 +191,10 @@ QWidget* SettingsDialog::buildServersPage(QWidget* parent)
         c.copy = new QPushButton(tr("Copy Token"), page);
         c.copy->setObjectName(QStringLiteral("copy") + name.at(0).toUpper() + name.mid(1) + QStringLiteral("Token"));
         connect(c.enabled, &QCheckBox::toggled, this, [this, enabledKey](bool on) {
-            emit serverSettingRequested(QString::fromLatin1(enabledKey), on);
+            emit settingRequested(QString::fromLatin1(enabledKey), on);
         });
         connect(c.port, &QSpinBox::editingFinished, this, [this, &c, portKey] {
-            emit serverSettingRequested(QString::fromLatin1(portKey), c.port->value());
+            emit settingRequested(QString::fromLatin1(portKey), c.port->value());
         });
         connect(c.copy, &QPushButton::clicked, this, [&c] { QGuiApplication::clipboard()->setText(c.token); });
         grid->addWidget(c.enabled, row, 0);
@@ -244,6 +245,80 @@ void SettingsDialog::setServers(const Server& api, const Server& mcp)
     show(m_api, api);
     show(m_mcp, mcp);
     m_mcpTokenFile->setText(mcp.running ? tr("Token file: %1").arg(mcp.tokenFile) : QString());
+}
+
+QWidget* SettingsDialog::buildInputPage(QWidget* parent)
+{
+    auto* page = new QWidget(parent);
+    m_turboRate = new QSpinBox(page);
+    m_turboRate->setObjectName(QStringLiteral("turboRate"));
+    m_turboRate->setRange(2, 30);
+    m_turboRate->setSuffix(tr(" presses a second"));
+    m_turboRate->setAccessibleName(tr("Turbo rate"));
+    connect(m_turboRate, &QSpinBox::valueChanged, this,
+        [this](int rate) { emit settingRequested(QStringLiteral("input.turboRate"), rate); });
+    m_opposite = new QCheckBox(tr("Allow opposite directions (Left with Right, Up with Down)"), page);
+    m_opposite->setObjectName(QStringLiteral("allowOppositeDirections"));
+    m_opposite->setToolTip(tr("Off, the last direction pressed wins, as on a real controller. Some games "
+                              "glitch when both are held."));
+    connect(m_opposite, &QCheckBox::toggled, this,
+        [this](bool on) { emit settingRequested(QStringLiteral("input.allowOppositeDirections"), on); });
+    m_pauseOnDisconnect = new QCheckBox(tr("Pause when a gamepad is unplugged"), page);
+    m_pauseOnDisconnect->setObjectName(QStringLiteral("pauseOnGamepadDisconnect"));
+    connect(m_pauseOnDisconnect, &QCheckBox::toggled, this,
+        [this](bool on) { emit settingRequested(QStringLiteral("input.pauseOnGamepadDisconnect"), on); });
+
+    m_gamepads = new QLabel(page);
+    m_gamepads->setObjectName(QStringLiteral("gamepadList"));
+    m_gamepads->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_gamepads->setWordWrap(true);
+    auto* bindings = new QPushButton(tr("Key Bindings…"), page);
+    bindings->setObjectName(QStringLiteral("inputKeyBindings"));
+    connect(bindings, &QPushButton::clicked, this, &SettingsDialog::keyBindingsRequested);
+    auto* note = new QLabel(tr("The first gamepad plugged in is player 1 and the second player 2; a pad "
+                               "plugged back in gets its player back. Remap the keyboard and gamepad "
+                               "controls, and the hotkeys, on the Key Bindings page."),
+        page);
+    note->setWordWrap(true);
+    note->setForegroundRole(QPalette::PlaceholderText);
+
+    auto* rate = new QHBoxLayout;
+    rate->addWidget(new QLabel(tr("Turbo rate"), page));
+    rate->addWidget(m_turboRate);
+    rate->addStretch();
+    auto* buttons = new QHBoxLayout;
+    buttons->addWidget(bindings);
+    buttons->addStretch();
+    auto* heading = new QLabel(tr("Gamepads"), page);
+    QFont font = heading->font();
+    font.setWeight(QFont::DemiBold);
+    heading->setFont(font);
+
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(16, 4, 4, 4);
+    layout->setSpacing(10);
+    layout->addLayout(rate);
+    layout->addWidget(m_opposite);
+    layout->addWidget(m_pauseOnDisconnect);
+    layout->addSpacing(8);
+    layout->addWidget(heading);
+    layout->addWidget(m_gamepads);
+    layout->addWidget(note);
+    layout->addLayout(buttons);
+    layout->addStretch();
+    setInput({});
+    return page;
+}
+
+void SettingsDialog::setInput(const Input& input)
+{
+    const QSignalBlocker blockRate(m_turboRate);
+    const QSignalBlocker blockOpposite(m_opposite);
+    const QSignalBlocker blockPause(m_pauseOnDisconnect);
+    if (!m_turboRate->hasFocus()) m_turboRate->setValue(input.turboRate);
+    m_opposite->setChecked(input.allowOppositeDirections);
+    m_pauseOnDisconnect->setChecked(input.pauseOnGamepadDisconnect);
+    m_gamepads->setText(input.gamepads.isEmpty() ? tr("No gamepad is plugged in.") : input.gamepads.join(QLatin1Char('\n')));
 }
 
 void SettingsDialog::setLibraryRoot(const QString& root)

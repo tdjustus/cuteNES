@@ -3,6 +3,7 @@
 #include <cutenes/api/schema.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <set>
 
 namespace cutenes::api {
@@ -120,7 +121,10 @@ void Session::Impl::loop()
 void Session::Impl::applyInput(Port port)
 {
     const std::size_t i = port == Port::One ? 0 : 1;
-    machine.setController(port, automationInput[i] | ButtonSet(liveInput[i].load()));
+    ButtonSet live(liveInput[i].load());
+    const auto period = static_cast<std::uint64_t>(turboPeriod[i].load());
+    if (machine.frameCounter() % period < (period + 1) / 2) live |= ButtonSet(liveTurbo[i].load());
+    machine.setController(port, automationInput[i] | live);
 }
 
 void Session::Impl::runRealtimeFrame()
@@ -307,6 +311,14 @@ void Session::setLiveInput(Port port, ButtonSet buttons)
 {
     m_impl->liveInput[port == Port::One ? 0 : 1].store(
         static_cast<std::uint8_t>(buttons.to_ulong()));
+}
+
+void Session::setLiveTurbo(Port port, ButtonSet buttons, int rate)
+{
+    const std::size_t i = port == Port::One ? 0 : 1;
+    const int clamped = std::clamp(rate, 2, 30);
+    m_impl->turboPeriod[i].store(std::max(2, static_cast<int>(std::lround(60.0 / clamped))));
+    m_impl->liveTurbo[i].store(static_cast<std::uint8_t>(buttons.to_ulong()));
 }
 
 void Session::setMediaSinks(IVideoSink* video, IAudioSink* audio)

@@ -172,14 +172,14 @@ Real-time mode in `cutenes-api` (R3), test-first:
 
 ## Phase G4: Input (branch `feature/gui-input`)
 
-- [ ] G040 [US5] Tests first:
+- [x] G040 [US5] Tests first:
   - binding conflicts;
   - turbo timing at 15 Hz;
   - opposite-direction resolution (last pressed wins);
   - gamepad mapping defaults from a fake device.
-- [ ] G041 [US5] SDL3 gamepads: polling, hot-plug, GUID-stable port
+- [x] G041 [US5] SDL3 gamepads: polling, hot-plug, GUID-stable port
   assignment, and pause on disconnect.
-- [ ] G042 [US5] Gamepads on the Key Bindings page (G036): per-player
+- [x] G042 [US5] Gamepads on the Key Bindings page (G036): per-player
   gamepad bindings with press-to-bind, and gamepad buttons as hotkeys. Turbo
   rate and opposite directions on Settings > Input.
 - [ ] G043 Manual checklist **M4**.

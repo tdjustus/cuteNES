@@ -155,7 +155,7 @@ Register and memory edits use the existing `core.set_cpu` and
 | Settings… † | `gui.show_settings` | none (the last page shown) | Ctrl+, | |
 | Video… | `gui.show_settings` | `page`: `video` | | |
 | Audio… | `gui.show_settings` | `page`: `audio` | | |
-| Input… | `gui.show_settings` | `page`: `input` (the Key Bindings page, at the game controls) | | |
+| Input… | `gui.show_settings` | `page`: `input` (turbo rate, opposite directions, pause on disconnect, the gamepads, and a Key Bindings button) | | |
 | Hotkeys… | `gui.show_settings` | `page`: `hotkeys` (the Key Bindings page, at the hotkeys) | | |
 | Emulation… | `gui.show_settings` | `page`: `emulation` | | |
 | Library… | `gui.show_settings` | `page`: `library` | | |
@@ -249,30 +249,44 @@ Settings pages that do not exist yet do the same through
 Every shortcut in this file is a default. One page in the main window lists
 and remaps them all, with the game controls. It opens from the library
 browser's **Key Bindings** button, from Help > Keyboard Shortcuts
-(`gui.show_shortcuts`), and from Settings > Input… and Settings > Hotkeys…
-(`gui.show_settings` with `page` `input` or `hotkeys`, which open the page
-at that section). **Back**, or Esc when no key is being captured, returns to
+(`gui.show_shortcuts`, at the hotkeys, or with `section` `controls` at the
+game controls), from Settings > Hotkeys… (`gui.show_settings` with `page`
+`hotkeys`), and from the Key Bindings button of Settings > Input. **Back**, or Esc when no key is being captured, returns to
 the screen it came from.
 
 **Entries.** One per menu action with a fixed command and arguments,
 including the ones with no default, and one per game button of players 1
-and 2 (Turbo A and Turbo B join with G4). Each has up to two bindings, so
-an action can have two keys, or later a key and a gamepad control. An
-entry's `id`:
+and 2, Turbo A and Turbo B included. Each has up to two bindings: two
+keys, a key and a gamepad control, or two gamepad controls. An entry's
+`id`:
 - a menu action: its command, then each argument's value, joined by `.`,
   leaving out the `on` of the hold actions: `gui.quick_save`,
   `gui.save_state.3`, `gui.set_speed.faster`, `gui.show_settings.video`;
 - a game button: `p1.a`, `p1.b`, `p1.select`, `p1.start`, `p1.up`,
-  `p1.down`, `p1.left`, `p1.right`, and the same with `p2`.
+  `p1.down`, `p1.left`, `p1.right`, `p1.turbo_a`, `p1.turbo_b`, and the
+  same with `p2`.
 
 **Bindings** are Qt's portable key text: `Ctrl+Shift+R`, `F1`, `Backspace`
 (`Ctrl` is `Cmd` on macOS). A game button takes one key without modifiers;
 the Shift, Ctrl, Alt and Meta keys alone are `Shift`, `Ctrl`, `Alt` and
-`Meta`.
+`Meta`. Return also stands for keypad Enter.
+
+A **gamepad binding** is `Pad:` and SDL's standard control names, joined by
+`+` in this order: `South`, `East`, `West`, `North`, `Back`, `Guide`,
+`Start`, `LeftStick`, `RightStick`, `LeftShoulder`, `RightShoulder`,
+`DPadUp`, `DPadDown`, `DPadLeft`, `DPadRight`, `LeftTrigger`,
+`RightTrigger`, and the stick directions `LeftStickUp`… `RightStickRight`
+(past a dead zone). A game button takes one control, of its player's pad
+(so player 1 and player 2 may both have `Pad:South`). A hotkey takes one or
+two, from either pad: `Pad:Back+LeftShoulder` acts when the second is
+pressed while the first is held, and those controls leave the game until
+let go.
 
 **On the page** the user can:
 - **rebind**: click a binding (or select it and press Enter) and press a key
-  or key combination; Esc cancels the capture;
+  or key combination, or a gamepad control (a game button takes the first
+  pressed; a hotkey takes the controls held when the first is let go); Esc
+  cancels the capture;
 - **add a second binding** in the second column;
 - **clear** a binding, or **reset** one entry or all of them to the
   defaults.
@@ -297,8 +311,28 @@ current binding, never the default (US3-3).
 | `gui.clear_binding` | `id`, optional `index`; without it, both bindings. Returns the entry |
 | `gui.reset_bindings` | Optional `id`; without it, every entry. Returns `reset`, the entries that changed |
 
-`gui.get_settings` with `group` `hotkeys` or `input` returns the stored
-bindings.
+`gui.get_settings` returns the stored bindings as `hotkeys`, and as
+`input.bindings` beside the input options.
+
+## Gamepads and Settings > Input (FR-032, US5)
+
+The first gamepad plugged in drives player 1 and the second player 2. A
+pad's GUID keeps its player while it is away, and across runs, so a pad
+plugged back in gets its player back. Unplugging a pad during play shows
+"Player N's controller was disconnected" and, with
+`input.pauseOnGamepadDisconnect` (on by default), pauses. Outside the game
+(the library, the Key Bindings page, dialogs) the D-pad and left stick move
+like the arrow keys, South confirms like Enter and East goes back like Esc.
+
+Settings > Input holds `input.turboRate` (2-30 presses a second, 15),
+`input.allowOppositeDirections` (off: the last pressed of Left/Right and of
+Up/Down wins), `input.pauseOnGamepadDisconnect`, the pads plugged in, and a
+Key Bindings button. Turbo toggles on the frame counter while held.
+
+| Command | Purpose |
+|---|---|
+| `gui.list_gamepads` | `gamepads`: each pad plugged in, with `port` (1 or 2), `name` and `guid` |
+| `gui.set_setting` | the `input.*` keys above; a bad value fails with `data.path` `/value` |
 
 ## Game input defaults (FR-032)
 

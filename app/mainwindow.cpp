@@ -49,6 +49,7 @@
 
 #include <cutenes/api/token.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -131,7 +132,7 @@ const QStringList kImplemented = {
     QStringLiteral("gui.take_screenshot"), QStringLiteral("gui.toggle_fps"), QStringLiteral("gui.toggle_osd"),
     QStringLiteral("gui.show_shortcuts"),
 };
-// Settings > Input and Hotkeys open the Key Bindings page (#108).
+// Settings > Hotkeys opens the Key Bindings page (#108).
 const QStringList kSettingsPages = {QStringLiteral("library"), QStringLiteral("servers"), QStringLiteral("input"),
     QStringLiteral("hotkeys")};
 const QStringList kNeedGame = {
@@ -328,6 +329,20 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     wireActions();
     defineBindings();
     applyBindings();
+    applyInputSettings();
+
+    // Gamepads: a pad plugged back in gets its player back, across runs too.
+    m_padBackend = options.gamepads ? options.gamepads : std::shared_ptr<qt::GamepadBackend>(qt::makeSdlGamepads());
+    for (const Port port : {Port::One, Port::Two}) {
+        const QString guid = m_settings.gamepad(port == Port::One ? 1 : 2);
+        if (!guid.isEmpty()) m_padPorts.remember(port, guid.toStdString());
+    }
+    m_padTimer = new QTimer(this);
+    m_padTimer->setTimerType(Qt::PreciseTimer);
+    m_padTimer->setInterval(4); // well within a frame
+    connect(m_padTimer, &QTimer::timeout, this, &MainWindow::pollGamepads);
+    m_padTimer->start();
+
     applyServers(); // clients may come now: every command's data is there
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
         const QString command = action->property("command").toString();
@@ -348,6 +363,7 @@ MainWindow::~MainWindow()
 {
     qApp->removeEventFilter(this);
     m_automationTimer->stop();
+    m_padTimer->stop();
     m_servers.reset(); // clients' calls end with ShuttingDown; the token files go
     m_clock->stop();
     m_host->detach(); // its frame runner must not outlive it
@@ -608,19 +624,24 @@ void MainWindow::defineBindings()
             definitions.push_back(d);
         }
     };
-    // The game buttons first, players 1 and 2 (contract "Game input defaults").
-    const std::pair<const char*, QString> buttons[] = {{"a", tr("A")}, {"b", tr("B")}, {"select", tr("Select")},
-        {"start", tr("Start")}, {"up", tr("Up")}, {"down", tr("Down")}, {"left", tr("Left")}, {"right", tr("Right")}};
-    const std::map<std::string, KeyBindings::Pair> p1 = {{"a", {QStringLiteral("X"), {}}},
-        {"b", {QStringLiteral("Z"), {}}}, {"select", {QStringLiteral("Shift"), {}}},
-        {"start", {QStringLiteral("Return"), QStringLiteral("Enter")}}, {"up", {QStringLiteral("Up"), {}}},
-        {"down", {QStringLiteral("Down"), {}}}, {"left", {QStringLiteral("Left"), {}}},
-        {"right", {QStringLiteral("Right"), {}}}};
+    // The game buttons first, players 1 and 2 (contract "Game input
+    // defaults"): player 1's key, then the player's pad control. Return
+    // stands for keypad Enter too (applyBindings).
+    const struct {
+        const char* name;
+        QString text;
+        const char* key;
+        const char* pad;
+    } buttons[] = {{"a", tr("A"), "X", "South"}, {"b", tr("B"), "Z", "West"},
+        {"select", tr("Select"), "Shift", "Back"}, {"start", tr("Start"), "Return", "Start"},
+        {"up", tr("Up"), "Up", "DPadUp"}, {"down", tr("Down"), "Down", "DPadDown"},
+        {"left", tr("Left"), "Left", "DPadLeft"}, {"right", tr("Right"), "Right", "DPadRight"},
+        {"turbo_a", tr("Turbo A"), "S", "North"}, {"turbo_b", tr("Turbo B"), "A", "East"}};
     for (const int player : {1, 2}) {
-        for (const auto& [name, text] : buttons) {
-            KeyBindings::Definition d{QStringLiteral("p%1.%2").arg(player).arg(QLatin1String(name)),
-                tr("Player %1 %2").arg(player).arg(text), true, {}};
-            if (player == 1) d.defaults = p1.at(name);
+        for (const auto& b : buttons) {
+            KeyBindings::Definition d{QStringLiteral("p%1.%2").arg(player).arg(QLatin1String(b.name)),
+                tr("Player %1 %2").arg(player).arg(b.text), true, {}};
+            d.defaults = {player == 1 ? QString::fromLatin1(b.key) : QString(), QStringLiteral("Pad:") + QLatin1String(b.pad)};
             definitions.push_back(d);
         }
     }
@@ -633,23 +654,33 @@ void MainWindow::defineBindings()
 void MainWindow::applyBindings()
 {
     m_input.unbindAll();
+    m_padHotkeys.clear();
     for (const KeyBindings::Entry& e : m_bindings->entries()) {
         if (e.definition.control) {
             const QStringList id = e.definition.id.split(QLatin1Char('.'));
             const Port port = id[0] == QLatin1String("p1") ? Port::One : Port::Two;
-            static const std::map<QString, Button> named = {{QStringLiteral("a"), Button::A},
-                {QStringLiteral("b"), Button::B}, {QStringLiteral("select"), Button::Select},
-                {QStringLiteral("start"), Button::Start}, {QStringLiteral("up"), Button::Up},
-                {QStringLiteral("down"), Button::Down}, {QStringLiteral("left"), Button::Left},
-                {QStringLiteral("right"), Button::Right}};
+            static const std::map<QString, std::pair<Button, bool>> named = {
+                {QStringLiteral("a"), {Button::A, false}}, {QStringLiteral("b"), {Button::B, false}},
+                {QStringLiteral("select"), {Button::Select, false}}, {QStringLiteral("start"), {Button::Start, false}},
+                {QStringLiteral("up"), {Button::Up, false}}, {QStringLiteral("down"), {Button::Down, false}},
+                {QStringLiteral("left"), {Button::Left, false}}, {QStringLiteral("right"), {Button::Right, false}},
+                {QStringLiteral("turbo_a"), {Button::A, true}}, {QStringLiteral("turbo_b"), {Button::B, true}}};
+            const auto [button, turbo] = named.at(id[1]);
             for (const QString& b : e.bindings) {
-                if (const int key = KeyBindings::keyOf(b)) m_input.bind(key, port, named.at(id[1]));
+                for (const qt::PadControl c : KeyBindings::padControls(b)) m_input.bindPad(port, c, button, turbo);
+                const int key = KeyBindings::keyOf(b);
+                if (key) m_input.bind(key, port, button, turbo);
+                if (key == Qt::Key_Return) m_input.bind(Qt::Key_Enter, port, button, turbo);
             }
             continue;
         }
         QList<QKeySequence> keys;
         for (const QString& b : e.bindings) {
-            if (!b.isEmpty()) keys << QKeySequence::fromString(b, QKeySequence::PortableText);
+            if (KeyBindings::isPad(b)) {
+                m_padHotkeys.push_back({KeyBindings::padControls(b), e.definition.id});
+            } else if (!b.isEmpty()) {
+                keys << QKeySequence::fromString(b, QKeySequence::PortableText);
+            }
         }
         for (QAction* action : m_bindingActions.values(e.definition.id)) action->setShortcuts(keys);
     }
@@ -660,6 +691,180 @@ void MainWindow::applyBindings()
 void MainWindow::bindingsChanged()
 {
     QMetaObject::invokeMethod(this, &MainWindow::applyBindings, Qt::QueuedConnection);
+}
+
+QVector<MainWindow::Gamepad> MainWindow::gamepads() const
+{
+    std::lock_guard lock(m_padMutex);
+    QVector<Gamepad> out;
+    for (const auto& [id, pad] : m_pads) out.push_back(pad);
+    std::sort(out.begin(), out.end(), [](const Gamepad& a, const Gamepad& b) { return a.port < b.port; });
+    return out;
+}
+
+void MainWindow::inputSettingsChanged()
+{
+    QMetaObject::invokeMethod(this, &MainWindow::applyInputSettings, Qt::QueuedConnection);
+}
+
+void MainWindow::applyInputSettings()
+{
+    const AppSettings::InputSettings input = m_settings.input();
+    m_turboRate = input.turboRate;
+    m_input.setAllowOppositeDirections(input.allowOppositeDirections);
+    pushInput();
+    updateSettingsDialog();
+}
+
+void MainWindow::pollGamepads()
+{
+    for (const qt::PadEvent& e : m_padBackend->poll()) {
+        switch (e.kind) {
+        case qt::PadEvent::Kind::Added: {
+            const auto port = m_padPorts.added(e.id, e.guid);
+            if (!port) break; // a third pad drives no one
+            const int player = *port == Port::One ? 1 : 2;
+            const QString name = QString::fromStdString(e.name);
+            {
+                std::lock_guard lock(m_padMutex);
+                m_pads[e.id] = {player, name, QString::fromStdString(e.guid)};
+            }
+            m_settings.setGamepad(player, QString::fromStdString(e.guid));
+            showOsd(tr("Player %1: %2").arg(player).arg(name));
+            updateSettingsDialog();
+            break;
+        }
+        case qt::PadEvent::Kind::Removed: {
+            const auto port = m_padPorts.removed(e.id);
+            {
+                std::lock_guard lock(m_padMutex);
+                m_pads.erase(e.id);
+            }
+            if (!port) break;
+            releasePad(*port);
+            // US5-4: the game waits for the player (the setting, on by default).
+            if (hasGame() && m_runState == QLatin1String("Running") && m_settings.input().pauseOnGamepadDisconnect) {
+                runCommand(QStringLiteral("core.pause"), {}, true);
+            }
+            showOsd(tr("Player %1's controller was disconnected").arg(*port == Port::One ? 1 : 2));
+            updateSettingsDialog();
+            break;
+        }
+        case qt::PadEvent::Kind::Control:
+            if (const auto port = m_padPorts.portOf(e.id)) padControl(*port, e.control, e.pressed);
+            break;
+        }
+    }
+}
+
+void MainWindow::releasePad(Port port)
+{
+    const std::size_t i = port == Port::One ? 0 : 1;
+    m_input.releasePad(port);
+    m_padHeld[i].clear();
+    m_padTaken[i].clear();
+    for (qsizetype h = m_padHolds.size() - 1; h >= 0; --h) {
+        if (m_padHolds[h].port != port) continue;
+        QVariantMap args = m_padHolds[h].args;
+        args.insert(QStringLiteral("on"), false);
+        runCommand(m_padHolds[h].command, args, true);
+        m_padHolds.remove(h);
+    }
+    pushInput();
+}
+
+void MainWindow::padControl(Port port, qt::PadControl control, bool pressed)
+{
+    const std::size_t i = port == Port::One ? 0 : 1;
+    QVector<qt::PadControl>& held = m_padHeld[i];
+    const bool capturing = m_pages->currentWidget() == m_bindingsPage && m_bindingsPage->isCapturing();
+    if (!pressed) {
+        // A release always reaches what its press did.
+        held.removeAll(control);
+        for (qsizetype h = m_padHolds.size() - 1; h >= 0; --h) {
+            if (m_padHolds[h].port != port || !m_padHolds[h].controls.contains(control)) continue;
+            QVariantMap args = m_padHolds[h].args;
+            args.insert(QStringLiteral("on"), false);
+            runCommand(m_padHolds[h].command, args, true);
+            m_padHolds.remove(h);
+        }
+        if (capturing) m_bindingsPage->padControl(control, false);
+        if (m_padTaken[i].erase(control) == 0 && m_input.handlePad(port, control, false)) pushInput();
+        return;
+    }
+    if (held.contains(control)) return;
+    held.push_back(control);
+
+    // Presses go to this window and its dialogs while one has the focus.
+    QWidget* active = QApplication::activeWindow();
+    const bool ours = active == this || (active && active->parentWidget() && active->parentWidget()->window() == this);
+    if (!ours) return;
+    const bool free = active == this && !QApplication::activePopupWidget() && !QApplication::activeModalWidget();
+    if (free && capturing) {
+        m_bindingsPage->padControl(control, true);
+        return;
+    }
+
+    // A hotkey: the largest combination, ending with this control, whose
+    // controls are all held. Its controls leave the game until let go.
+    const PadHotkey* hotkey = nullptr;
+    if (free) {
+        for (const PadHotkey& h : m_padHotkeys) {
+            if (!h.controls.contains(control) || (hotkey && hotkey->controls.size() >= h.controls.size())) continue;
+            bool all = true;
+            for (const qt::PadControl c : h.controls) all = all && held.contains(c);
+            if (all) hotkey = &h;
+        }
+    }
+    if (hotkey) {
+        for (const qt::PadControl c : hotkey->controls) {
+            m_padTaken[i].insert(c);
+            m_input.handlePad(port, c, false);
+        }
+        pushInput();
+        for (QAction* action : m_bindingActions.values(hotkey->id)) {
+            if (!action->isEnabled()) continue;
+            const QString command = action->property("command").toString();
+            if (kHeld.contains(command)) {
+                // On while the combination is held, as with its key.
+                QVariantMap args = action->property("commandArgs").toMap();
+                args.insert(QStringLiteral("on"), true);
+                runCommand(command, args);
+                m_padHolds.push_back({port, hotkey->controls, command, action->property("commandArgs").toMap()});
+            } else {
+                action->trigger();
+            }
+            break;
+        }
+        return;
+    }
+
+    if (free && m_pages->currentWidget() == m_view && hasGame()) {
+        if (m_input.handlePad(port, control, true)) pushInput();
+        return;
+    }
+    // Elsewhere the pad moves the focus like the keyboard (spec US1-2): the
+    // D-pad and the left stick are the arrows, South confirms, East goes back.
+    int key = 0;
+    switch (control) {
+    case qt::PadControl::DPadUp:
+    case qt::PadControl::LeftStickUp: key = Qt::Key_Up; break;
+    case qt::PadControl::DPadDown:
+    case qt::PadControl::LeftStickDown: key = Qt::Key_Down; break;
+    case qt::PadControl::DPadLeft:
+    case qt::PadControl::LeftStickLeft: key = Qt::Key_Left; break;
+    case qt::PadControl::DPadRight:
+    case qt::PadControl::LeftStickRight: key = Qt::Key_Right; break;
+    case qt::PadControl::South: key = Qt::Key_Return; break;
+    case qt::PadControl::East: key = Qt::Key_Escape; break;
+    default: return;
+    }
+    QWidget* target = QApplication::focusWidget() ? QApplication::focusWidget() : active;
+    QKeyEvent down(QEvent::KeyPress, key, Qt::NoModifier);
+    QKeyEvent up(QEvent::KeyRelease, key, Qt::NoModifier);
+    QPointer<QWidget> guard(target);
+    QApplication::sendEvent(target, &down);
+    if (guard) QApplication::sendEvent(target, &up);
 }
 
 void MainWindow::showKeyBindings(const QString& section, bool paused)
@@ -830,7 +1035,10 @@ void MainWindow::showSettings(const QString& page)
             connect(m_settingsDialog, &SettingsDialog::removeRomFolderRequested, this, [this](const QString& path) {
                 runCommand(QStringLiteral("gui.remove_rom_folder"), {{QStringLiteral("path"), path}});
             });
-            connect(m_settingsDialog, &SettingsDialog::serverSettingRequested, this,
+            connect(m_settingsDialog, &SettingsDialog::keyBindingsRequested, this, [this] {
+                runCommand(QStringLiteral("gui.show_shortcuts"), {{QStringLiteral("section"), QStringLiteral("controls")}});
+            });
+            connect(m_settingsDialog, &SettingsDialog::settingRequested, this,
                 [this](const QString& key, const QVariant& value) {
                     runCommand(QStringLiteral("gui.set_setting"), {{QStringLiteral("key"), key}, {QStringLiteral("value"), value}});
                 });
@@ -959,6 +1167,10 @@ void MainWindow::updateSettingsDialog()
     };
     m_settingsDialog->setServers(shown(saved.apiEnabled, saved.apiPort, m_servers->api()),
         shown(saved.mcpEnabled, saved.mcpPort, m_servers->mcp()));
+    const AppSettings::InputSettings input = m_settings.input();
+    SettingsDialog::Input page{input.turboRate, input.allowOppositeDirections, input.pauseOnGamepadDisconnect, {}};
+    for (const Gamepad& pad : gamepads()) page.gamepads << tr("Player %1: %2").arg(pad.port).arg(pad.name);
+    m_settingsDialog->setInput(page);
 }
 
 void MainWindow::serversChanged()
@@ -1361,8 +1573,10 @@ QFuture<api::Result> MainWindow::relocateLibrary(const QString& root, bool moveC
 
 void MainWindow::pushInput()
 {
-    m_session->setLiveInput(Port::One, m_input.buttons(Port::One));
-    m_session->setLiveInput(Port::Two, m_input.buttons(Port::Two));
+    for (const Port port : {Port::One, Port::Two}) {
+        m_session->setLiveInput(port, m_input.buttons(port));
+        m_session->setLiveTurbo(port, m_input.turbo(port), m_turboRate);
+    }
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event)

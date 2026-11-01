@@ -33,7 +33,8 @@ const std::vector<std::string> kSettingsPages = {
 // The settings groups and keys implemented so far (data-model "Settings
 // keys"); later phases add theirs.
 const std::vector<std::string> kSettingKeys = {"library.root", "servers.apiEnabled", "servers.apiPort",
-    "servers.mcpEnabled", "servers.mcpPort"};
+    "servers.mcpEnabled", "servers.mcpPort", "input.turboRate", "input.allowOppositeDirections",
+    "input.pauseOnGamepadDisconnect"};
 
 void add(api::Registry& registry, const char* name, std::string description, Json input,
     Json output, bool mutating, bool needsRom, std::function<Result(CallContext&, const Json&)> handler)
@@ -147,7 +148,7 @@ Json bindingJson(const KeyBindings::Entry& e)
 
 Json bindingSchema()
 {
-    const Json pair = s::array(s::string("a binding in Qt's portable key text, or \"\" for none"), 2);
+    const Json pair = s::array(s::string("Qt's portable key text (Ctrl+S), a gamepad control (Pad:South, Pad:Back+LeftShoulder), or \"\" for none"), 2);
     return s::object({{"id", s::string()}, {"label", s::string()}, {"kind", s::stringEnum({"hotkey", "control"})},
                          {"bindings", pair}, {"defaults", pair}},
         {"id", "label", "kind", "bindings", "defaults"});
@@ -990,6 +991,21 @@ void GuiHost::registerCommands(api::Registry& registry)
             return Result::ok({{"section", section}});
         });
 
+    add(registry, "gui.list_gamepads", "The gamepads plugged in, with the player each drives",
+        s::object({}),
+        s::object({{"gamepads", s::array(s::object({{"port", s::integer(1, 2)}, {"name", s::string()},
+                                                       {"guid", s::string("the same for the same model")}},
+                                             {"port", "name", "guid"}),
+                                    2)}},
+            {"gamepads"}),
+        false, false, [this](CallContext&, const Json&) {
+            Json list = Json::array();
+            for (const auto& pad : m_window.gamepads()) {
+                list.push_back({{"port", pad.port}, {"name", str(pad.name)}, {"guid", str(pad.guid)}});
+            }
+            return Result::ok({{"gamepads", list}});
+        });
+
     add(registry, "gui.list_bindings", "Every menu action and game button with its bindings and defaults",
         s::object({}), s::object({{"bindings", s::array(bindingSchema(), 1000)}}, {"bindings"}), false, false,
         [this](CallContext&, const Json&) {
@@ -1037,15 +1053,15 @@ void GuiHost::registerCommands(api::Registry& registry)
         false, false, [this](CallContext& ctx, const Json& args) {
             const QString page = args.contains("page") ? QString::fromStdString(args["page"].get<std::string>())
                                                        : m_settings.lastSettingsPage();
-            // Input and Hotkeys are the Key Bindings page (#108).
-            if (page == QLatin1String("input") || page == QLatin1String("hotkeys")) {
+            // Hotkeys is the Key Bindings page (#108).
+            if (page == QLatin1String("hotkeys")) {
                 const bool paused = isRunning(ctx) && !call(ctx, "core.pause").isError();
-                m_window.showKeyBindings(page == QLatin1String("input") ? QStringLiteral("controls") : page, paused);
+                m_window.showKeyBindings(page, paused);
                 return Result::ok({{"page", str(page)}});
             }
-            // Library and Servers are the other pages so far (G034: the
-            // others are in the menus, disabled, until their phase).
-            if (page != QLatin1String("library") && page != QLatin1String("servers")) {
+            // Library, Servers and Input are the other pages so far (G034:
+            // the others are in the menus, disabled, until their phase).
+            if (page != QLatin1String("library") && page != QLatin1String("servers") && page != QLatin1String("input")) {
                 return Result::fail("NotImplemented", "the " + str(page) + " page is coming in a later update",
                     {{"page", str(page)}});
             }
@@ -1059,13 +1075,16 @@ void GuiHost::registerCommands(api::Registry& registry)
         false, false, [this](CallContext&, const Json&) {
             const Library library = m_window.library();
             const AppSettings::ServerSettings servers = m_settings.servers();
+            const AppSettings::InputSettings input = m_settings.input();
             const Json values = {{"library", {{"root", str(library.root())},
                                      {"roms", str(library.folder(Library::Folder::Roms))},
                                      {"romFolders", romFoldersValue(m_settings)}}},
                 {"servers", {{"apiEnabled", servers.apiEnabled}, {"apiPort", servers.apiPort},
                                 {"mcpEnabled", servers.mcpEnabled}, {"mcpPort", servers.mcpPort}}},
                 {"hotkeys", storedBindings(m_window.keyBindings(), false)},
-                {"input", storedBindings(m_window.keyBindings(), true)}};
+                {"input", {{"turboRate", input.turboRate}, {"allowOppositeDirections", input.allowOppositeDirections},
+                              {"pauseOnGamepadDisconnect", input.pauseOnGamepadDisconnect},
+                              {"bindings", storedBindings(m_window.keyBindings(), true)}}}};
             const Json schema = {{"library.root", s::string("absolute path of the library folder")},
                 {"library.roms", s::string("the library's own roms folder (always scanned)")},
                 {"library.romFolders", s::array(s::string("added with gui.add_rom_folder"), 1000)},
@@ -1074,7 +1093,10 @@ void GuiHost::registerCommands(api::Registry& registry)
                 {"servers.mcpEnabled", s::boolean("the MCP server (off by default; on turns the API on)")},
                 {"servers.mcpPort", s::integer(0, 65535, "the MCP port; 0 picks a free one")},
                 {"hotkeys", s::string("the menu bindings that differ from the defaults, by id (gui.set_binding)")},
-                {"input", s::string("the game-button bindings that differ from the defaults, by id (gui.set_binding)")}};
+                {"input.turboRate", s::integer(2, 30, "turbo presses a second (15 by default)")},
+                {"input.allowOppositeDirections", s::boolean("Left with Right and Up with Down (off: the last pressed wins)")},
+                {"input.pauseOnGamepadDisconnect", s::boolean("pause when a gamepad in use is unplugged (on by default)")},
+                {"input.bindings", s::string("the game-button bindings that differ from the defaults, by id (gui.set_binding)")}};
             return Result::ok({{"values", values}, {"schema", schema}});
         });
 
@@ -1109,6 +1131,23 @@ void GuiHost::registerCommands(api::Registry& registry)
                 }
                 m_settings.setServers(servers);
                 m_window.serversChanged();
+                return Result::ok({{"key", key}, {"value", value}});
+            }
+            if (key.rfind("input.", 0) == 0) {
+                const Json& value = args["value"];
+                AppSettings::InputSettings input = m_settings.input();
+                if (key == "input.turboRate") {
+                    if (!value.is_number_integer() || value.get<long long>() < 2 || value.get<long long>() > 30) {
+                        return invalid("/value", "must be a rate from 2 to 30 presses a second");
+                    }
+                    input.turboRate = value.get<int>();
+                } else {
+                    if (!value.is_boolean()) return invalid("/value", "must be true or false");
+                    (key == "input.allowOppositeDirections" ? input.allowOppositeDirections
+                                                            : input.pauseOnGamepadDisconnect) = value.get<bool>();
+                }
+                m_settings.setInput(input);
+                m_window.inputSettingsChanged();
                 return Result::ok({{"key", key}, {"value", value}});
             }
             return invalid("/key", "unknown setting");

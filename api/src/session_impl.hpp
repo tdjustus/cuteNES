@@ -78,6 +78,8 @@ struct Session::Impl {
     Session::FrameRunner frameRunner; // emulation thread
     std::uint32_t pendingFrames = 0; // guarded by queueMutex
     std::array<std::atomic<std::uint8_t>, 2> liveInput{};
+    std::array<std::atomic<std::uint8_t>, 2> liveTurbo{};
+    std::array<std::atomic<int>, 2> turboPeriod{4, 4}; // frames per press
     std::array<ButtonSet, 2> automationInput{}; // the last core.set_controller
     // Sets the port to automation's buttons combined with the live ones.
     void applyInput(Port port);

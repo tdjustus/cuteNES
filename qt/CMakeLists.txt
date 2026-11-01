@@ -31,6 +31,7 @@ add_library(cutenes-qt STATIC
     src/emulation_view.cpp
     src/frame_clock.cpp
     src/frame_mailbox.cpp
+    src/gamepad.cpp
     src/input_mapper.cpp
     src/media_runtime.cpp
     src/viewport.cpp

@@ -116,10 +116,12 @@ TEST(GuiKeyBindings, EveryHotkeyAndGameButtonIsListedWithItsDefaults)
     const Json a = entry(w, "p1.a");
     EXPECT_EQ(a["kind"], "control");
     EXPECT_EQ(a["label"], "Player 1 A");
-    EXPECT_EQ(a["bindings"], Json::array({"X", ""}));
-    EXPECT_EQ(bindings(w, "p1.select"), Json::array({"Shift", ""}));
-    EXPECT_EQ(bindings(w, "p1.start"), Json::array({"Return", "Enter"}));
-    EXPECT_EQ(bindings(w, "p2.a"), Json::array({"", ""})) << "player 2 has no keyboard defaults";
+    EXPECT_EQ(a["bindings"], Json::array({"X", "Pad:South"})) << "a key, then the player's pad";
+    EXPECT_EQ(bindings(w, "p1.select"), Json::array({"Shift", "Pad:Back"}));
+    EXPECT_EQ(bindings(w, "p1.start"), Json::array({"Return", "Pad:Start"})) << "Return stands for keypad Enter too";
+    EXPECT_EQ(bindings(w, "p1.turbo_a"), Json::array({"S", "Pad:North"}));
+    EXPECT_EQ(bindings(w, "p1.turbo_b"), Json::array({"A", "Pad:East"}));
+    EXPECT_EQ(bindings(w, "p2.a"), Json::array({"", "Pad:South"})) << "player 2 has no keyboard defaults";
     for (const Json& e : all) {
         EXPECT_NE(e["id"].get<std::string>().rfind("gui.open_recent", 0), 0u) << "recent games are not bindable";
     }
@@ -140,9 +142,11 @@ TEST(GuiKeyBindings, ARebindShowsInTheMenuAndPersists)
     MainWindow again(options);
     EXPECT_EQ(bindings(again, "gui.quick_save"), Json::array({"Ctrl+Shift+K", ""}));
     EXPECT_EQ(shortcuts(action(again, "gui.quick_save")), QStringList{"Ctrl+Shift+K"});
-    EXPECT_EQ(bindings(again, "p1.a"), Json::array({"K", ""}));
+    EXPECT_EQ(bindings(again, "p1.a"), Json::array({"K", "Pad:South"}));
     const Json stored = call(again, "gui.get_settings", {{"group", "hotkeys"}})["values"]["hotkeys"];
     EXPECT_EQ(stored["gui.quick_save"], Json::array({"Ctrl+Shift+K", ""})) << stored.dump();
+    const Json input = call(again, "gui.get_settings", {{"group", "input"}})["values"]["input"]["bindings"];
+    EXPECT_EQ(input["p1.a"], Json::array({"K", "Pad:South"})) << input.dump();
 }
 
 TEST(GuiKeyBindings, ASecondBindingClearAndReset)
@@ -166,7 +170,7 @@ TEST(GuiKeyBindings, ASecondBindingClearAndReset)
     const Json reset = call(w, "gui.reset_bindings")["reset"];
     EXPECT_GE(reset.size(), 2u);
     EXPECT_EQ(bindings(w, "gui.toggle_pause"), Json::array({"P", "Pause"}));
-    EXPECT_EQ(bindings(w, "p1.b"), Json::array({"Z", ""}));
+    EXPECT_EQ(bindings(w, "p1.b"), Json::array({"Z", "Pad:West"}));
     EXPECT_EQ(call(w, "gui.get_settings", {{"group", "hotkeys"}})["values"]["hotkeys"], Json::object())
         << "nothing differs from the defaults";
 }
@@ -225,6 +229,9 @@ TEST(GuiKeyBindings, BadArgumentsNameTheField)
     fails({{"id", "gui.quick_save"}, {"binding", "Ctrl+"}}, "/binding");
     fails({{"id", "gui.quick_save"}, {"binding", "K, L"}}, "/binding");
     fails({{"id", "p1.a"}, {"binding", "Ctrl+K"}}, "/binding");
+    fails({{"id", "p1.a"}, {"binding", "Pad:Back+South"}}, "/binding"); // a game button takes one control
+    fails({{"id", "gui.quick_save"}, {"binding", "Pad:Nope"}}, "/binding");
+    fails({{"id", "gui.quick_save"}, {"binding", "Pad:Back+South+North"}}, "/binding");
     fails({{"id", "gui.quick_save"}, {"binding", "K"}, {"index", 2}}, "/index");
 }
 
@@ -344,13 +351,19 @@ TEST(GuiKeyBindings, HelpAndSettingsOpenThePageAndAGameResumesOnBack)
     EXPECT_TRUE(waitUntil([&] { return call(w, "core.run_state")["runState"] == "Running"; }))
         << "Back resumes the game it paused";
 
-    for (const char* section : {"hotkeys", "input"}) {
-        const Json shown = call(w, "gui.show_settings", {{"page", section}});
-        EXPECT_EQ(shown["page"], section);
+    // Settings > Hotkeys is the page at the menu actions; its controls
+    // section opens with gui.show_shortcuts (Settings > Input is a page of
+    // its own, with a Key Bindings button).
+    for (const char* section : {"hotkeys", "controls"}) {
+        if (QLatin1String(section) == QLatin1String("hotkeys")) {
+            EXPECT_EQ(call(w, "gui.show_settings", {{"page", "hotkeys"}})["page"], "hotkeys");
+        } else {
+            call(w, "gui.show_shortcuts", {{"section", "controls"}});
+        }
         ASSERT_TRUE(waitUntil([&] { return page(w) && page(w)->isVisible(); })) << section;
         auto* tree = page(w)->findChild<QTreeWidget*>(QStringLiteral("keyBindingsTree"));
         const QString id = tree->currentItem() ? tree->currentItem()->data(0, Qt::UserRole).toString() : QString();
-        EXPECT_EQ(id.startsWith(QStringLiteral("p1.")), QLatin1String(section) == QLatin1String("input"))
+        EXPECT_EQ(id.startsWith(QStringLiteral("p1.")), QLatin1String(section) == QLatin1String("controls"))
             << section << ": the page opens at its section, at " << id.toStdString();
         call(w, "gui.show_library");
         ASSERT_TRUE(waitUntil([&] { return w.isShowingLibrary(); }));
