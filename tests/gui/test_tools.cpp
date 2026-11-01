@@ -156,28 +156,28 @@ TEST(GuiTools, ShowFpsShowsTheRateTheGameRunsAt)
         QElapsedTimer clock;
         clock.start();
         std::vector<std::pair<qint64, std::uint64_t>> samples; // (ms, frame)
-        QString last = fps->text();
-        int readings = 0;
+        qint64 nextCheck = 1500; // a second and a half of samples first
+        int checks = 0;
         bool matched = false;
         std::string seen;
-        while (!matched && readings < 8 && clock.elapsed() < 20000) {
+        while (!matched && checks < 20 && clock.elapsed() < 30000) {
             samples.emplace_back(clock.elapsed(), frame(w));
             QCoreApplication::processEvents();
             QThread::msleep(10);
-            const QString text = fps->text();
-            if (text == last) continue;
-            last = text;
             const qint64 now = clock.elapsed();
-            if (now < 1200) continue; // a full second of samples first
-            ++readings;
-            const auto m = rate.match(text);
-            ASSERT_TRUE(m.hasMatch()) << text.toStdString();
+            if (now < nextCheck) continue;
+            nextCheck = now + 500;
+            ++checks;
+            // The label counts some second within the last 1.5 s (it is
+            // refreshed once a second); a steady rate reads the same anyway.
+            const auto m = rate.match(fps->text());
+            ASSERT_TRUE(m.hasMatch()) << fps->text().toStdString();
             auto from = samples.begin();
-            while (from + 1 != samples.end() && (from + 1)->first <= now - 1000) ++from;
+            while (from + 1 != samples.end() && (from + 1)->first <= now - 1500) ++from;
             const auto& to = samples.back();
             const double measured = static_cast<double>(to.second - from->second) * 1000.0
                 / static_cast<double>(to.first - from->first);
-            seen += text.toStdString() + " vs " + std::to_string(measured) + "; ";
+            seen += fps->text().toStdString() + " vs " + std::to_string(measured) + "; ";
             matched = measured > 10.0 && std::abs(m.captured(1).toInt() - measured) <= 0.25 * measured;
         }
         EXPECT_TRUE(matched) << seen;

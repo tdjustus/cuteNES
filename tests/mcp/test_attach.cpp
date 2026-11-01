@@ -2,7 +2,7 @@
 // host (FakeHost) and a token file, as the Qt application will; instance B
 // is `cutenes-server --attach` on stdio and finds A through the token file.
 // A stdio client talking to B sees A's catalog and A's state. Expectations
-// come from the transports contract (run modes, exit code 4) and the MCP
+// come from the transports contract (run modes, exit codes) and the MCP
 // specification (cancellation, list-changed notifications).
 
 #include "fake_host.hpp"
@@ -31,7 +31,7 @@ cutenes::api::SessionConfig withHost(FakeHost& host)
 
 // Instance A: what the GUI runs when its MCP setting is on.
 struct InstanceA {
-    InstanceA() : a(withHost(host)), tokenFile(tempTokenPath())
+    explicit InstanceA(std::filesystem::path file = tempTokenPath()) : a(withHost(host)), tokenFile(std::move(file))
     {
         std::string error;
         EXPECT_TRUE(cutenes::api::token::writeFile(tokenFile, a.http.url(), a.token, error)) << error;
@@ -165,22 +165,26 @@ TEST(McpAttach, CancellingThroughTheBridgeStopsTheRunOnA)
     EXPECT_LT(structured(status)["frame"].get<std::uint64_t>(), 3600u) << "the run was not cancelled";
 }
 
-TEST(McpAttach, NoEndpointExits4AndNamesTheSetting)
+// An MCP client starts its servers when it starts, which may be before
+// cuteNES is open: the bridge says what it is waiting for and keeps
+// running, rather than exiting and being marked failed for good.
+TEST(McpAttach, WithNoEndpointTheBridgeWaitsAndNamesTheSetting)
 {
     std::string message;
     const auto missing = tempTokenPath();
     EXPECT_EQ(attachInProcess({"--attach", "--mcp-token-file", missing.string()}, message),
-        cutenes::server::kExitNoEndpoint);
+        cutenes::server::kExitOk); // its input ended
     EXPECT_NE(message.find(missing.string()), std::string::npos) << message;
     EXPECT_NE(message.find("MCP server"), std::string::npos) << message; // the GUI setting
     EXPECT_NE(message.find("--mcp-port"), std::string::npos) << message;
+    EXPECT_NE(message.find("waits"), std::string::npos) << message;
 
     // A token file left behind by an instance that is gone.
     InstanceA gone;
     const std::string url = gone.a.http.url();
     gone.a.http.stop();
     EXPECT_EQ(attachInProcess({"--attach", "--mcp-token-file", gone.tokenFile.string()}, message),
-        cutenes::server::kExitNoEndpoint);
+        cutenes::server::kExitOk);
     EXPECT_NE(message.find(url), std::string::npos) << message;
 }
 
@@ -193,9 +197,53 @@ TEST(McpAttach, AStaleTokenIsReportedAs401)
         cutenes::api::token::generate(), error)); // a token from another launch
     std::string message;
     EXPECT_EQ(attachInProcess({"--attach", "--mcp-token-file", instance.tokenFile.string()}, message),
-        cutenes::server::kExitNoEndpoint);
+        cutenes::server::kExitOk);
     EXPECT_NE(message.find("401"), std::string::npos) << message;
     EXPECT_NE(message.find(instance.tokenFile.string()), std::string::npos) << message;
+}
+
+TEST(McpAttach, AnEndpointThatIsNotHttpExits4)
+{
+    InstanceA instance;
+    std::string message;
+    EXPECT_EQ(attachInProcess({"--attach", "https://127.0.0.1:1/mcp", "--mcp-token-file",
+                                  instance.tokenFile.string()},
+                  message),
+        cutenes::server::kExitNoEndpoint);
+    EXPECT_NE(message.find("http://"), std::string::npos) << message;
+}
+
+// Until an instance appears the bridge answers initialize itself, lists no
+// tools and says why a call fails. When one appears it tells the client
+// the list changed (MCP: notifications/tools/list_changed), and relays.
+TEST(McpAttach, TheBridgeConnectsToAnInstanceThatStartsLater)
+{
+    const auto tokenFile = tempTokenPath();
+    StdioServer b({"--attach", "--mcp-token-file", tokenFile.string()});
+    ASSERT_TRUE(b.started);
+    Json init = b.request(initialize(0));
+    EXPECT_EQ(init["result"]["protocolVersion"], "2025-11-25") << init.dump();
+    EXPECT_EQ(init["result"]["serverInfo"]["name"], "cuteNES") << init.dump();
+    EXPECT_EQ(init["result"]["capabilities"]["tools"]["listChanged"], true) << init.dump();
+    b.send(notification("notifications/initialized"));
+    Json none = b.request(legacy("tools/list", {}, 1));
+    EXPECT_EQ(none["result"]["tools"], Json::array()) << none.dump();
+    Json refused = b.request(legacy("tools/call", {{"name", "session.status"}}, 2));
+    ASSERT_TRUE(refused.contains("error")) << refused.dump();
+    EXPECT_NE(refused["error"]["message"].get<std::string>().find("MCP server"), std::string::npos)
+        << refused.dump();
+
+    InstanceA instance(tokenFile);
+    ASSERT_TRUE(instance.a.started);
+    for (int i = 0; i < 200 && b.notifications.empty(); ++i) {
+        if (auto m = b.next(50ms)) b.notifications.push_back(*m);
+    }
+    ASSERT_FALSE(b.notifications.empty()) << "no list change when the instance appeared";
+    EXPECT_EQ(b.notifications[0]["method"], "notifications/tools/list_changed");
+    Json tools = b.request(legacy("tools/list", {}, 3));
+    EXPECT_FALSE(tools["result"]["tools"].empty()) << tools.dump();
+    Json status = b.request(legacy("tools/call", {{"name", "session.status"}}, 4));
+    EXPECT_TRUE(status.contains("result")) << status.dump();
 }
 
 TEST(McpAttach, TheBridgeRunsNoSessionOfItsOwn)
@@ -204,4 +252,83 @@ TEST(McpAttach, TheBridgeRunsNoSessionOfItsOwn)
     EXPECT_EQ(attachInProcess({"--attach", "--mcp-port", "0"}, message), cutenes::server::kExitUsage);
     EXPECT_EQ(attachInProcess({"--attach", "--api-port", "0"}, message), cutenes::server::kExitUsage);
     EXPECT_EQ(attachInProcess({"--attach", "--library", "x"}, message), cutenes::server::kExitUsage);
+}
+
+// The GUI makes a new token (and may get a new port) each time its MCP
+// server starts: toggled off and on, or the application restarted. An MCP
+// client keeps its --attach bridge running all along, so the bridge reads
+// the token file again when the endpoint refuses it or is gone, and goes
+// on with the new endpoint, list changes included.
+TEST(McpAttach, TheBridgeFollowsTheInstanceToANewTokenAndPort)
+{
+    InstanceA instance;
+    ASSERT_TRUE(instance.a.started);
+    StdioServer b({"--attach", "--mcp-token-file", instance.tokenFile.string()});
+    ASSERT_TRUE(b.started);
+    Json init = b.request(initialize(0));
+    EXPECT_EQ(init["result"]["protocolVersion"], "2025-11-25") << init.dump();
+    b.send(notification("notifications/initialized"));
+    EXPECT_TRUE(b.request(legacy("tools/call", {{"name", "session.status"}}, 1)).contains("result"));
+
+    // The MCP server restarts: the old endpoint goes, a new one has a new
+    // token and port, and the token file says so.
+    instance.a.http.stop();
+    McpHttpConfig config;
+    config.token = cutenes::api::token::generate();
+    McpHttpServer again(instance.a.mcp, config);
+    std::string error;
+    ASSERT_TRUE(again.start(error)) << error;
+    ASSERT_NE(again.url(), instance.a.http.url());
+    ASSERT_TRUE(cutenes::api::token::writeFile(instance.tokenFile, again.url(), config.token, error)) << error;
+
+    Json status = b.request(legacy("tools/call", {{"name", "session.status"}}, 2));
+    EXPECT_TRUE(status.contains("result")) << status.dump();
+
+    // The bridge's list-changed subscription follows too, a moment later.
+    for (int i = 0; i < 500 && again.activity().streams == 0; ++i) std::this_thread::sleep_for(10ms);
+    ASSERT_EQ(again.activity().streams, 1) << "the subscription reconnected";
+    b.notifications.clear();
+    Json toggled = b.request(legacy("tools/call", {{"name", "gui.test_toggle"}}, 3));
+    EXPECT_TRUE(toggled.contains("result")) << toggled.dump();
+    for (int i = 0; i < 200 && b.notifications.empty(); ++i) {
+        if (auto m = b.next(50ms)) b.notifications.push_back(*m);
+    }
+    ASSERT_FALSE(b.notifications.empty()) << "no list change after the restart";
+    EXPECT_EQ(b.notifications[0]["method"], "notifications/tools/list_changed");
+    again.stop();
+}
+
+// The application quit and opened again: its MCP server is back on the same
+// port with a new token, so the old token gets HTTP 401 with a plain-text
+// body. A 2026-07-28 client (Claude Code) keeps its bridge, so the bridge
+// follows the token file to the new token for a call and for the client's
+// own subscription, instead of taking the refusal for an empty stream.
+TEST(McpAttach, TheBridgeFollowsTheInstanceToANewTokenOnTheSamePort)
+{
+    InstanceA instance;
+    ASSERT_TRUE(instance.a.started);
+    StdioServer b({"--attach", "--mcp-token-file", instance.tokenFile.string()});
+    ASSERT_TRUE(b.started);
+    EXPECT_TRUE(b.request(toolCall("session.status", {}, 1)).contains("result"));
+
+    const int port = instance.a.http.port();
+    instance.a.http.stop();
+    McpHttpConfig config;
+    config.port = port;
+    config.token = cutenes::api::token::generate();
+    McpHttpServer again(instance.a.mcp, config);
+    std::string error;
+    ASSERT_TRUE(again.start(error)) << error;
+    ASSERT_EQ(again.url(), instance.a.http.url());
+    ASSERT_TRUE(cutenes::api::token::writeFile(instance.tokenFile, again.url(), config.token, error)) << error;
+
+    Json status = b.request(toolCall("session.status", {}, 2), 10s);
+    EXPECT_TRUE(status.contains("result")) << status.dump();
+
+    b.send(modern("subscriptions/listen", {{"notifications", {{"toolsListChanged", true}}}}, "s3"));
+    auto ack = b.next(10s);
+    ASSERT_TRUE(ack) << "the subscription was not acknowledged";
+    EXPECT_EQ((*ack)["method"], "notifications/subscriptions/acknowledged");
+    EXPECT_EQ((*ack)["params"]["_meta"][kMetaSubscription], "s3");
+    again.stop();
 }

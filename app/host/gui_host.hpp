@@ -44,6 +44,9 @@ public:
         virtual void showFileDialog(FileDialog dialog) = 0;
         // Show FPS or Show On-Screen Messages changed in the settings.
         virtual void displayChanged() = 0;
+        // servers.* changed: the window starts or stops the listeners to
+        // match, on its own thread (a call can turn off its own listener).
+        virtual void serversChanged() = 0;
         // How the game plays now (speed, fast-forward, rewind): the window
         // sets its frame clock and the sound to match.
         struct Playback {

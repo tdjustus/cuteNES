@@ -23,6 +23,9 @@ inline constexpr const char* kModernVersion = "2026-07-28";
 inline constexpr const char* kLegacyVersion = "2025-11-25";
 // server/discover's supportedVersions, preferred first.
 std::vector<std::string> supportedVersions();
+// initialize's result (2025-11-25), which needs no session: the --attach
+// bridge gives it while no instance is running.
+Json initializeResult();
 
 // JSON-RPC 2.0 codes, and MCP's own.
 inline constexpr int kParseError = -32700;

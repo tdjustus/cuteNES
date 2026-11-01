@@ -7,6 +7,8 @@
 
 #include <cutenes/mcp/server.hpp>
 
+#include <cutenes/api/http_server.hpp>
+
 #include <memory>
 #include <string>
 
@@ -36,6 +38,7 @@ public:
 
     int port() const;
     std::string url() const; // http://127.0.0.1:N/mcp
+    api::ListenerActivity activity() const; // any thread
 
 private:
     struct Impl;

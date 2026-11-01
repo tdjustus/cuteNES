@@ -296,3 +296,37 @@ TEST(McpHttp, TheServerWritesAnMcpTokenFile)
     EXPECT_FALSE(std::filesystem::exists(path)); // removed on a clean exit
     std::filesystem::remove_all(dir);
 }
+
+// The GUI's automation indicator (003 FR-073): an attached client holds a
+// subscriptions/listen stream open, and each request is a call.
+TEST(McpHttp, ActivityReportsTheListenStreamAndTheLastRequest)
+{
+    McpHttpFixture f;
+    ASSERT_TRUE(f.started);
+    const cutenes::api::ListenerActivity idle = f.http.activity();
+    EXPECT_EQ(idle.streams, 0);
+    EXPECT_EQ(idle.lastCall, std::chrono::steady_clock::time_point{});
+    const auto before = std::chrono::steady_clock::now();
+    ASSERT_TRUE(f.post(modern("server/discover")));
+    EXPECT_GE(f.http.activity().lastCall, before);
+
+    std::string received;
+    std::thread listener([&] {
+        auto c = f.makeClient();
+        const Json listen = modern("subscriptions/listen", {{"notifications", {{"toolsListChanged", true}}}}, 4);
+        c.Post("/mcp", McpHttpFixture::standardHeaders(listen), listen.dump(), "application/json",
+            [&](const char* data, std::size_t n) {
+                received.append(data, n);
+                return true;
+            });
+    });
+    bool open = false;
+    for (int i = 0; i < 500 && !open; ++i) {
+        open = f.http.activity().streams == 1;
+        std::this_thread::sleep_for(10ms);
+    }
+    EXPECT_TRUE(open);
+    f.http.stop();
+    listener.join();
+    EXPECT_EQ(f.http.activity().streams, 0) << "a stopped endpoint has no streams";
+}

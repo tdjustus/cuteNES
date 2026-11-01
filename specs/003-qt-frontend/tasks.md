@@ -157,7 +157,7 @@ Real-time mode in `cutenes-api` (R3), test-first:
   with every item present. Items whose feature lands in a later phase are
   present but disabled, with the tooltip "Coming in a later update"; their
   commands return `NotImplemented` until then.
-- [ ] G035 [US6] Settings > Servers:
+- [x] G035 [US6] Settings > Servers:
   - the API and "MCP server" toggles and ports, with MCP requiring the API;
   - the token file written for `--attach`, and a Copy Token button;
   - the status-bar automation indicator (FR-071-FR-073);

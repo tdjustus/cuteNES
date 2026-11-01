@@ -1,6 +1,12 @@
 #include "dialogs/settings_dialog.hpp"
 
+#include <QCheckBox>
+#include <QClipboard>
 #include <QDialogButtonBox>
+#include <QGridLayout>
+#include <QGuiApplication>
+#include <QSignalBlocker>
+#include <QSpinBox>
 #include <QDir>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -106,6 +112,8 @@ SettingsDialog::SettingsDialog(QWidget* parent)
             layout->addWidget(foldersNote);
             layout->addWidget(m_romFolders, 1);
             layout->addLayout(folderButtons);
+        } else if (QLatin1String(key) == QLatin1String("servers")) {
+            page = buildServersPage(m_stack);
         } else {
             page = new QLabel(tr("Coming in a later update."), m_stack);
             static_cast<QLabel*>(page)->setAlignment(Qt::AlignCenter);
@@ -159,6 +167,83 @@ void SettingsDialog::setRomFolders(const QString& roms, const QStringList& added
         item->setData(Qt::UserRole, folder);
     }
     m_removeFolder->setEnabled(false);
+}
+
+QWidget* SettingsDialog::buildServersPage(QWidget* parent)
+{
+    auto* page = new QWidget(parent);
+    auto* grid = new QGridLayout;
+    grid->setColumnStretch(3, 1);
+    int row = 0;
+    const auto addListener = [&](ServerControls& c, const QString& name, const QString& label,
+                                 const char* enabledKey, const char* portKey) {
+        c.enabled = new QCheckBox(label, page);
+        c.enabled->setObjectName(name + QStringLiteral("Enabled"));
+        c.port = new QSpinBox(page);
+        c.port->setObjectName(name + QStringLiteral("Port"));
+        c.port->setRange(0, 65535);
+        c.port->setSpecialValueText(tr("Any free port"));
+        c.port->setAccessibleName(tr("%1 port").arg(label));
+        c.address = new QLabel(page);
+        c.address->setObjectName(name + QStringLiteral("Address"));
+        c.address->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        c.copy = new QPushButton(tr("Copy Token"), page);
+        c.copy->setObjectName(QStringLiteral("copy") + name.at(0).toUpper() + name.mid(1) + QStringLiteral("Token"));
+        connect(c.enabled, &QCheckBox::toggled, this, [this, enabledKey](bool on) {
+            emit serverSettingRequested(QString::fromLatin1(enabledKey), on);
+        });
+        connect(c.port, &QSpinBox::editingFinished, this, [this, &c, portKey] {
+            emit serverSettingRequested(QString::fromLatin1(portKey), c.port->value());
+        });
+        connect(c.copy, &QPushButton::clicked, this, [&c] { QGuiApplication::clipboard()->setText(c.token); });
+        grid->addWidget(c.enabled, row, 0);
+        grid->addWidget(new QLabel(tr("Port"), page), row, 1, Qt::AlignRight);
+        grid->addWidget(c.port, row, 2);
+        grid->addWidget(c.address, row, 3);
+        grid->addWidget(c.copy, row, 4);
+        ++row;
+    };
+    addListener(m_api, QStringLiteral("api"), tr("API"), "servers.apiEnabled", "servers.apiPort");
+    addListener(m_mcp, QStringLiteral("mcp"), tr("MCP server"), "servers.mcpEnabled", "servers.mcpPort");
+
+    m_mcpTokenFile = new QLabel(page);
+    m_mcpTokenFile->setObjectName(QStringLiteral("mcpTokenFile"));
+    m_mcpTokenFile->setWordWrap(true);
+    m_mcpTokenFile->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    auto* note = new QLabel(tr("Both are off until you turn them on, and listen on this computer only. The MCP "
+                               "server needs the API, so turning it on turns the API on too. Each start makes a "
+                               "new token; a client needs it to connect.\n\nTo let an AI assistant such as Claude "
+                               "Code play here, turn on the MCP server and add an MCP server that runs "
+                               "\"cutenes-server --attach\". It finds this window through the token file."),
+        page);
+    for (QLabel* label : {note, m_mcpTokenFile}) label->setForegroundRole(QPalette::PlaceholderText);
+    note->setWordWrap(true);
+
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(16, 4, 4, 4);
+    layout->setSpacing(10);
+    layout->addLayout(grid);
+    layout->addWidget(m_mcpTokenFile);
+    layout->addWidget(note);
+    layout->addStretch();
+    setServers({}, {});
+    return page;
+}
+
+void SettingsDialog::setServers(const Server& api, const Server& mcp)
+{
+    const auto show = [](ServerControls& c, const Server& s) {
+        const QSignalBlocker blockEnabled(c.enabled);
+        const QSignalBlocker blockPort(c.port);
+        c.enabled->setChecked(s.enabled);
+        if (!c.port->hasFocus()) c.port->setValue(s.port);
+        c.address->setText(s.running ? s.url : (s.enabled ? tr("Not running") : tr("Off")));
+        c.token = s.token;
+        c.copy->setEnabled(s.running);
+    };
+    show(m_api, api);
+    show(m_mcp, mcp);
+    m_mcpTokenFile->setText(mcp.running ? tr("Token file: %1").arg(mcp.tokenFile) : QString());
 }
 
 void SettingsDialog::setLibraryRoot(const QString& root)

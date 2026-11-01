@@ -123,6 +123,26 @@ void AppSettings::setLastSettingsPage(const QString& page)
     m_settings.setValue(kSettingsPage, page);
 }
 
+AppSettings::ServerSettings AppSettings::servers() const
+{
+    std::lock_guard lock(m_mutex);
+    ServerSettings s;
+    s.apiEnabled = m_settings.value(QStringLiteral("servers/apiEnabled"), s.apiEnabled).toBool();
+    s.apiPort = m_settings.value(QStringLiteral("servers/apiPort"), s.apiPort).toInt();
+    s.mcpEnabled = m_settings.value(QStringLiteral("servers/mcpEnabled"), s.mcpEnabled).toBool();
+    s.mcpPort = m_settings.value(QStringLiteral("servers/mcpPort"), s.mcpPort).toInt();
+    return s;
+}
+
+void AppSettings::setServers(const ServerSettings& s)
+{
+    std::lock_guard lock(m_mutex);
+    m_settings.setValue(QStringLiteral("servers/apiEnabled"), s.apiEnabled);
+    m_settings.setValue(QStringLiteral("servers/apiPort"), s.apiPort);
+    m_settings.setValue(QStringLiteral("servers/mcpEnabled"), s.mcpEnabled);
+    m_settings.setValue(QStringLiteral("servers/mcpPort"), s.mcpPort);
+}
+
 bool AppSettings::showFps() const
 {
     std::lock_guard lock(m_mutex);
