@@ -161,7 +161,10 @@ TEST(ApiRealtime, PendingFramesAreCappedAtTwiceTheRequest)
     for (int i = 0; i < 10; ++i) s.requestFrames(1);
     host.release.set_value();
     blocked.wait();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Two frames run however slow the machine (a sanitizer build is), and
+    // then no more: a later frame would be the uncapped burst.
+    ASSERT_TRUE(reachFrame(s, 2));
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
     EXPECT_EQ(frameOf(s), 2u);
 }
 
