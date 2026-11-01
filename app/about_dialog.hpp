@@ -14,7 +14,7 @@ class AboutDialog : public QDialog {
 public:
     explicit AboutDialog(QWidget* parent = nullptr);
 
-    // "cuteNES 0.1.0 · core 0.1.0 · API 0.1 · Qt 6.12.0"
+    // "cuteNES 0.2.0 · core 0.1.0 · API 0.1 · Qt 6.12.0"
     static QString versionText();
 };
 
