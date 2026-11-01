@@ -490,3 +490,36 @@ By hand:
    the notes, and Ask Again Later, Skip This Version and See Details, with
    the reason Install is missing. See Details opens the GitHub page.
 5. Settings > Updates: the skipped version and Offer It Again.
+
+### Updates: Install (G099, #105)
+
+Automated:
+- `UpdateInstall`:
+  - the Windows-style folder swap, file by file, with old files kept aside as `.cutenes-old` and every rename undone on failure;
+  - on Windows CI, renaming a loaded DLL, which the Windows swap rests on;
+  - the AppImage rename;
+  - on macOS, the bundle unpacked and renamed in, and a zip without `cutenes.app` refused;
+  - the next start removing what was kept aside.
+- `GuiUpdates`, driving the whole Install path on a temporary AppImage against the fake feed:
+  - Install appears only for a release package with write access;
+  - the build is downloaded, checked and swapped in;
+  - `updateInstalled` gives the new program and the launch's arguments;
+  - a bad or missing checksum, and Cancel, leave the install untouched and no download behind.
+- Mutation-checked: checksum not compared, no undo, no write check, and arguments dropped are each caught. Leaving the download behind on cancel is also covered by the download's destructor.
+- The CI package job now builds each package with its `CUTENES_PACKAGE` and fails if Qt's TLS plugin is missing.
+
+This needs a real release above the installed version, so it waits for a 1.0 release candidate. On each OS:
+1. Install the previous release's package (unzip, or `chmod +x` the
+   AppImage), start it with an argument you can see (e.g. `--fullscreen`),
+   say Yes to update checks.
+2. Restart it with no game: the prompt offers Install. Click it: a
+   progress bar, then cuteNES closes and the new version starts, full
+   screen (the argument carried over). Help > About shows the new version.
+3. The old version is gone at the next start: no `.cutenes-old.app`
+   beside the bundle (macOS), no `*.cutenes-old` files in the folder
+   (Windows).
+4. Put the package in a folder you cannot write (e.g. `/Applications`
+   owned by root, or `C:\Program Files`): the prompt has no Install and
+   says why.
+5. Pull the network cable during a download: an error says what failed,
+   and the installed version still starts.

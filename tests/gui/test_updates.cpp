@@ -22,7 +22,11 @@
 #include <QAbstractButton>
 #include <QCheckBox>
 #include <QDialog>
+#include <QDir>
+#include <QFileInfo>
+#include <QCryptographicHash>
 #include <QFile>
+#include <QProgressDialog>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
@@ -33,6 +37,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <map>
 #include <chrono>
 #include <mutex>
 #include <thread>
@@ -48,17 +53,17 @@ namespace {
 
 const QString kNestest = QStringLiteral(CUTENES_TEST_ROMS "/other/nestest.nes");
 
-// A release list in GitHub's form with one release for every platform.
-std::string feedWith(const std::string& version)
+// A release list in GitHub's form with one release for every platform,
+// its files at `base` (GitHub's address, or the fake feed's own).
+std::string feedWith(const std::string& version,
+    const std::string& base = "https://github.com/tdjustus/cuteNES/releases/download")
 {
     Json assets = Json::array();
     for (const char* suffix : {"macos-arm64.zip", "macos-x86_64.zip", "windows-x64.zip", "linux-x86_64.AppImage"}) {
         const std::string name = "cuteNES-" + version + "-" + suffix;
-        assets.push_back({{"name", name},
-            {"browser_download_url", "https://github.com/tdjustus/cuteNES/releases/download/v" + version + "/" + name}});
+        assets.push_back({{"name", name}, {"browser_download_url", base + "/v" + version + "/" + name}});
     }
-    assets.push_back({{"name", "SHA256SUMS"},
-        {"browser_download_url", "https://github.com/tdjustus/cuteNES/releases/download/v" + version + "/SHA256SUMS"}});
+    assets.push_back({{"name", "SHA256SUMS"}, {"browser_download_url", base + "/v" + version + "/SHA256SUMS"}});
     return Json::array({{{"tag_name", "v" + version}, {"draft", false}, {"prerelease", false},
                            {"html_url", "https://github.com/tdjustus/cuteNES/releases/tag/v" + version},
                            {"body", "What is new in " + version}, {"assets", assets}}})
@@ -66,11 +71,22 @@ std::string feedWith(const std::string& version)
 }
 
 // The fake feed: answers GET /releases with `body` and `status` after
-// `delay`, and keeps each request's headers.
+// `delay`, and keeps each request's headers. It also serves release files
+// (GET /download/v<version>/<name>), each after `fileDelay`.
 class FakeFeed {
 public:
     FakeFeed()
     {
+        m_server.Get(R"(/download/[^/]+/(.+))", [this](const httplib::Request& request, httplib::Response& response) {
+            std::this_thread::sleep_for(m_fileDelay.load());
+            std::lock_guard lock(m_mutex);
+            const auto it = m_files.find(request.matches[1]);
+            if (it == m_files.end()) {
+                response.status = 404;
+                return;
+            }
+            response.set_content(it->second, "application/octet-stream");
+        });
         m_server.Get("/releases", [this](const httplib::Request& request, httplib::Response& response) {
             std::this_thread::sleep_for(m_delay.load());
             std::lock_guard lock(m_mutex);
@@ -89,6 +105,13 @@ public:
     }
 
     QUrl url() const { return QUrl(QStringLiteral("http://127.0.0.1:%1/releases?per_page=30").arg(m_port)); }
+    std::string files() const { return "http://127.0.0.1:" + std::to_string(m_port) + "/download"; }
+    void file(const std::string& name, const std::string& bytes)
+    {
+        std::lock_guard lock(m_mutex);
+        m_files[name] = bytes;
+    }
+    void fileDelay(std::chrono::milliseconds d) { m_fileDelay = d; }
     void serve(const std::string& body, int status = 200)
     {
         std::lock_guard lock(m_mutex);
@@ -110,6 +133,8 @@ private:
     std::string m_body = feedWith("1.2.0");
     int m_status = 200;
     std::atomic<std::chrono::milliseconds> m_delay{std::chrono::milliseconds(0)};
+    std::atomic<std::chrono::milliseconds> m_fileDelay{std::chrono::milliseconds(0)};
+    std::map<std::string, std::string> m_files;
     std::vector<httplib::Request> m_requests;
 };
 
@@ -400,3 +425,184 @@ TEST(GuiUpdates, TheUpdatesPageShowsAndChangesTheSettings)
     EXPECT_TRUE(waitUntil([&] { return updates(w)["skippedVersion"] == ""; }));
     EXPECT_TRUE(waitUntil([&] { return !forget->isEnabled(); }));
 }
+
+namespace {
+
+// A release package's install, an AppImage in a temporary folder: the swap
+// is the same on every system, so the whole Install path runs everywhere.
+struct FakeInstall {
+    QTemporaryDir dir;
+    QString image = dir.filePath(QStringLiteral("cuteNES.AppImage"));
+    FakeInstall()
+    {
+        QFile file(image);
+        EXPECT_TRUE(file.open(QIODevice::WriteOnly));
+        file.write("the installed version");
+    }
+    QByteArray contents() const
+    {
+        QFile file(image);
+        return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+    }
+    QStringList entries() const { return QDir(dir.path()).entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot); }
+};
+
+const std::string kImage = "cuteNES-1.2.0-linux-x86_64.AppImage";
+
+// Serves 1.2.0 with `build` as the AppImage and `sums` as SHA256SUMS
+// (empty: the build's real checksum).
+void release(FakeFeed& feed, const std::string& build, std::string sums = {})
+{
+    feed.serve(feedWith("1.2.0", feed.files()));
+    feed.file(kImage, build);
+    if (sums.empty()) {
+        sums = QCryptographicHash::hash(QByteArray::fromStdString(build), QCryptographicHash::Sha256).toHex().toStdString()
+            + "  " + kImage + "\n";
+    }
+    feed.file("SHA256SUMS", sums);
+}
+
+MainWindow::Options installOptions(const FakeFeed& feed, const QString& settings, const FakeInstall& install)
+{
+    MainWindow::Options options = feedOptions(feed, settings, false);
+    options.updateTarget = cutenes::app::update::Target{QStringLiteral("appimage"), install.image};
+    options.relaunchAfterUpdate = false;
+    options.arguments = QStringList{QStringLiteral("--mcp"), QStringLiteral("--library"),
+        QStringLiteral("/tmp/a library"), QStringLiteral("--fullscreen")};
+    return options;
+}
+
+QDialog* promptWithChecksOn(MainWindow& w)
+{
+    w.show();
+    call(w, "gui.set_setting", {{"key", "updates.check"}, {"value", true}});
+    w.startUpdates(false);
+    return shown(w, "updatePrompt");
+}
+
+} // namespace
+
+TEST(GuiUpdates, InstallReplacesTheBuildAndRelaunchesWithTheSameArguments)
+{
+    FakeFeed feed;
+    release(feed, "the new version");
+    FakeInstall install;
+    QTemporaryDir dir;
+    MainWindow w(installOptions(feed, dir.filePath(QStringLiteral("cutenes.ini")), install));
+    QString exe;
+    QStringList arguments;
+    bool installed = false;
+    QObject::connect(&w, &MainWindow::updateInstalled, [&](const QString& program, const QStringList& args) {
+        exe = program;
+        arguments = args;
+        installed = true;
+    });
+    QDialog* prompt = promptWithChecksOn(w);
+    ASSERT_TRUE(prompt);
+    auto* installButton = button(prompt, "updateInstall");
+    ASSERT_TRUE(installButton) << "a release package with write access offers Install";
+    EXPECT_EQ(prompt->findChild<QLabel*>(QStringLiteral("updateWhyNoInstall")), nullptr);
+    installButton->click();
+
+    ASSERT_TRUE(waitUntil([&] { return installed; }, 10000));
+    EXPECT_EQ(install.contents(), "the new version");
+    EXPECT_EQ(exe, install.image);
+    EXPECT_EQ(arguments, (QStringList{QStringLiteral("--mcp"), QStringLiteral("--library"),
+                             QStringLiteral("/tmp/a library"), QStringLiteral("--fullscreen")}));
+    EXPECT_EQ(install.entries(), QStringList{QStringLiteral("cuteNES.AppImage")}); // no download left
+#if !defined(_WIN32)
+    EXPECT_TRUE(QFileInfo(install.image).isExecutable());
+#endif
+}
+
+TEST(GuiUpdates, ABadChecksumReplacesNothingAndSaysSo)
+{
+    FakeFeed feed;
+    release(feed, "a tampered build",
+        "0000000000000000000000000000000000000000000000000000000000000000  " + kImage + "\n");
+    FakeInstall install;
+    QTemporaryDir dir;
+    MainWindow w(installOptions(feed, dir.filePath(QStringLiteral("cutenes.ini")), install));
+    bool installed = false;
+    QObject::connect(&w, &MainWindow::updateInstalled, [&] { installed = true; });
+    QDialog* prompt = promptWithChecksOn(w);
+    ASSERT_TRUE(prompt);
+    button(prompt, "updateInstall")->click();
+
+    QMessageBox* failed = nullptr;
+    ASSERT_TRUE(waitUntil([&] {
+        failed = w.findChild<QMessageBox*>(QStringLiteral("updateFailed"));
+        return failed && failed->isVisible();
+    }, 10000));
+    EXPECT_TRUE(failed->text().contains(QStringLiteral("SHA256SUMS"))) << failed->text().toStdString();
+    EXPECT_FALSE(installed);
+    EXPECT_EQ(install.contents(), "the installed version");
+    EXPECT_EQ(install.entries(), QStringList{QStringLiteral("cuteNES.AppImage")});
+}
+
+TEST(GuiUpdates, AReleaseWithoutTheBuildsChecksumReplacesNothing)
+{
+    FakeFeed feed;
+    release(feed, "the new version", "abc  something-else\n");
+    FakeInstall install;
+    QTemporaryDir dir;
+    MainWindow w(installOptions(feed, dir.filePath(QStringLiteral("cutenes.ini")), install));
+    QDialog* prompt = promptWithChecksOn(w);
+    ASSERT_TRUE(prompt);
+    button(prompt, "updateInstall")->click();
+    EXPECT_TRUE(waitUntil([&] {
+        auto* failed = w.findChild<QMessageBox*>(QStringLiteral("updateFailed"));
+        return failed && failed->isVisible();
+    }, 10000));
+    EXPECT_EQ(install.contents(), "the installed version");
+    EXPECT_EQ(install.entries(), QStringList{QStringLiteral("cuteNES.AppImage")});
+}
+
+TEST(GuiUpdates, CancellingTheDownloadReplacesNothing)
+{
+    FakeFeed feed;
+    release(feed, std::string(1 << 20, 'x'));
+    feed.fileDelay(std::chrono::milliseconds(1500)); // long enough to cancel
+    FakeInstall install;
+    QTemporaryDir dir;
+    MainWindow w(installOptions(feed, dir.filePath(QStringLiteral("cutenes.ini")), install));
+    bool installed = false;
+    QObject::connect(&w, &MainWindow::updateInstalled, [&] { installed = true; });
+    QDialog* prompt = promptWithChecksOn(w);
+    ASSERT_TRUE(prompt);
+    button(prompt, "updateInstall")->click();
+    QProgressDialog* progress = nullptr;
+    ASSERT_TRUE(waitUntil([&] {
+        progress = w.findChild<QProgressDialog*>(QStringLiteral("updateProgress"));
+        return progress && progress->isVisible();
+    }));
+    // As the user does: the button (QProgressDialog::cancel() alone would
+    // not say so).
+    auto* cancel = progress->findChild<QPushButton*>();
+    ASSERT_TRUE(cancel);
+    cancel->click();
+    settle(4000); // past when the download would have finished
+
+    EXPECT_FALSE(installed);
+    EXPECT_EQ(install.contents(), "the installed version");
+    EXPECT_EQ(install.entries(), QStringList{QStringLiteral("cuteNES.AppImage")});
+}
+
+#if !defined(_WIN32)
+TEST(GuiUpdates, NoWriteAccessMeansNoInstall)
+{
+    FakeFeed feed;
+    release(feed, "the new version");
+    FakeInstall install;
+    QFile::setPermissions(install.dir.path(), QFile::ReadOwner | QFile::ExeOwner);
+    QTemporaryDir dir;
+    MainWindow w(installOptions(feed, dir.filePath(QStringLiteral("cutenes.ini")), install));
+    QDialog* prompt = promptWithChecksOn(w);
+    ASSERT_TRUE(prompt);
+    EXPECT_EQ(button(prompt, "updateInstall"), nullptr);
+    auto* why = prompt->findChild<QLabel*>(QStringLiteral("updateWhyNoInstall"));
+    ASSERT_TRUE(why);
+    EXPECT_TRUE(why->text().contains(QDir::toNativeSeparators(install.dir.path()))) << why->text().toStdString();
+    QFile::setPermissions(install.dir.path(), QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+}
+#endif

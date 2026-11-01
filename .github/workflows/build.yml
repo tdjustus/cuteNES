@@ -226,9 +226,11 @@ jobs:
         include:
           # The oldest supported Ubuntu: an AppImage runs on systems at
           # least as new as the one it was built on (glibc).
-          - {os: ubuntu-22.04, platform: linux}
-          - {os: macos-latest, platform: macos}
-          - {os: windows-latest, platform: windows}
+          # package: CUTENES_PACKAGE, which lets the build install its own
+          # updates (research R16); every other build is "none".
+          - {os: ubuntu-22.04, platform: linux, package: appimage}
+          - {os: macos-latest, platform: macos, package: macos-zip}
+          - {os: windows-latest, platform: windows, package: windows-zip}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -278,6 +280,7 @@ jobs:
           -DCMAKE_CXX_COMPILER=${{ runner.os == 'Windows' && 'cl' || runner.os == 'Linux' && 'g++-12' || 'c++' }}
           -DCUTENES_BUILD_GUI=ON
           -DCUTENES_BUILD_TESTS=OFF
+          -DCUTENES_PACKAGE=${{ matrix.package }}
 
       - name: Build
         run: cmake --build build --target cutenes cutenes-server
@@ -302,6 +305,8 @@ jobs:
           # Ad-hoc signed (R13): Gatekeeper still asks on first open, but
           # the bundle's code is consistent after macdeployqt's changes.
           codesign --force --deep --sign - stage/cutenes.app
+          # The update check needs a TLS backend (R16; docs/packaging.md).
+          ls stage/cutenes.app/Contents/PlugIns/tls/*.dylib
           stage/cutenes.app/Contents/MacOS/cutenes --version
           stage/cutenes.app/Contents/MacOS/cutenes-server --help
           name="cuteNES-$VERSION-macos-$(uname -m).zip"
@@ -315,6 +320,8 @@ jobs:
           # --version answers in a message box on Windows (no console), so
           # the smoke test is that the program starts and stays up: a
           # missing DLL ends it at once (STATUS_DLL_NOT_FOUND).
+          # The update check needs a TLS backend (R16; docs/packaging.md).
+          if (-not (Get-ChildItem stage\tls\*.dll)) { throw "no Qt TLS plugin in the package" }
           $p = Start-Process -FilePath stage\cutenes.exe -ArgumentList '--version' -PassThru
           Start-Sleep -Seconds 10
           if ($p.HasExited) { throw "cutenes.exe exited with $($p.ExitCode)" }
@@ -341,6 +348,8 @@ jobs:
             --desktop-file AppDir/usr/share/applications/io.github.tdjustus.cutenes.desktop \
             --icon-file AppDir/usr/share/icons/hicolor/512x512/apps/cutenes.png
           chmod +x "$name"
+          # The update check needs a TLS backend (R16; docs/packaging.md).
+          ls AppDir/usr/plugins/tls/*.so
           xvfb-run -a "./$name" --version
           echo "PACKAGE=$name" >> "$GITHUB_ENV"
 

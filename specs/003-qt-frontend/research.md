@@ -407,30 +407,37 @@ install layouts below are this project's.
   A signature over `SHA256SUMS`, checked against a public key built into
   the application, would cover that, but needs a private key kept outside
   GitHub and a signing step in every release. Deferred to after 1.0 (#138).
-- **Replacement**, the old version kept until the new one is in place:
+- **Replacement**, the old version kept until the new one is in place
+  (`app/update/update_install`):
   - **macOS**: unpack with `ditto -x -k` into a hidden folder beside the
-    bundle, check the new bundle's `CFBundleShortVersionString` is the
-    expected version, rename the running bundle aside
-    (`.cutenes-old.app`), rename the new one into place, and delete the old
-    one at the next start. A running bundle can be renamed; its process
-    keeps its files. If the second rename fails, the first is undone. The
-    download is made by the application, not a browser, so it carries no
-    quarantine attribute; the new bundle is ad-hoc signed as the release
-    built it.
-  - **Windows**: a running `.exe` and its DLLs cannot be replaced or
-    renamed while loaded. The application unpacks the zip (Windows' own
-    `tar -xf`) into a folder beside its own, then writes and starts a small
-    PowerShell script (Windows PowerShell 5.1 ships with every supported
-    Windows) and quits. The script waits for the process to end, renames
-    the old folder aside, moves the new one into place (and back on
-    failure), starts the new `cutenes.exe` with the arguments, and deletes
-    the old folder.
+    bundle, rename the running bundle aside (`.cutenes-old.app`), rename
+    the new one into place, and delete the old one at the next start. A
+    running bundle can be renamed; its process keeps its files. If the
+    second rename fails, the first is undone. The download is made by the
+    application, not a browser, so it carries no quarantine attribute; the
+    new bundle is ad-hoc signed as the release built it. Its version is not
+    read from Info.plist: the checksum already binds the file to the
+    release's asset name, which carries the version.
+  - **Windows**: a running `.exe` and its loaded DLLs cannot be overwritten
+    or deleted, but they can be renamed (`UpdateInstall.ALoadedDllCanBeSwappedOnWindows`
+    checks this on the CI's Windows runner). So the zip is unpacked
+    (Windows' own `tar -xf`, bsdtar, which reads zip files) beside the
+    application folder, every old file is renamed aside to
+    `<name>.cutenes-old` (a name Qt never loads as a plugin, so a stale
+    plugin cannot be picked up), and each new file renamed in; a failure
+    undoes every rename. The next start deletes the `.cutenes-old` files.
+    *Changed from the first plan*, a PowerShell script that waited for the
+    process to end and swapped the folders: renaming in place needs no
+    second process or script, works the same as the other two, and is
+    tested in-process.
   - **Linux**: the AppImage is one file. The download is made executable
     and renamed over `$APPIMAGE`; the running copy keeps its mounted image.
     Distribution packages and builds from source are `none` (above).
 - **Relaunch.** The new version starts with the running one's arguments
-  (`QCoreApplication::arguments()` after the program name), after the usual
-  quit: battery save, automatic state, servers stopped. The swap happens
+  (`QCoreApplication::arguments()` after the program name) once the running
+  one has quit as usual (battery save, automatic state, servers stopped):
+  the swap happens first, then the window closes, and the new program is
+  started from `aboutToQuit`. The swap happens
   only after the user's Install click; no automation command starts it
   (FR-097).
 - **First launch.** Once the window is shown and the library is checked, if

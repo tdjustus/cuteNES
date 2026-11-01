@@ -35,11 +35,19 @@ add_library(cutenes-app-lib STATIC
     settings/key_bindings.cpp
     update/update_feed.cpp
     update/update_check.cpp
-    update/update_prompt.cpp)
+    update/update_prompt.cpp
+    update/update_install.cpp
+    update/update_download.cpp)
 target_include_directories(cutenes-app-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(cutenes-app-lib PUBLIC cutenes-qt cutenes-mcp Qt6::Widgets Qt6::Concurrent Qt6::Network)
+# Which release package this build is (research R16): the CI package job
+# sets macos-zip, windows-zip or appimage, and only those can install
+# updates. Every other build (a developer's, a distribution's) is none.
+set(CUTENES_PACKAGE "none" CACHE STRING "Release package type: none, macos-zip, windows-zip or appimage")
+set_property(CACHE CUTENES_PACKAGE PROPERTY STRINGS none macos-zip windows-zip appimage)
 target_compile_definitions(cutenes-app-lib PUBLIC
-    CUTENES_APP_VERSION="${PROJECT_VERSION}")
+    CUTENES_APP_VERSION="${PROJECT_VERSION}"
+    CUTENES_PACKAGE="${CUTENES_PACKAGE}")
 set_target_properties(cutenes-app-lib PROPERTIES AUTOMOC ON)
 
 # The license texts About shows (constitution: Qt under LGPL-3.0 with its

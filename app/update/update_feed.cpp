@@ -40,7 +40,7 @@ QString assetName(const Version& version, const QString& suffix)
 }
 
 std::optional<Release> chooseRelease(const QByteArray& feed, const Version& running, const QString& suffix,
-    const QString& skipped, QString* error)
+    const QString& skipped, QString* error, bool allowLoopbackHttp)
 {
     QJsonParseError parse{};
     const QJsonDocument doc = QJsonDocument::fromJson(feed, &parse);
@@ -71,7 +71,7 @@ std::optional<Release> chooseRelease(const QByteArray& feed, const Version& runn
         for (const QJsonValue& a : r.value(QStringLiteral("assets")).toArray()) {
             const QString name = a.toObject().value(QStringLiteral("name")).toString();
             const QUrl url(a.toObject().value(QStringLiteral("browser_download_url")).toString());
-            if (!urlAllowed(url, false)) continue;
+            if (!urlAllowed(url, allowLoopbackHttp)) continue;
             if (name == candidate.assetName) candidate.asset = url;
             if (name == QLatin1String("SHA256SUMS")) candidate.sums = url;
         }

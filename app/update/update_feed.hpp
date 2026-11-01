@@ -55,8 +55,9 @@ QString assetName(const Version& version, const QString& suffix);
 // it: the user declined that one, not just its number. Nothing to offer is
 // nullopt with `error` left empty; a feed that cannot be read is nullopt
 // with `error` saying why (GitHub's own message, for a rate limit).
+// `allowLoopbackHttp` admits the tests' plain-HTTP loopback assets.
 std::optional<Release> chooseRelease(const QByteArray& feed, const Version& running, const QString& suffix,
-    const QString& skipped, QString* error);
+    const QString& skipped, QString* error, bool allowLoopbackHttp = false);
 
 // The lowercase hex SHA-256 SHA256SUMS gives `name` ("<hex>  <name>", or
 // "<hex> *<name>" from Windows' tool), or nullopt.
