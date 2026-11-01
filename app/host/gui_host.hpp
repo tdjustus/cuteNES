@@ -76,7 +76,7 @@ private:
     api::Result setLibraryRoot(api::CallContext& ctx, const QString& root);
     api::Result addRomFolder(const QString& path);
     api::Result removeRomFolder(const QString& path);
-    api::Result saveState(api::CallContext& ctx, int slot);
+    api::Result saveState(api::CallContext& ctx, int slot, const QString& name);
     api::Result loadState(api::CallContext& ctx, int slot);
     // Loads `state`, keeping what it replaced for Undo Load State.
     api::Result loadStateBytes(api::CallContext& ctx, const QByteArray& state, bool keepUndo = true);

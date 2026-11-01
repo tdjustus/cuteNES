@@ -33,9 +33,9 @@ Conventions:
 | Open Recent ▸ Clear List | `gui.clear_recent` | | | |
 | Game Library | `gui.show_library` | | Ctrl+Shift+O | |
 | Close Game | `gui.close_game` | | Ctrl+W | ✓ |
-| Save State ▸ Slot N | `gui.save_state` | `slot` | Shift+F1 … Shift+F10 | ✓ |
+| Save State ▸ Slot N | `gui.save_state` | `slot`, `name` (optional) | Shift+F1 … Shift+F10 | ✓ |
 | Load State ▸ Slot N | `gui.load_state` | `slot` | F1 … F10 | ✓ |
-| Quick Save | `gui.quick_save` | | Ctrl+S | ✓ |
+| Quick Save | `gui.quick_save` | `name` (optional) | Ctrl+S | ✓ |
 | Quick Load | `gui.quick_load` | | Ctrl+L | ✓ |
 | Select Slot ▸ N | `gui.select_slot` | `slot` | Ctrl+1 … Ctrl+0 | |
 | Undo Load State | `gui.undo_load_state` | | Ctrl+Z | ✓ |
@@ -50,8 +50,16 @@ Conventions:
 `gui.list_slots` (no menu item; it backs the slot submenus' labels) returns
 each slot's time and thumbnail file. It is listed under "Queries" below.
 
+Saving from the menus or keys (Save State ▸ Slot N, Quick Save) pauses the
+game and asks for the state's name, filled in with the time it was saved.
+When the slot already holds a state, the dialog says so and its button is
+"Replace". `gui.save_state` and `gui.quick_save` called by automation take an
+optional `name` and never ask. The slot menus show each state's name, with
+the time it was saved as the tooltip.
+
 Loading a slot or a state file keeps the state it replaced, for one level of
-Undo Load State. A rejected state changes nothing, Undo included. An empty
+Undo Load State. A game that was running keeps running after a load (the
+core leaves a loaded machine paused). A rejected state changes nothing, Undo included. An empty
 slot, or nothing to undo, fails with `NotFound`, which the GUI shows as a
 status message rather than a dialog. Saving and loading confirm with a
 status message.
@@ -169,12 +177,15 @@ Each group's keys are an enum in its schema (data-model.md "Settings").
 | Command | Returns |
 |---|---|
 | `gui.state` | Window state: library or game, fullscreen, scale, speed, fast-forward, rewind, movie status, selected slot, open windows |
-| `gui.list_slots` | For each slot 1-10: `empty`, or `savedAt` (ISO 8601, UTC), `size`, and the `state` and `thumbnail` file paths; and the game's `selectedSlot` |
+| `gui.list_slots` | For each slot 1-10: `empty`, or `name`, `savedAt` (ISO 8601, UTC), `size`, and the `state` and `thumbnail` file paths; and the game's `selectedSlot` |
 | `gui.list_recent` | Recent games with path, identity and whether the file exists |
 | `gui.library_list` | The browser's entries (data-model "LibraryEntry"). In GUI mode `session.library_list` returns the same (FR-074) |
 
 ## Status bar and indicator (FR-073)
 
+- A paused game shows "PAUSED" over the picture. Short confirmations
+  ("State saved to slot 3") float over the bottom-left corner of the window
+  and never take room from the game.
 - The status bar shows the game name, the FPS (when on), the speed when it is
   not 100%, the movie state, and an **automation indicator**.
 - The indicator appears while any API or MCP client is connected. Its

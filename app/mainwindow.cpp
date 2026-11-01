@@ -31,7 +31,11 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QStandardPaths>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QLabel>
+#include <QLineEdit>
+#include <QVBoxLayout>
 #include <QTimer>
 #include <QLocale>
 #include <QIcon>
@@ -205,7 +209,13 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_osdTimer->setSingleShot(true);
     m_osdTimer->setInterval(2500);
     connect(m_osdTimer, &QTimer::timeout, m_osd, &QWidget::hide);
-    m_pages->installEventFilter(this);
+    m_paused = new QLabel(tr("PAUSED"), m_view);
+    m_paused->setObjectName(QStringLiteral("pausedOverlay"));
+    m_paused->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_paused->setStyleSheet(QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150); border-radius: 10px;"
+                                           " padding: 10px 26px; font-size: 28px; font-weight: 800; letter-spacing: 4px; }"));
+    m_paused->adjustSize();
+    m_paused->hide();
     m_audio = std::make_unique<qt::AudioOutput>();
     m_audio->open(); // silent if no device (spec US7-5)
 
@@ -469,7 +479,10 @@ void MainWindow::wireActions()
         action->setToolTip({});
         action->setEnabled(true);
         connect(action, &QAction::triggered, this, [this, action, command] {
-            runCommand(command, action->property("commandArgs").toMap());
+            const QVariantMap args = action->property("commandArgs").toMap();
+            if (command == QLatin1String("gui.save_state")) return askSaveState(args.value(QStringLiteral("slot")).toInt());
+            if (command == QLatin1String("gui.quick_save")) return askSaveState(m_host->selectedSlot());
+            runCommand(command, args);
         });
     }
 }
@@ -713,6 +726,11 @@ void MainWindow::setRunState(const QString& runState)
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
         if (kNeedGame.contains(action->property("command").toString())) action->setEnabled(game);
     }
+    m_paused->setVisible(game && runState == QLatin1String("Paused"));
+    if (m_paused->isVisible()) {
+        placePaused();
+        m_paused->raise();
+    }
     // The menu offers what the next press does.
     m_pauseAction->setText(runState == QLatin1String("Paused") ? tr("&Resume") : tr("&Pause"));
     if (game) {
@@ -782,10 +800,58 @@ void MainWindow::showOsd(const QString& text)
     emit messageShown(text);
 }
 
+void MainWindow::placePaused()
+{
+    m_paused->adjustSize();
+    m_paused->move(m_view->rect().center() - m_paused->rect().center());
+}
+
 void MainWindow::placeOsd()
 {
     constexpr int kMargin = 12;
     m_osd->move(kMargin, m_pages->height() - m_osd->height() - kMargin);
+}
+
+void MainWindow::askSaveState(int slot)
+{
+    if (!hasGame() || findChild<QDialog*>(QStringLiteral("saveStateDialog"))) return; // a held key asks once
+    // The state is the moment the key was pressed, not when the name is done.
+    const bool wasRunning = m_runState == QLatin1String("Running");
+    if (wasRunning) runCommand(QStringLiteral("core.pause"), {}, true);
+
+    const StateSlots::Info info = m_host->stateSlots().info(slot);
+    auto* dialog = new QDialog(this);
+    dialog->setObjectName(QStringLiteral("saveStateDialog"));
+    dialog->setWindowTitle(tr("Save State to Slot %1").arg(slot));
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    auto* layout = new QVBoxLayout(dialog);
+    layout->addWidget(new QLabel(tr("Name:"), dialog));
+    auto* name = new QLineEdit(StateSlots::defaultName(), dialog);
+    name->setObjectName(QStringLiteral("stateName"));
+    name->selectAll();
+    name->setMinimumWidth(320);
+    layout->addWidget(name);
+    if (!info.empty) {
+        auto* warning = new QLabel(tr("Slot %1 already holds “%2”, saved %3. Saving replaces it.")
+                                       .arg(slot)
+                                       .arg(info.name.toHtmlEscaped(), QLocale().toString(info.savedAt, QLocale::ShortFormat)),
+            dialog);
+        warning->setObjectName(QStringLiteral("replaceWarning"));
+        warning->setWordWrap(true);
+        layout->addWidget(warning);
+    }
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
+    if (!info.empty) buttons->button(QDialogButtonBox::Save)->setText(tr("Replace"));
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    connect(dialog, &QDialog::finished, this, [this, slot, name, wasRunning](int result) {
+        if (result == QDialog::Accepted) {
+            runCommand(QStringLiteral("gui.save_state"), {{QStringLiteral("slot"), slot}, {QStringLiteral("name"), name->text()}});
+        }
+        if (wasRunning) runCommand(QStringLiteral("core.resume"), {}, true);
+    });
+    dialog->open(); // never blocks: automation keeps running
 }
 
 void MainWindow::updateSlotMenus()
@@ -799,10 +865,10 @@ void MainWindow::updateSlotMenus()
             const StateSlots::Info info = gameSlots.info(slot);
             QString text = slotText(slot);
             if (gameSlots.isOpen()) {
-                text = info.empty ? tr("Slot %1 — Empty").arg(slot)
-                                  : tr("Slot %1 — %2").arg(slot).arg(locale.toString(info.savedAt, QLocale::ShortFormat));
+                text = info.empty ? tr("Slot %1 — Empty").arg(slot) : tr("Slot %1 — %2").arg(slot).arg(info.name);
             }
             action->setText(text);
+            action->setToolTip(info.empty ? QString() : tr("Saved %1").arg(locale.toString(info.savedAt, QLocale::ShortFormat)));
             action->setIcon(info.empty ? QIcon() : QIcon(QPixmap(info.thumbnailPath)));
             if (action->isCheckable()) action->setChecked(slot == selected);
         }
@@ -888,8 +954,9 @@ void MainWindow::pushInput()
 bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 {
     switch (event->type()) {
-    case QEvent::Resize:
+    case QEvent::Resize: // the application's filter sees every widget's
         if (watched == m_pages) placeOsd();
+        if (watched == m_view) placePaused();
         break;
     case QEvent::FileOpen: // macOS "Open With" and drops on the Dock icon
         if (watched == qApp) {

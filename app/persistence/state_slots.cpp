@@ -3,6 +3,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QLocale>
 #include <QSaveFile>
 
 namespace cutenes::app {
@@ -29,16 +32,28 @@ StateSlots::Info StateSlots::info(int slot) const
     const QDir dir(m_dir);
     info.statePath = dir.filePath(slotStem(slot) + QStringLiteral(".state"));
     info.thumbnailPath = dir.filePath(slotStem(slot) + QStringLiteral(".png"));
+    info.metadataPath = dir.filePath(slotStem(slot) + QStringLiteral(".json"));
     const QFileInfo file(info.statePath);
     if (file.isFile()) {
         info.empty = false;
         info.savedAt = file.lastModified();
         info.size = file.size();
+        QFile metadata(info.metadataPath);
+        if (metadata.open(QIODevice::ReadOnly)) {
+            info.name = QJsonDocument::fromJson(metadata.readAll()).object().value(QStringLiteral("name")).toString();
+        }
+        if (info.name.isEmpty()) info.name = defaultName(info.savedAt); // a state copied in by hand
     }
     return info;
 }
 
-bool StateSlots::save(int slot, const QByteArray& state, const QImage& thumbnail, QString* error)
+QString StateSlots::defaultName(const QDateTime& when)
+{
+    return QLocale().toString(when, QLocale::ShortFormat);
+}
+
+bool StateSlots::save(int slot, const QByteArray& state, const QImage& thumbnail, const QString& name,
+    QString* error)
 {
     if (!isOpen() || !isValidSlot(slot)) {
         if (error) *error = QObject::tr("No game to save a state for.");
@@ -57,6 +72,13 @@ bool StateSlots::save(int slot, const QByteArray& state, const QImage& thumbnail
             if (error) *error = png.errorString();
             return false;
         }
+    }
+    QSaveFile metadata(target.metadataPath);
+    const QString named = name.trimmed().isEmpty() ? defaultName() : name.trimmed();
+    if (!metadata.open(QIODevice::WriteOnly)
+        || metadata.write(QJsonDocument(QJsonObject{{QStringLiteral("name"), named}}).toJson()) < 0 || !metadata.commit()) {
+        if (error) *error = metadata.errorString();
+        return false;
     }
     return writeFile(target.statePath, state, error);
 }

@@ -90,6 +90,10 @@ public slots:
     void showAbout() override;
     void showOpenRomDialog() override;
     void openRom(const QString& path);
+    // Save State ▸ Slot N and Quick Save from the menus or keys: pauses the
+    // game and asks for the state's name (the time by default), warning
+    // when the slot already holds a state. Automation saves without asking.
+    void askSaveState(int slot);
     // Asks for a new library folder and whether to move the contents.
     void changeLibraryLocation();
     // Asks for a folder of ROMs and adds it to the library.
@@ -137,6 +141,7 @@ private:
     void updateSlotMenus(); // GUI thread: each slot's time and thumbnail
     void showOsd(const QString& text); // GUI thread
     void placeOsd();
+    void placePaused();
     void setRunState(const QString& runState);    // GUI thread
     void showGame();
     void returnToGame();
@@ -161,6 +166,7 @@ private:
     QMenu* m_recentMenu = nullptr;
     QAction* m_pauseAction = nullptr;
     QLabel* m_osd = nullptr; // on-screen messages, over the page
+    QLabel* m_paused = nullptr; // "PAUSED", over the game
     QTimer* m_osdTimer = nullptr;
     QMenu* m_saveStateMenu = nullptr;
     QMenu* m_loadStateMenu = nullptr;

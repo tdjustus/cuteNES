@@ -168,10 +168,21 @@ Json slotSchema()
     return s::integer(1, StateSlots::kSlots);
 }
 
+Json nameSchema()
+{
+    return s::string("what the menus call the state; default: when it was saved");
+}
+
+QString stateName(const Json& args)
+{
+    return QString::fromStdString(args.value("name", std::string()));
+}
+
 Json slotInfoJson(const StateSlots::Info& info)
 {
     Json v = {{"slot", info.slot}, {"empty", info.empty}};
     if (!info.empty) {
+        v["name"] = str(info.name);
         v["savedAt"] = str(info.savedAt.toUTC().toString(Qt::ISODate));
         v["size"] = info.size;
         v["state"] = str(info.statePath);
@@ -182,7 +193,7 @@ Json slotInfoJson(const StateSlots::Info& info)
 
 Json slotInfoSchema()
 {
-    return s::object({{"slot", slotSchema()}, {"empty", s::boolean()},
+    return s::object({{"slot", slotSchema()}, {"empty", s::boolean()}, {"name", s::string()},
         {"savedAt", s::string("ISO 8601, UTC")}, {"size", s::u64()},
         {"state", s::string("the .state file")}, {"thumbnail", s::string("the 256x240 PNG")}},
         {"slot", "empty"});
@@ -336,7 +347,7 @@ StateSlots GuiHost::stateSlots() const
     return m_slots;
 }
 
-Result GuiHost::saveState(CallContext& ctx, int slot)
+Result GuiHost::saveState(CallContext& ctx, int slot, const QString& name)
 {
     const StateSlots gameSlots = stateSlots();
     if (!gameSlots.isOpen()) return Result::fail("NotFound", "this game has no library folder for save states");
@@ -344,7 +355,7 @@ Result GuiHost::saveState(CallContext& ctx, int slot)
     const QByteArray state(reinterpret_cast<const char*>(blob.data), static_cast<qsizetype>(blob.size));
     QString error;
     StateSlots writer = gameSlots;
-    if (!writer.save(slot, state, currentFrame(ctx), &error)) return Result::fail("WriteError", str(error), {{"slot", slot}});
+    if (!writer.save(slot, state, currentFrame(ctx), name, &error)) return Result::fail("WriteError", str(error), {{"slot", slot}});
     m_window.showMessage(QObject::tr("State saved to slot %1").arg(slot));
     return Result::ok(slotInfoJson(gameSlots.info(slot)));
 }
@@ -362,6 +373,9 @@ Result GuiHost::loadState(CallContext& ctx, int slot)
 
 Result GuiHost::loadStateBytes(CallContext& ctx, const QByteArray& state, bool keepUndo)
 {
+    // The core leaves a loaded machine paused (001 data-model "State
+    // transitions"); a game being played keeps playing.
+    const bool running = isRunning(ctx);
     const SaveStateBlob before = ctx.session.machine().captureState();
     QByteArray replaced(reinterpret_cast<const char*>(before.data), static_cast<qsizetype>(before.size));
     std::string blobId;
@@ -373,6 +387,7 @@ Result GuiHost::loadStateBytes(CallContext& ctx, const QByteArray& state, bool k
     // loads part of one).
     if (r.isError()) return r;
     if (keepUndo) m_undoState = std::move(replaced);
+    if (running) return plain(call(ctx, "core.resume"));
     return Result::ok();
 }
 
@@ -422,16 +437,19 @@ void GuiHost::registerCommands(api::Registry& registry)
             return plain(r);
         });
 
-    add(registry, "gui.save_state", "Save the game's state into a slot, with a thumbnail",
-        s::object({{"slot", slotSchema()}}, {"slot"}), slotInfoSchema(), true, true,
-        [this](CallContext& ctx, const Json& args) { return saveState(ctx, args["slot"].get<int>()); });
+    add(registry, "gui.save_state", "Save the game's state into a slot (replacing what it holds), with a thumbnail",
+        s::object({{"slot", slotSchema()}, {"name", nameSchema()}}, {"slot"}), slotInfoSchema(), true, true,
+        [this](CallContext& ctx, const Json& args) {
+            return saveState(ctx, args["slot"].get<int>(), stateName(args));
+        });
 
     add(registry, "gui.load_state", "Load a slot (Undo Load State brings back what it replaced)",
         s::object({{"slot", slotSchema()}}, {"slot"}), s::object({{"slot", slotSchema()}}), true, true,
         [this](CallContext& ctx, const Json& args) { return loadState(ctx, args["slot"].get<int>()); });
 
-    add(registry, "gui.quick_save", "Save into the selected slot", s::object({}), slotInfoSchema(), true,
-        true, [this](CallContext& ctx, const Json&) { return saveState(ctx, m_selectedSlot.load()); });
+    add(registry, "gui.quick_save", "Save into the selected slot (replacing what it holds)",
+        s::object({{"name", nameSchema()}}), slotInfoSchema(), true, true,
+        [this](CallContext& ctx, const Json& args) { return saveState(ctx, m_selectedSlot.load(), stateName(args)); });
 
     add(registry, "gui.quick_load", "Load the selected slot", s::object({}), s::object({{"slot", slotSchema()}}),
         true, true, [this](CallContext& ctx, const Json&) { return loadState(ctx, m_selectedSlot.load()); });

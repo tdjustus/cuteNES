@@ -14,7 +14,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QDialog>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
 #include <QTemporaryDir>
@@ -314,4 +316,112 @@ TEST(GuiStates, AMessageNeverResizesTheGameView)
     EXPECT_EQ(osd->text(), QStringLiteral("State saved to slot 1"));
     EXPECT_TRUE(waitUntil([&] { return !osd->isVisible(); }, 6000)) << "it goes away by itself";
     EXPECT_EQ(w.view()->size(), view);
+}
+
+// A bug the maintainer found: after loading, the picture froze and the game
+// could not be played. A loaded game keeps running in real time.
+TEST(GuiStates, ALoadedGameKeepsPlaying)
+{
+    MainWindow w(windowOptions());
+    w.show();
+    call(w, "gui.open_rom", {{"path", kRom.toStdString()}});
+    ASSERT_TRUE(waitUntil([&] { return frame(w) > 30; }));
+    call(w, "gui.save_state", {{"slot", 1}});
+    ASSERT_TRUE(waitUntil([&] { return frame(w) > 60; }));
+    call(w, "gui.load_state", {{"slot", 1}});
+    EXPECT_EQ(call(w, "core.run_state")["runState"], "Running");
+    const std::uint64_t loaded = frame(w);
+    EXPECT_TRUE(waitUntil([&] { return frame(w) > loaded + 30; })) << "frames run after the load";
+    const std::uint64_t shown = w.view()->shownFrameIndex();
+    EXPECT_TRUE(waitUntil([&] { return w.view()->shownFrameIndex() > shown + 10; })) << "and the view shows them";
+}
+
+// The maintainer's requests: saving from the menus asks for a name (the
+// time by default) and warns before replacing a state; automation saves
+// without asking.
+TEST(GuiStates, SavingFromTheMenuAsksForANameAndWarnsBeforeReplacing)
+{
+    MainWindow w(windowOptions());
+    w.show();
+    call(w, "gui.open_rom", {{"path", kRom.toStdString()}});
+    ASSERT_TRUE(waitUntil([&] { return slotAction(w, "gui.save_state", 4)->isEnabled(); }));
+
+    slotAction(w, "gui.save_state", 4)->trigger();
+    QDialog* dialog = nullptr;
+    ASSERT_TRUE(waitUntil([&] { return (dialog = w.findChild<QDialog*>(QStringLiteral("saveStateDialog"))) != nullptr; }));
+    EXPECT_TRUE(waitUntil([&] { return call(w, "core.run_state")["runState"] == "Paused"; }))
+        << "the state is the moment the key was pressed";
+    auto* name = dialog->findChild<QLineEdit*>(QStringLiteral("stateName"));
+    ASSERT_NE(name, nullptr);
+    EXPECT_FALSE(name->text().isEmpty()) << "a default name";
+    EXPECT_EQ(dialog->findChild<QLabel*>(QStringLiteral("replaceWarning")), nullptr) << "slot 4 is empty";
+    name->setText(QStringLiteral("Before the boss"));
+    dialog->accept();
+    ASSERT_TRUE(waitUntil([&] { return !call(w, "gui.list_slots")["slots"][3]["empty"].get<bool>(); }));
+    EXPECT_EQ(call(w, "gui.list_slots")["slots"][3]["name"], "Before the boss");
+    EXPECT_TRUE(waitUntil([&] { return call(w, "core.run_state")["runState"] == "Running"; })) << "play goes on";
+
+    // Again into the same slot: a warning, and Cancel keeps the old state.
+    ASSERT_TRUE(waitUntil([&] { return !w.findChild<QDialog*>(QStringLiteral("saveStateDialog")); }));
+    slotAction(w, "gui.save_state", 4)->trigger();
+    ASSERT_TRUE(waitUntil([&] { return (dialog = w.findChild<QDialog*>(QStringLiteral("saveStateDialog"))) != nullptr; }));
+    auto* warning = dialog->findChild<QLabel*>(QStringLiteral("replaceWarning"));
+    ASSERT_NE(warning, nullptr);
+    EXPECT_TRUE(warning->text().contains(QStringLiteral("Before the boss")));
+    dialog->reject();
+    ASSERT_TRUE(waitUntil([&] { return call(w, "core.run_state")["runState"] == "Running"; }));
+    EXPECT_EQ(call(w, "gui.list_slots")["slots"][3]["name"], "Before the boss");
+
+    emit qobject_cast<QMenu*>(slotAction(w, "gui.load_state", 4)->parent())->aboutToShow();
+    EXPECT_EQ(slotAction(w, "gui.load_state", 4)->text(), QStringLiteral("Slot 4 — Before the boss"));
+}
+
+TEST(GuiStates, AutomationSavesWithADefaultNameAndNoDialog)
+{
+    MainWindow w(windowOptions());
+    openPaused(w);
+    const Json saved = call(w, "gui.save_state", {{"slot", 1}});
+    EXPECT_FALSE(saved["name"].get<std::string>().empty());
+    call(w, "gui.save_state", {{"slot", 1}, {"name", "Mine"}});
+    EXPECT_EQ(call(w, "gui.list_slots")["slots"][0]["name"], "Mine");
+    EXPECT_EQ(w.findChild<QDialog*>(QStringLiteral("saveStateDialog")), nullptr);
+}
+
+// States belong to the ROM's hash (R7), not its file name.
+TEST(GuiStates, ARenamedRomKeepsItsStates)
+{
+    MainWindow w(windowOptions());
+    QTemporaryDir dir;
+    const QString first = dir.filePath(QStringLiteral("first name.nes"));
+    const QString second = dir.filePath(QStringLiteral("another name.nes"));
+    ASSERT_TRUE(QFile::copy(kRom, first));
+    openPaused(w, first);
+    call(w, "gui.save_state", {{"slot", 6}, {"name", "Kept"}});
+    call(w, "gui.close_game");
+    ASSERT_TRUE(QFile::rename(first, second));
+    openPaused(w, second);
+    EXPECT_EQ(call(w, "gui.list_slots")["slots"][5]["name"], "Kept");
+    // A different ROM under the old name has none of them.
+    ASSERT_TRUE(QFile::copy(kOtherRom, first));
+    openPaused(w, first);
+    EXPECT_TRUE(call(w, "gui.list_slots")["slots"][5]["empty"].get<bool>());
+}
+
+// The maintainer's request: a paused game says so over the picture.
+TEST(GuiStates, APausedGameShowsPaused)
+{
+    MainWindow w(windowOptions());
+    w.show();
+    call(w, "gui.open_rom", {{"path", kRom.toStdString()}});
+    ASSERT_TRUE(waitUntil([&] { return w.view()->isVisible(); }));
+    auto* paused = w.findChild<QLabel*>(QStringLiteral("pausedOverlay"));
+    ASSERT_NE(paused, nullptr);
+    EXPECT_FALSE(paused->isVisible());
+    call(w, "gui.toggle_pause");
+    ASSERT_TRUE(waitUntil([&] { return paused->isVisible(); }));
+    EXPECT_EQ(paused->text(), QStringLiteral("PAUSED"));
+    EXPECT_EQ(paused->parentWidget(), w.view()) << "over the picture, so it goes with the game page";
+    EXPECT_EQ(paused->geometry().center(), w.view()->rect().center());
+    call(w, "gui.toggle_pause");
+    EXPECT_TRUE(waitUntil([&] { return !paused->isVisible(); }));
 }
