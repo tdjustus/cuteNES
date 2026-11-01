@@ -182,6 +182,10 @@ TEST(GuiTools, OnScreenMessagesCanBeTurnedOff)
     EXPECT_EQ(call(w, "gui.toggle_osd")["showOsd"], true);
     call(w, "gui.save_state", {{"slot", 2}});
     EXPECT_TRUE(waitUntil([&] { return osd->isVisible(); }));
+    // Messages look like the speed indicator; only the place differs.
+    auto* speed = w.findChild<QLabel*>(QStringLiteral("speedOverlay"));
+    ASSERT_NE(speed, nullptr);
+    EXPECT_EQ(osd->styleSheet(), speed->styleSheet());
 }
 
 TEST(GuiTools, ExportWritesTheBatteryRamAndImportReplacesIt)

@@ -209,23 +209,22 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_pages->addWidget(m_browser);
     m_pages->addWidget(m_view);
     setCentralWidget(m_pages);
-    m_osd = new QLabel(m_pages);
-    m_osd->setObjectName(QStringLiteral("osdMessage"));
-    m_osd->setAttribute(Qt::WA_TransparentForMouseEvents);
-    m_osd->setStyleSheet(QStringLiteral(
-        "QLabel { color: white; background: rgba(0, 0, 0, 170); border-radius: 6px; padding: 6px 10px; }"));
-    m_osd->hide();
-    m_osdTimer = new QTimer(this);
-    m_osdTimer->setSingleShot(true);
-    m_osdTimer->setInterval(2500);
-    connect(m_osdTimer, &QTimer::timeout, m_osd, &QWidget::hide);
-    // PAUSED and the speed indicator share one design; the speed is half
-    // the size, so it stays out of the way of play.
+    // Every overlay shares one design: PAUSED at full size; the speed,
+    // the FPS and messages at half, so they stay out of the way of play.
     const auto overlayStyle = [](int scale) {
         return QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150); border-radius: %1px;"
                               " padding: %2px %3px; font-size: %4px; font-weight: 800; letter-spacing: %5px; }")
             .arg(10 / scale).arg(10 / scale).arg(26 / scale).arg(28 / scale).arg(4 / scale);
     };
+    m_osd = new QLabel(m_pages);
+    m_osd->setObjectName(QStringLiteral("osdMessage"));
+    m_osd->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_osd->setStyleSheet(overlayStyle(2));
+    m_osd->hide();
+    m_osdTimer = new QTimer(this);
+    m_osdTimer->setSingleShot(true);
+    m_osdTimer->setInterval(2500);
+    connect(m_osdTimer, &QTimer::timeout, m_osd, &QWidget::hide);
     m_paused = new QLabel(tr("PAUSED"), m_view);
     m_paused->setObjectName(QStringLiteral("pausedOverlay"));
     m_paused->setStyleSheet(overlayStyle(1));
