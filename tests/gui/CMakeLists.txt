@@ -29,11 +29,15 @@ add_executable(cutenes-gui-tests
     test_ppu_viewer.cpp
     test_trace_logger.cpp
     test_audit.cpp
-    test_window_commands.cpp)
+    test_window_commands.cpp
+    test_coexistence.cpp)
 target_link_libraries(cutenes-gui-tests PRIVATE cutenes-app-lib cutenes-httplib gtest)
 target_compile_definitions(cutenes-gui-tests PRIVATE
     CUTENES_TEST_ROMS="${PROJECT_SOURCE_DIR}/tests/roms"
-    CUTENES_CONTRACTS="${PROJECT_SOURCE_DIR}/specs/003-qt-frontend/contracts")
+    CUTENES_CONTRACTS="${PROJECT_SOURCE_DIR}/specs/003-qt-frontend/contracts"
+    CUTENES_SERVER_EXE="$<TARGET_FILE:cutenes-server>")
+# The --attach test runs the real cutenes-server.
+add_dependencies(cutenes-gui-tests cutenes-server)
 
 gtest_discover_tests(cutenes-gui-tests
     DISCOVERY_MODE PRE_TEST
