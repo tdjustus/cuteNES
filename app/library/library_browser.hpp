@@ -90,6 +90,8 @@ signals:
     void addFolderRequested();
     void openFileRequested();
     void changeLocationRequested();
+    // The header's Key Bindings button (#108).
+    void keyBindingsRequested();
     // Escape while a game is loaded.
     void backRequested();
 
@@ -116,6 +118,7 @@ private:
     QToolButton* m_listButton = nullptr;
     QToolButton* m_sort = nullptr;
     QToolButton* m_addFolder = nullptr;
+    QToolButton* m_keyBindings = nullptr;
     QWidget* m_controls = nullptr;
     QLabel* m_emptyIcon = nullptr;
     Layout m_layout = Layout::Grid;

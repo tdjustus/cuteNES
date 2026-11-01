@@ -22,6 +22,7 @@
 #include <atomic>
 #include <QMainWindow>
 #include <QPointer>
+#include <QMultiHash>
 #include <QSet>
 #include <QThreadPool>
 #include <QVariantMap>
@@ -44,6 +45,8 @@ class FrameClock;
 
 namespace cutenes::app {
 
+class KeyBindings;
+class KeyBindingsPage;
 class LibraryBrowser;
 class LibraryIndex;
 class Servers;
@@ -142,6 +145,9 @@ private:
     void playbackChanged(const Playback& playback) override;
     void showLibrary(const QString& select, bool paused) override;
     void showSettings(const QString& page) override;
+    void showKeyBindings(const QString& section, bool paused) override;
+    KeyBindings& keyBindings() override { return *m_bindings; }
+    void bindingsChanged() override;
     void openLibraryFolder() override;
     void exit() override;
     QVector<LibraryEntry> libraryEntries() const override;
@@ -153,6 +159,10 @@ private:
     void sessionEvent(const api::Event& event) override;
 
     void createMenus();
+    void defineBindings(); // after createMenus: every action and game button
+    void applyBindings();  // GUI thread: the menus' shortcuts and the game keys
+    void leaveKeyBindings();
+    void requestBinding(const QString& id, int index, const QString& binding); // the page's
     void wireActions();
     void rebuildRecentMenu();
     void updateSlotMenus(); // GUI thread: each slot's time and thumbnail
@@ -182,6 +192,10 @@ private:
     std::unique_ptr<qt::AudioOutput> m_audio;
     QStackedWidget* m_pages = nullptr;
     LibraryBrowser* m_browser = nullptr;
+    KeyBindingsPage* m_bindingsPage = nullptr;
+    QWidget* m_bindingsReturn = nullptr; // the page Back returns to
+    std::unique_ptr<KeyBindings> m_bindings;
+    QMultiHash<QString, QAction*> m_bindingActions; // by binding id
     qt::EmulationView* m_view = nullptr;
     LibraryIndex* m_index = nullptr;
     QMenu* m_recentMenu = nullptr;

@@ -111,6 +111,32 @@ void AppSettings::setSelectedSlot(const QString& sha1, int slot)
     m_settings.setValue(kSlot + sha1, slot);
 }
 
+QMap<QString, QStringList> AppSettings::bindings(const QString& group) const
+{
+    // One string per id, the pair split by a tab: no key's name has one.
+    std::lock_guard lock(m_mutex);
+    QMap<QString, QStringList> out;
+    m_settings.beginGroup(group);
+    for (const QString& id : m_settings.childKeys()) {
+        QStringList pair = m_settings.value(id).toString().split(QLatin1Char('\t'));
+        while (pair.size() < 2) pair << QString();
+        out.insert(id, pair.mid(0, 2));
+    }
+    m_settings.endGroup();
+    return out;
+}
+
+void AppSettings::setBinding(const QString& group, const QString& id, const QStringList& pair)
+{
+    std::lock_guard lock(m_mutex);
+    const QString key = group + QLatin1Char('/') + id;
+    if (pair.isEmpty()) {
+        m_settings.remove(key);
+    } else {
+        m_settings.setValue(key, pair.join(QLatin1Char('\t')));
+    }
+}
+
 QString AppSettings::lastSettingsPage() const
 {
     std::lock_guard lock(m_mutex);

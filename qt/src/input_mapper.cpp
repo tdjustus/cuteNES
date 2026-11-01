@@ -24,6 +24,12 @@ void InputMapper::bind(int key, Port port, Button button)
     m_bindings[key] = {port, button};
 }
 
+void InputMapper::unbindAll()
+{
+    m_bindings.clear();
+    m_held.clear();
+}
+
 bool InputMapper::handleKey(int key, bool pressed)
 {
     if (!m_bindings.count(key)) {

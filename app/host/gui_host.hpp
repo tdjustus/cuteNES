@@ -29,6 +29,7 @@
 namespace cutenes::app {
 
 class AppSettings;
+class KeyBindings;
 
 class GuiHost final : public api::IHost {
 public:
@@ -61,6 +62,14 @@ public:
         // select: a path or empty; paused: the command paused a running game.
         virtual void showLibrary(const QString& select, bool paused) = 0;
         virtual void showSettings(const QString& page) = 0;
+        // The Key Bindings page (#108) at `section` (`controls` or
+        // `hotkeys`); paused: the command paused a running game, which Back
+        // resumes.
+        virtual void showKeyBindings(const QString& section, bool paused) = 0;
+        // The page's model (thread-safe), and a change to it: the window
+        // applies it to the menus and the game keys.
+        virtual KeyBindings& keyBindings() = 0;
+        virtual void bindingsChanged() = 0;
         virtual void showAbout() = 0;
         virtual void openLibraryFolder() = 0;
         virtual void exit() = 0;

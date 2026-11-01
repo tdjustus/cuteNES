@@ -608,6 +608,13 @@ QWidget* LibraryBrowser::createHeader()
     m_addFolder->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     m_addFolder->setFocusPolicy(Qt::NoFocus);
     connect(m_addFolder, &QToolButton::clicked, this, &LibraryBrowser::addFolderRequested);
+    m_keyBindings = new QToolButton(header);
+    m_keyBindings->setObjectName(QStringLiteral("keyBindingsButton"));
+    m_keyBindings->setText(tr("Key Bindings"));
+    m_keyBindings->setToolTip(tr("View and change the keys for the game and the menus"));
+    m_keyBindings->setAccessibleName(tr("Key Bindings"));
+    m_keyBindings->setFocusPolicy(Qt::NoFocus);
+    connect(m_keyBindings, &QToolButton::clicked, this, &LibraryBrowser::keyBindingsRequested);
     auto* sortLabel = new QLabel(tr("Sort by"), header);
     sortLabel->setObjectName(QStringLiteral("librarySortLabel"));
 
@@ -616,6 +623,7 @@ QWidget* LibraryBrowser::createHeader()
     top->addWidget(title, 0, Qt::AlignBaseline);
     top->addWidget(m_count, 0, Qt::AlignBaseline);
     top->addStretch();
+    top->addWidget(m_keyBindings, 0, Qt::AlignVCenter);
     top->addWidget(m_addFolder, 0, Qt::AlignVCenter);
     top->addSpacing(4);
     top->addWidget(m_filter, 0, Qt::AlignVCenter);
@@ -733,8 +741,9 @@ void LibraryBrowser::updateStyle()
         QToolButton#librarySort { background: transparent; border: none; border-radius: 6px; padding: 3px 6px; color: %2; font-weight: 600; }
         QToolButton#librarySort:hover { background: %6; }
         QToolButton#librarySort::menu-indicator { image: none; width: 0; }
-        QToolButton#libraryAddFolder { background: %6; border: none; border-radius: 8px; padding: 5px 10px; color: %2; }
-        QToolButton#libraryAddFolder:hover { background: %4; }
+        QToolButton#libraryAddFolder, QToolButton#keyBindingsButton {
+            background: %6; border: none; border-radius: 8px; padding: 5px 10px; color: %2; }
+        QToolButton#libraryAddFolder:hover, QToolButton#keyBindingsButton:hover { background: %4; }
         QListView#libraryGrid, QTreeView#libraryList { background: transparent; border: none; }
         QTreeView#libraryList { selection-background-color: %5; selection-color: %9; }
         QTreeView#libraryList::item { padding: 5px 2px; }

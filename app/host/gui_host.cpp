@@ -1,6 +1,7 @@
 #include "host/gui_host.hpp"
 
 #include "settings/app_settings.hpp"
+#include "settings/key_bindings.hpp"
 
 #include <cutenes/api/schema.hpp>
 #include <cutenes/api/session.hpp>
@@ -129,6 +130,58 @@ Json romFoldersValue(const AppSettings& settings)
     Json list = Json::array();
     for (const QString& folder : settings.romFolders()) list.push_back(str(folder));
     return list;
+}
+
+Json pairJson(const KeyBindings::Pair& pair)
+{
+    return Json::array({str(pair[0]), str(pair[1])});
+}
+
+// One Key Bindings entry (contract "Key Bindings page").
+Json bindingJson(const KeyBindings::Entry& e)
+{
+    return {{"id", str(e.definition.id)}, {"label", str(e.definition.label)},
+        {"kind", e.definition.control ? "control" : "hotkey"}, {"bindings", pairJson(e.bindings)},
+        {"defaults", pairJson(e.definition.defaults)}};
+}
+
+Json bindingSchema()
+{
+    const Json pair = s::array(s::string("a binding in Qt's portable key text, or \"\" for none"), 2);
+    return s::object({{"id", s::string()}, {"label", s::string()}, {"kind", s::stringEnum({"hotkey", "control"})},
+                         {"bindings", pair}, {"defaults", pair}},
+        {"id", "label", "kind", "bindings", "defaults"});
+}
+
+Json storedBindings(const KeyBindings& bindings, bool controls)
+{
+    Json out = Json::object();
+    const auto stored = bindings.stored(controls);
+    for (auto it = stored.begin(); it != stored.end(); ++it) out[str(it.key())] = pairJson(it.value());
+    return out;
+}
+
+// A KeyBindings change as a command's result.
+Result bindingResult(const KeyBindings::Change& change)
+{
+    using Status = KeyBindings::Change::Status;
+    switch (change.status) {
+    case Status::UnknownId:
+        return invalid("/id", str(change.why));
+    case Status::BadIndex:
+        return invalid("/index", str(change.why));
+    case Status::BadBinding:
+        return invalid("/binding", str(change.why));
+    case Status::Conflicted: {
+        Json conflicts = Json::array();
+        for (const auto& c : change.conflicts) conflicts.push_back({{"id", str(c.id)}, {"label", str(c.label)}});
+        return Result::fail("InvalidArguments", str(change.why) + " (pass force to take it)",
+            {{"path", "/binding"}, {"conflicts", conflicts}});
+    }
+    case Status::Done:
+        break;
+    }
+    return Result::ok(bindingJson(*change.entry));
 }
 
 Json entrySchema()
@@ -866,7 +919,6 @@ void GuiHost::registerCommands(api::Registry& registry)
         s::object({{"view", s::stringEnum({"patterns", "nametables", "sprites", "palette"})}}), true, "G8");
     later("gui.show_trace_logger", "Open the trace logger", none, true, "G8");
     later("gui.write_memory_dump", "Write a memory dump to the library's debug folder", none, true, "G8");
-    later("gui.show_shortcuts", "Show the key bindings", none, false, "G3");
     later("gui.show_user_guide", "Open the user guide", none, false, "G9");
     later("gui.open_log_folder", "Show the log folder in the file manager", none, false, "G9");
 
@@ -927,12 +979,71 @@ void GuiHost::registerCommands(api::Registry& registry)
 
     // --- Settings ---------------------------------------------------------------
 
+    // --- Key Bindings (#108, contract "Key Bindings page") ----------------------
+
+    add(registry, "gui.show_shortcuts", "Show the Key Bindings page (pauses a running game; Back resumes it)",
+        s::object({{"section", s::stringEnum({"hotkeys", "controls"})}}),
+        s::object({{"section", s::string()}}, {"section"}), false, false, [this](CallContext& ctx, const Json& args) {
+            const std::string section = args.value("section", "hotkeys");
+            const bool paused = isRunning(ctx) && !call(ctx, "core.pause").isError();
+            m_window.showKeyBindings(QString::fromStdString(section), paused);
+            return Result::ok({{"section", section}});
+        });
+
+    add(registry, "gui.list_bindings", "Every menu action and game button with its bindings and defaults",
+        s::object({}), s::object({{"bindings", s::array(bindingSchema(), 1000)}}, {"bindings"}), false, false,
+        [this](CallContext&, const Json&) {
+            Json list = Json::array();
+            for (const auto& e : m_window.keyBindings().entries()) list.push_back(bindingJson(e));
+            return Result::ok({{"bindings", list}});
+        });
+
+    const Json index = s::integer(0, 1, "which of the two bindings (default 0)");
+    add(registry, "gui.set_binding",
+        "Bind a key (portable text, such as Ctrl+Shift+S) to an entry; a conflict fails unless force",
+        s::object({{"id", s::string("an id from gui.list_bindings")}, {"binding", s::string()}, {"index", index},
+                      {"force", s::boolean("take the binding from the entries that have it")}},
+            {"id", "binding"}),
+        bindingSchema(), true, false, [this](CallContext&, const Json& args) {
+            const auto change = m_window.keyBindings().set(QString::fromStdString(args["id"].get<std::string>()),
+                args.value("index", 0), QString::fromStdString(args["binding"].get<std::string>()),
+                args.value("force", false));
+            if (change.status == KeyBindings::Change::Status::Done) m_window.bindingsChanged();
+            return bindingResult(change);
+        });
+
+    add(registry, "gui.clear_binding", "Clear one of an entry's bindings, or both without index",
+        s::object({{"id", s::string()}, {"index", index}}, {"id"}), bindingSchema(), true, false,
+        [this](CallContext&, const Json& args) {
+            const auto change = m_window.keyBindings().clear(QString::fromStdString(args["id"].get<std::string>()),
+                args.value("index", -1));
+            if (change.status == KeyBindings::Change::Status::Done) m_window.bindingsChanged();
+            return bindingResult(change);
+        });
+
+    add(registry, "gui.reset_bindings", "Reset an entry, or every entry without id, to the defaults",
+        s::object({{"id", s::string()}}), s::object({{"reset", s::array(bindingSchema(), 1000)}}, {"reset"}), true,
+        false, [this](CallContext&, const Json& args) {
+            const auto reset = m_window.keyBindings().reset(QString::fromStdString(args.value("id", "")));
+            if (!reset) return invalid("/id", "no binding has this id");
+            Json list = Json::array();
+            for (const auto& e : *reset) list.push_back(bindingJson(e));
+            m_window.bindingsChanged();
+            return Result::ok({{"reset", list}});
+        });
+
     add(registry, "gui.show_settings", "Show Settings, at a page or the last one shown",
         s::object({{"page", s::stringEnum(kSettingsPages)}}), s::object({{"page", s::string()}}, {"page"}),
-        false, false, [this](CallContext&, const Json& args) {
+        false, false, [this](CallContext& ctx, const Json& args) {
             const QString page = args.contains("page") ? QString::fromStdString(args["page"].get<std::string>())
                                                        : m_settings.lastSettingsPage();
-            // Only the Library and Servers pages exist so far (G034: the
+            // Input and Hotkeys are the Key Bindings page (#108).
+            if (page == QLatin1String("input") || page == QLatin1String("hotkeys")) {
+                const bool paused = isRunning(ctx) && !call(ctx, "core.pause").isError();
+                m_window.showKeyBindings(page == QLatin1String("input") ? QStringLiteral("controls") : page, paused);
+                return Result::ok({{"page", str(page)}});
+            }
+            // Library and Servers are the other pages so far (G034: the
             // others are in the menus, disabled, until their phase).
             if (page != QLatin1String("library") && page != QLatin1String("servers")) {
                 return Result::fail("NotImplemented", "the " + str(page) + " page is coming in a later update",
@@ -943,7 +1054,7 @@ void GuiHost::registerCommands(api::Registry& registry)
         });
 
     add(registry, "gui.get_settings", "Every setting's value and schema, or one group's",
-        s::object({{"group", s::stringEnum({"library", "servers"})}}),
+        s::object({{"group", s::stringEnum({"library", "servers", "hotkeys", "input"})}}),
         s::object({{"values", Json{{"type", "object"}}}, {"schema", Json{{"type", "object"}}}}, {"values", "schema"}),
         false, false, [this](CallContext&, const Json&) {
             const Library library = m_window.library();
@@ -952,14 +1063,18 @@ void GuiHost::registerCommands(api::Registry& registry)
                                      {"roms", str(library.folder(Library::Folder::Roms))},
                                      {"romFolders", romFoldersValue(m_settings)}}},
                 {"servers", {{"apiEnabled", servers.apiEnabled}, {"apiPort", servers.apiPort},
-                                {"mcpEnabled", servers.mcpEnabled}, {"mcpPort", servers.mcpPort}}}};
+                                {"mcpEnabled", servers.mcpEnabled}, {"mcpPort", servers.mcpPort}}},
+                {"hotkeys", storedBindings(m_window.keyBindings(), false)},
+                {"input", storedBindings(m_window.keyBindings(), true)}};
             const Json schema = {{"library.root", s::string("absolute path of the library folder")},
                 {"library.roms", s::string("the library's own roms folder (always scanned)")},
                 {"library.romFolders", s::array(s::string("added with gui.add_rom_folder"), 1000)},
                 {"servers.apiEnabled", s::boolean("the API listener (off by default; off turns MCP off)")},
                 {"servers.apiPort", s::integer(0, 65535, "the API port; 0 picks a free one")},
                 {"servers.mcpEnabled", s::boolean("the MCP server (off by default; on turns the API on)")},
-                {"servers.mcpPort", s::integer(0, 65535, "the MCP port; 0 picks a free one")}};
+                {"servers.mcpPort", s::integer(0, 65535, "the MCP port; 0 picks a free one")},
+                {"hotkeys", s::string("the menu bindings that differ from the defaults, by id (gui.set_binding)")},
+                {"input", s::string("the game-button bindings that differ from the defaults, by id (gui.set_binding)")}};
             return Result::ok({{"values", values}, {"schema", schema}});
         });
 

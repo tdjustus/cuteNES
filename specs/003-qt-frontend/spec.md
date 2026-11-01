@@ -149,7 +149,8 @@ shortcut, and works when triggered.
    that need a game (reset, save state, debuggers) are disabled, not hidden.
 3. **Given** any action that has a keyboard shortcut, **When** its menu
    opens, **Then** the shortcut is shown next to it. **When** the user
-   rebinds it in Settings > Hotkeys, **Then** the menu shows the new binding.
+   rebinds it on the Key Bindings page, **Then** the menu shows the new
+   binding.
 4. **Given** fullscreen, **When** the user presses Alt (or moves the pointer
    to the top edge), **Then** the menu bar becomes reachable without leaving
    fullscreen.
@@ -204,7 +205,7 @@ gamepad in or out while playing.
 **Why this priority**: The defaults must work out of the box, and remapping
 is expected of every emulator.
 
-**Independent Test**: In Settings > Input, rebind player 1's A to a different
+**Independent Test**: On the Key Bindings page, rebind player 1's A to a different
 key and confirm, through `core.get_controller`, that the game sees A when
 that key is held. Connect a gamepad and confirm its defaults drive player 1.
 
@@ -214,7 +215,7 @@ that key is held. Connect a gamepad and confirm its defaults drive player 1.
    (arrows; Z = B, X = A; Right Shift = Select; Enter = Start) and the first
    gamepad is mapped to player 1 with its standard layout. A second gamepad
    is mapped to player 2.
-2. **Given** the input settings, **When** the user clicks a button's binding
+2. **Given** the Key Bindings page, **When** the user clicks a button's binding
    and presses a key or a gamepad control, **Then** that becomes the binding.
    A conflict with another binding or a hotkey is shown.
 3. **Given** turbo A or turbo B is held, **Then** the button toggles at the
@@ -540,7 +541,9 @@ the same arguments. Launch with a ROM argument: no prompt.
   when none is loaded. Every action with a shortcut MUST show it in its menu.
 - **FR-022**: Every hotkey MUST be rebindable to a key or a gamepad control.
   Bindings MUST be checked for conflicts with each other and with game
-  input.
+  input. Hotkeys and game controls are viewed and remapped on one Key
+  Bindings page in the main window (#108), reached from the library
+  browser, Help > Keyboard Shortcuts, and Settings > Input and Hotkeys.
 - **FR-023**: Each action MUST give visible feedback: an on-screen message
   for quick actions (state saved, speed changed) and a dialog for errors.
   On-screen messages MUST be switchable off.
