@@ -65,6 +65,21 @@ public:
     bool showOsd() const;
     void setShowOsd(bool on);
 
+    // input.* (data-model "Settings"): the turbo rate in presses a second
+    // (2-30), and the two input options.
+    struct InputSettings {
+        int turboRate = 15;
+        bool allowOppositeDirections = false;
+        bool pauseOnGamepadDisconnect = true;
+    };
+    InputSettings input() const;
+    void setInput(const InputSettings& input);
+
+    // The GUID of the pad that last drove player `port` (1 or 2), so it
+    // gets that player back in a later run; empty if none.
+    QString gamepad(int port) const;
+    void setGamepad(int port, const QString& guid);
+
     // The key bindings that differ from the defaults, in the groups
     // `hotkeys` and `input` (contract "Key Bindings page"): each id's two
     // bindings, "" for none. An empty pair is a cleared entry.

@@ -15,6 +15,7 @@
 #include "settings/app_settings.hpp"
 
 #include <cutenes/api/session.hpp>
+#include <cutenes/qt/gamepad.hpp>
 #include <cutenes/qt/input_mapper.hpp>
 
 #include <QFuture>
@@ -27,9 +28,12 @@
 #include <QThreadPool>
 #include <QVariantMap>
 
+#include <array>
 #include <chrono>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 
 class QLabel;
 class QPushButton;
@@ -63,6 +67,8 @@ struct MainWindowOptions {
     // Where the API and MCP token files go; empty: the user's state folder
     // (api::token::defaultDirectory(), which cutenes-server --attach reads).
     QString tokenDir;
+    // The gamepads; null: SDL's (tests give a fake).
+    std::shared_ptr<qt::GamepadBackend> gamepads;
 };
 
 class MainWindow : public QMainWindow, private GuiHost::Window {
@@ -148,6 +154,8 @@ private:
     void showKeyBindings(const QString& section, bool paused) override;
     KeyBindings& keyBindings() override { return *m_bindings; }
     void bindingsChanged() override;
+    QVector<Gamepad> gamepads() const override;
+    void inputSettingsChanged() override;
     void openLibraryFolder() override;
     void exit() override;
     QVector<LibraryEntry> libraryEntries() const override;
@@ -177,6 +185,12 @@ private:
     void showGame();
     void returnToGame();
     void pushInput();
+    void applyInputSettings(); // GUI thread: the turbo rate and opposite directions
+    // Gamepads (GUI thread): the backend's events, one control of the pad
+    // that drives `port`, and that pad going away.
+    void pollGamepads();
+    void padControl(Port port, qt::PadControl control, bool pressed);
+    void releasePad(Port port);
     void showError(const QString& name, const api::Error& error);
     void showWarning(const QString& message);
     void useLibrary(const Library& library);       // GUI thread
@@ -227,6 +241,29 @@ private:
     std::unique_ptr<api::Session> m_session;
     std::unique_ptr<qt::FrameClock> m_clock;
     qt::InputMapper m_input;
+    int m_turboRate = 15;
+    std::shared_ptr<qt::GamepadBackend> m_padBackend;
+    qt::GamepadPorts m_padPorts;
+    QTimer* m_padTimer = nullptr;
+    mutable std::mutex m_padMutex;
+    std::map<std::uint32_t, Gamepad> m_pads; // by backend id; under m_padMutex
+    // The hotkeys bound to pad controls, and per player what its pad holds
+    // (in press order), the controls a hotkey took from the game, and the
+    // hold actions running until one of their controls is let go.
+    struct PadHotkey {
+        QVector<qt::PadControl> controls;
+        QString id;
+    };
+    QVector<PadHotkey> m_padHotkeys;
+    std::array<QVector<qt::PadControl>, 2> m_padHeld;
+    std::array<std::set<qt::PadControl>, 2> m_padTaken;
+    struct PadHold {
+        Port port;
+        QVector<qt::PadControl> controls;
+        QString command;
+        QVariantMap args;
+    };
+    QVector<PadHold> m_padHolds;
     QThreadPool m_commands;
     QString m_romName;
     QString m_runState = QStringLiteral("NeedsRom");

@@ -70,6 +70,15 @@ public:
         // applies it to the menus and the game keys.
         virtual KeyBindings& keyBindings() = 0;
         virtual void bindingsChanged() = 0;
+        // The pads plugged in now, by player (thread-safe).
+        struct Gamepad {
+            int port = 1;
+            QString name;
+            QString guid;
+        };
+        virtual QVector<Gamepad> gamepads() const = 0;
+        // input.* changed: the window applies the turbo rate and the options.
+        virtual void inputSettingsChanged() = 0;
         virtual void showAbout() = 0;
         virtual void openLibraryFolder() = 0;
         virtual void exit() = 0;

@@ -9,6 +9,8 @@
 
 #include "settings/app_settings.hpp"
 
+#include <cutenes/qt/gamepad.hpp>
+
 #include <QString>
 #include <QVariantMap>
 #include <QVector>
@@ -72,8 +74,14 @@ public:
     static QString idFor(const QString& command, const QVariantMap& args);
     // Portable text for a binding, or nothing when it is not one: a single
     // key combination for a hotkey, one key without modifiers for a game
-    // button (Shift, Ctrl, Alt and Meta alone are their names).
+    // button (Shift, Ctrl, Alt and Meta alone are their names). A gamepad
+    // binding is "Pad:" and its controls (qt::padControlName), joined by
+    // "+" in the enum's order: one for a game button, one or two for a
+    // hotkey ("Pad:Back+LeftShoulder").
     static std::optional<QString> normalize(const QString& text, bool control, QString* why = nullptr);
+    static bool isPad(const QString& binding) { return binding.startsWith(QLatin1String("Pad:")); }
+    // A normalized pad binding's controls; empty for a key.
+    static QVector<qt::PadControl> padControls(const QString& binding);
     // A game button's key (a Qt::Key) and back.
     static int keyOf(const QString& name);
     static QString keyName(int key);
@@ -82,6 +90,9 @@ public:
 
 private:
     int indexOf(const QString& id) const; // under m_mutex
+    // Whether `binding` on both entries is a conflict: a pad control is
+    // per player, so player 1's and player 2's may share it.
+    static bool clashes(const Definition& a, const Definition& b, const QString& binding);
     void store(const Entry& e);           // under m_mutex
 
     AppSettings& m_settings;

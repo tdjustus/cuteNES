@@ -1,8 +1,9 @@
 #pragma once
 
 // Settings (contracts/menus-and-commands.md "Settings"): one page per
-// group. G2 fills the Library page and G3 the Servers page; the others
-// arrive with their phases.
+// group. G2 fills the Library page, G3 the Servers page and G4 the Input
+// page; the others arrive with their phases. Hotkeys are on the Key
+// Bindings page, which Input links to.
 
 #include <QDialog>
 
@@ -21,7 +22,7 @@ class SettingsDialog final : public QDialog {
 public:
     explicit SettingsDialog(QWidget* parent = nullptr);
 
-    // "video", "audio", "input", "hotkeys", "emulation", "library" or "servers".
+    // "video", "audio", "input", "emulation", "library" or "servers".
     void showPage(const QString& page);
     QString currentPage() const;
     void setLibraryRoot(const QString& root);
@@ -40,14 +41,26 @@ public:
     };
     void setServers(const Server& api, const Server& mcp);
 
+    // Settings > Input: the saved options, and the pads plugged in ("Player
+    // 1: name").
+    struct Input {
+        int turboRate = 15;
+        bool allowOppositeDirections = false;
+        bool pauseOnGamepadDisconnect = true;
+        QStringList gamepads;
+    };
+    void setInput(const Input& input);
+
 signals:
     void pageShown(const QString& page);
     void changeLibraryRequested();
     void openLibraryFolderRequested();
     void addRomFolderRequested();
     void removeRomFolderRequested(const QString& path);
-    // A Servers control changed: gui.set_setting with this key and value.
-    void serverSettingRequested(const QString& key, const QVariant& value);
+    // A Servers or Input control changed: gui.set_setting with this key
+    // and value.
+    void settingRequested(const QString& key, const QVariant& value);
+    void keyBindingsRequested();
 
 private:
     QListWidget* m_pages;
@@ -66,6 +79,11 @@ private:
     ServerControls m_mcp;
     QLabel* m_mcpTokenFile = nullptr;
     QWidget* buildServersPage(QWidget* parent);
+    QWidget* buildInputPage(QWidget* parent);
+    QSpinBox* m_turboRate = nullptr;
+    QCheckBox* m_opposite = nullptr;
+    QCheckBox* m_pauseOnDisconnect = nullptr;
+    QLabel* m_gamepads = nullptr;
 };
 
 } // namespace cutenes::app

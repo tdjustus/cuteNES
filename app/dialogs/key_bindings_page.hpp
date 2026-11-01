@@ -3,8 +3,9 @@
 // The Key Bindings page (#108, contracts/menus-and-commands.md "Key
 // Bindings page"): a page of the main window listing every game button and
 // menu action with its two bindings. Clicking a binding, or Enter on it,
-// captures the next key or key combination; Esc cancels the capture, and
-// otherwise goes back. The page only asks: the window checks for conflicts
+// captures the next key or key combination, or gamepad control (the window
+// passes the pad's controls in while capturing); Esc cancels the capture,
+// and otherwise goes back. The page only asks: the window checks for conflicts
 // and runs the gui.* commands, so the page and automation share one path.
 
 #include "settings/key_bindings.hpp"
@@ -28,6 +29,9 @@ public:
     // `controls` or `hotkeys`: selects that section's first row.
     void showSection(const QString& section);
     bool isCapturing() const { return m_capture != nullptr; }
+    // A pad control while capturing: a game button takes the first one
+    // pressed; a hotkey takes the controls held when the first is let go.
+    void padControl(qt::PadControl control, bool pressed);
 
 signals:
     void bindRequested(const QString& id, int index, const QString& binding);
@@ -53,6 +57,7 @@ private:
     QVector<KeyBindings::Entry> m_entries;
     QTreeWidgetItem* m_capture = nullptr; // the row being captured
     int m_captureColumn = 0;
+    QVector<qt::PadControl> m_padCapture; // held since the capture began
 };
 
 } // namespace cutenes::app

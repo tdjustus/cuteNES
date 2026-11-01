@@ -73,6 +73,11 @@ public:
     // real-time frame, combined (OR) with the last core.set_controller
     // value. A scripted core.run_frames ignores them (002 FR-019).
     void setLiveInput(Port port, ButtonSet buttons);
+    // Turbo buttons a human holds on `port` (feature 003 US5-3): each is
+    // pressed on the first half of every period of 60 / `rate` frames (rate
+    // 2-30 presses per second, at least 2 frames), counted on the frame
+    // counter at the frame's start, and combined with the live input.
+    void setLiveTurbo(Port port, ButtonSet buttons, int rate);
     // Real-time play runs `runner` for each frame instead of one plain
     // frame, on the emulation thread, after live input is applied. The GUI's
     // rewind uses it to capture a state before each frame and to play stored

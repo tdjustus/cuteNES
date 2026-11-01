@@ -56,7 +56,42 @@ conflict), `gui.show_shortcuts` opening the page and pausing the game, and
    default), then Reset All.
 8. Quit and reopen cuteNES: your changes are still there.
 9. During a game, Help > Keyboard Shortcuts opens the page and pauses the
-   game; Back resumes it. Settings > Input… opens it at the game controls,
-   Settings > Hotkeys… at the menu actions.
+   game; Back resumes it. Settings > Hotkeys… opens it at the menu actions
+   (Settings > Input… is now a settings page, see G4).
 10. With the page open, use only the keyboard (Tab, arrows, Enter, Esc):
     every control is reachable, and VoiceOver reads each binding.
+
+### Gamepads, turbo and Settings > Input (G040-G042, #96, #108)
+
+Checked through MCP: `gui.list_gamepads` (no pad attached here),
+`gui.get_settings` input defaults, `gui.list_bindings` with the pad
+defaults and the turbo entries, and Settings > Input opening. The pad
+events themselves are covered by `GuiGamepads` tests with a fake pad; these
+steps need a real one.
+
+1. Plug in a gamepad: "Player 1: <name>" shows. In the library, the D-pad
+   and left stick move the selection, A (South) opens the game, and B
+   (East) goes back.
+2. In a game, the pad plays as player 1: A/X (South/West) are A/B, Back is
+   Select, Start is Start, the D-pad and left stick move.
+3. Hold Y (North): A fires repeatedly (turbo A); X/B (East) is turbo B.
+   Settings > Input: set the turbo rate to 5 and back to 30; the rate
+   follows. Keyboard S and A are turbo A and B too.
+4. Hold Left, then press Right: only Right counts (watch a game that
+   shows it). Turn on "Allow opposite directions": both count.
+5. Plug in a second pad: it drives player 2. Unplug it during play: the
+   game pauses and says "Player 2's controller was disconnected". Plug it
+   back in: it is player 2 again. Turn off "Pause when a gamepad is
+   unplugged" and unplug: play goes on.
+6. Quit and reopen with both pads plugged in the other order: each pad
+   keeps its player.
+7. On the Key Bindings page, click Player 1 B's second binding and press
+   the right shoulder: it shows "Pad Right Shoulder", and the shoulder now
+   presses B.
+8. Click Quick Save's second binding, hold Back and press the left
+   shoulder, then let go: it shows "Pad Back + Left Shoulder". In a game
+   that combination opens the Quick Save name dialog, and Select is not
+   left pressed.
+9. Settings > Input lists the pads plugged in, and Key Bindings… opens the
+   page at the game controls. The Settings list has no Hotkeys entry; the
+   Settings > Hotkeys… menu item still opens the page.

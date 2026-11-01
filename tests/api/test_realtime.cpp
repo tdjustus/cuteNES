@@ -14,6 +14,7 @@
 
 #include <future>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -266,4 +267,43 @@ TEST(ApiRealtime, AFrameRunnerRunsEachRealtimeFrameInstead)
     s.setFrameRunner({}); // back to one plain frame
     s.requestFrames(2);
     ASSERT_TRUE(reachFrame(s, 5));
+}
+
+// Turbo (003 US5-3, research R5): a held turbo button is pressed on the
+// first half of each period, counted on the frame counter at the frame's
+// start. At 15 presses per second that is 2 frames on and 2 off at 60 fps.
+TEST(ApiRealtime, TurboTogglesOnTheFrameCounter)
+{
+    Session s(testConfig());
+    startRunning(s);
+    s.setLiveTurbo(Port::One, buttons({cutenes::Button::A}), 15);
+    s.setLiveInput(Port::One, buttons({cutenes::Button::Up}));
+    std::string pattern;
+    for (std::uint64_t frame = 1; frame <= 12; ++frame) {
+        s.requestFrames(1);
+        ASSERT_TRUE(reachFrame(s, frame));
+        const Json held = heldOn(s, 1);
+        pattern += std::find(held.begin(), held.end(), "A") != held.end() ? 'A' : '.';
+        EXPECT_NE(std::find(held.begin(), held.end(), "Up"), held.end()) << "plain buttons stay held";
+    }
+    // The phase follows the frame counter, so where the pattern starts
+    // depends on it; the runs are always two frames long.
+    EXPECT_TRUE(pattern == "AA..AA..AA.." || pattern == ".AA..AA..AA." || pattern == "..AA..AA..AA"
+        || pattern == "A..AA..AA..A") << pattern;
+    EXPECT_EQ(std::count(pattern.begin(), pattern.end(), 'A'), 6) << pattern;
+
+    // At 30 presses per second it toggles every frame; released, it stops.
+    s.setLiveTurbo(Port::One, buttons({cutenes::Button::B}), 30);
+    std::string fast;
+    for (std::uint64_t frame = 13; frame <= 16; ++frame) {
+        s.requestFrames(1);
+        ASSERT_TRUE(reachFrame(s, frame));
+        const Json held = heldOn(s, 1);
+        fast += std::find(held.begin(), held.end(), "B") != held.end() ? 'B' : '.';
+    }
+    EXPECT_TRUE(fast == "B.B." || fast == ".B.B") << fast;
+    s.setLiveTurbo(Port::One, {}, 30);
+    s.requestFrames(1);
+    ASSERT_TRUE(reachFrame(s, 17));
+    EXPECT_EQ(heldOn(s, 1), Json::array({"Up"}));
 }

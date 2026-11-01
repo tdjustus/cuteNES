@@ -18,6 +18,10 @@ const QString kSlot = QStringLiteral("slot/");
 const QString kSettingsPage = QStringLiteral("window/settingsPage");
 const QString kShowFps = QStringLiteral("video/showFps");
 const QString kShowOsd = QStringLiteral("video/showOsd");
+const QString kTurboRate = QStringLiteral("input/turboRate");
+const QString kOpposite = QStringLiteral("input/allowOppositeDirections");
+const QString kPauseOnDisconnect = QStringLiteral("input/pauseOnGamepadDisconnect");
+const QString kGamepad = QStringLiteral("gamepads/port%1");
 
 } // namespace
 
@@ -118,6 +122,9 @@ QMap<QString, QStringList> AppSettings::bindings(const QString& group) const
     QMap<QString, QStringList> out;
     m_settings.beginGroup(group);
     for (const QString& id : m_settings.childKeys()) {
+        // Every id has a dot (p1.a, gui.quick_save); the group's options
+        // (input/turboRate) do not.
+        if (!id.contains(QLatin1Char('.'))) continue;
         QStringList pair = m_settings.value(id).toString().split(QLatin1Char('\t'));
         while (pair.size() < 2) pair << QString();
         out.insert(id, pair.mid(0, 2));
@@ -191,6 +198,36 @@ void AppSettings::setShowOsd(bool on)
 {
     std::lock_guard lock(m_mutex);
     m_settings.setValue(kShowOsd, on);
+}
+
+AppSettings::InputSettings AppSettings::input() const
+{
+    std::lock_guard lock(m_mutex);
+    InputSettings s;
+    s.turboRate = m_settings.value(kTurboRate, s.turboRate).toInt();
+    s.allowOppositeDirections = m_settings.value(kOpposite, s.allowOppositeDirections).toBool();
+    s.pauseOnGamepadDisconnect = m_settings.value(kPauseOnDisconnect, s.pauseOnGamepadDisconnect).toBool();
+    return s;
+}
+
+void AppSettings::setInput(const InputSettings& s)
+{
+    std::lock_guard lock(m_mutex);
+    m_settings.setValue(kTurboRate, s.turboRate);
+    m_settings.setValue(kOpposite, s.allowOppositeDirections);
+    m_settings.setValue(kPauseOnDisconnect, s.pauseOnGamepadDisconnect);
+}
+
+QString AppSettings::gamepad(int port) const
+{
+    std::lock_guard lock(m_mutex);
+    return m_settings.value(kGamepad.arg(port)).toString();
+}
+
+void AppSettings::setGamepad(int port, const QString& guid)
+{
+    std::lock_guard lock(m_mutex);
+    m_settings.setValue(kGamepad.arg(port), guid);
 }
 
 void AppSettings::sync()
