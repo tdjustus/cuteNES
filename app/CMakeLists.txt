@@ -7,6 +7,7 @@ add_library(cutenes-app-lib STATIC
     mainwindow.cpp
     about_dialog.cpp
     cli.cpp
+    dialogs/key_bindings_page.cpp
     dialogs/settings_dialog.cpp
     host/gui_host.cpp
     host/servers.cpp
@@ -17,7 +18,8 @@ add_library(cutenes-app-lib STATIC
     persistence/battery_saver.cpp
     persistence/rewind_buffer.cpp
     persistence/state_slots.cpp
-    settings/app_settings.cpp)
+    settings/app_settings.cpp
+    settings/key_bindings.cpp)
 target_include_directories(cutenes-app-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(cutenes-app-lib PUBLIC cutenes-qt cutenes-mcp Qt6::Widgets Qt6::Concurrent)
 target_compile_definitions(cutenes-app-lib PUBLIC

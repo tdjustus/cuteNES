@@ -31,3 +31,32 @@ quitting (`gui.exit`) and reopening the app keeps the same bridge working.
    the game keeps playing.
 6. Open a second copy of cuteNES (`open -n build/app/cutenes.app`) with
    servers off, and close it: the first copy's MCP connection keeps working.
+
+### The Key Bindings page (G036, #108)
+
+Checked through MCP: `gui.set_binding` (a second binding, a refused
+conflict), `gui.show_shortcuts` opening the page and pausing the game, and
+`gui.reset_bindings`. The key presses on the page are covered by
+`GuiKeyBindings` tests.
+
+1. In the library, click **Key Bindings** (top right). The page lists the
+   game controls for players 1 and 2, then every menu action grouped by
+   menu, with the current keys in the platform's symbols (⌘S on macOS).
+2. Click Quick Save's binding and press ⌘⇧K. The row shows it at once, and
+   File > Quick Save shows ⌘⇧K.
+3. Click Quick Save's second binding and press ⌘L. A question says Quick
+   Load uses it. Answer No: nothing changes. Try again and answer Yes:
+   Quick Load loses ⌘L.
+4. Start a capture and press Esc: the capture ends and nothing changes.
+   Press Esc again: you are back where you came from.
+5. Bind Player 1 A to K, open a game, and check that K presses A (and X no
+   longer does). Bind Player 2 Start to a key and check Start on player 2.
+6. Type "slot" in the filter: only the slot actions show.
+7. Select a row and press Delete (clears it), then Reset (back to its
+   default), then Reset All.
+8. Quit and reopen cuteNES: your changes are still there.
+9. During a game, Help > Keyboard Shortcuts opens the page and pauses the
+   game; Back resumes it. Settings > Input… opens it at the game controls,
+   Settings > Hotkeys… at the menu actions.
+10. With the page open, use only the keyboard (Tab, arrows, Enter, Esc):
+    every control is reachable, and VoiceOver reads each binding.

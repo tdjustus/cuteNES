@@ -155,8 +155,8 @@ Register and memory edits use the existing `core.set_cpu` and
 | Settings… † | `gui.show_settings` | none (the last page shown) | Ctrl+, | |
 | Video… | `gui.show_settings` | `page`: `video` | | |
 | Audio… | `gui.show_settings` | `page`: `audio` | | |
-| Input… | `gui.show_settings` | `page`: `input` | | |
-| Hotkeys… | `gui.show_settings` | `page`: `hotkeys` | | |
+| Input… | `gui.show_settings` | `page`: `input` (the Key Bindings page, at the game controls) | | |
+| Hotkeys… | `gui.show_settings` | `page`: `hotkeys` (the Key Bindings page, at the hotkeys) | | |
 | Emulation… | `gui.show_settings` | `page`: `emulation` | | |
 | Library… | `gui.show_settings` | `page`: `library` | | |
 | Servers… | `gui.show_settings` | `page`: `servers` | | |
@@ -174,7 +174,7 @@ Each group's keys are an enum in its schema (data-model.md "Settings").
 
 | Item | Command | Arguments | Shortcut | Game |
 |---|---|---|---|---|
-| Keyboard Shortcuts | `gui.show_shortcuts` | | | |
+| Keyboard Shortcuts | `gui.show_shortcuts` | optional `section`: `hotkeys` or `controls` | | |
 | User Guide | `gui.show_user_guide` | | | |
 | Open Log Folder | `gui.open_log_folder` | | | |
 | About cuteNES † | `gui.show_about` | | | |
@@ -244,30 +244,61 @@ Settings pages that do not exist yet do the same through
 - Servers that were on start with the next launch. One that cannot start (a
   port in use) is turned off, and the user is told.
 
-## Remapping shortcuts (FR-022)
+## Key Bindings page (FR-022, #108)
 
-Every shortcut in this file is a default. Settings > Hotkeys lists every
-menu action, including the ones with no default, and lets the user:
-- **Rebind** an action. Click its binding and press a key combination or a
-  gamepad button; gamepad combinations such as Select+R are allowed, so an
-  action can be reached without a keyboard.
-- **Add a second binding**, so an action can have a keyboard and a gamepad
-  binding at once.
-- **Clear** a binding, or **reset** one action or all of them to the
+Every shortcut in this file is a default. One page in the main window lists
+and remaps them all, with the game controls. It opens from the library
+browser's **Key Bindings** button, from Help > Keyboard Shortcuts
+(`gui.show_shortcuts`), and from Settings > Input… and Settings > Hotkeys…
+(`gui.show_settings` with `page` `input` or `hotkeys`, which open the page
+at that section). **Back**, or Esc when no key is being captured, returns to
+the screen it came from.
+
+**Entries.** One per menu action with a fixed command and arguments,
+including the ones with no default, and one per game button of players 1
+and 2 (Turbo A and Turbo B join with G4). Each has up to two bindings, so
+an action can have two keys, or later a key and a gamepad control. An
+entry's `id`:
+- a menu action: its command, then each argument's value, joined by `.`,
+  leaving out the `on` of the hold actions: `gui.quick_save`,
+  `gui.save_state.3`, `gui.set_speed.faster`, `gui.show_settings.video`;
+- a game button: `p1.a`, `p1.b`, `p1.select`, `p1.start`, `p1.up`,
+  `p1.down`, `p1.left`, `p1.right`, and the same with `p2`.
+
+**Bindings** are Qt's portable key text: `Ctrl+Shift+R`, `F1`, `Backspace`
+(`Ctrl` is `Cmd` on macOS). A game button takes one key without modifiers;
+the Shift, Ctrl, Alt and Meta keys alone are `Shift`, `Ctrl`, `Alt` and
+`Meta`.
+
+**On the page** the user can:
+- **rebind**: click a binding (or select it and press Enter) and press a key
+  or key combination; Esc cancels the capture;
+- **add a second binding** in the second column;
+- **clear** a binding, or **reset** one entry or all of them to the
   defaults.
 
-**Conflicts** are shown before they are saved: with another hotkey, with a
-game button binding, or with a platform-reserved shortcut such as Cmd+Q on
-macOS. Saving a conflicting binding needs confirmation, and the other
-action loses that binding.
+**Conflicts** are shown before anything is saved: with another hotkey, with
+a game button, or with a platform-reserved shortcut (Cmd+Q, Cmd+H and
+Cmd+Tab on macOS; Alt+F4 and Alt+Tab elsewhere; Exit keeps its own Ctrl+Q).
+Saving a conflicting binding needs confirmation, and the other entry loses
+that binding, so a binding never serves two entries.
 
-**Persistence and display.** Bindings persist in the `hotkeys` settings
-group. The menus always show the current binding, never the default
-(US3-3).
+**Persistence and display.** Bindings that differ from the defaults are
+stored in the `hotkeys` and `input` settings groups, keyed by `id` (an empty
+list is a cleared entry). Changes apply at once. The menus always show the
+current binding, never the default (US3-3).
 
-**Automation.** `gui.get_settings` with `group` `hotkeys` and
-`gui.set_setting` (`hotkeys.<command>`) read and change the bindings
-(FR-070), and a reset is `gui.set_setting` with value `default`.
+**Automation** (FR-070):
+
+| Command | Purpose |
+|---|---|
+| `gui.list_bindings` | Every entry: `id`, `label` (the menu path, or "Player 1 A"), `kind` (`hotkey` or `control`), and `bindings` and `defaults`, each a pair (`""` for none) |
+| `gui.set_binding` | `id`, `binding`, optional `index` (0 or 1, default 0) and `force`. A conflict fails with `InvalidArguments` (`data.path` `/binding`, `data.conflicts` the other entries' `id` and `label`, or `system`) unless `force` is true, which takes the binding from them. Returns the entry |
+| `gui.clear_binding` | `id`, optional `index`; without it, both bindings. Returns the entry |
+| `gui.reset_bindings` | Optional `id`; without it, every entry. Returns `reset`, the entries that changed |
+
+`gui.get_settings` with `group` `hotkeys` or `input` returns the stored
+bindings.
 
 ## Game input defaults (FR-032)
 

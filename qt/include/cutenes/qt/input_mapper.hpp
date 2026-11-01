@@ -1,7 +1,8 @@
 #pragma once
 
 // Keyboard keys to NES buttons (spec FR-032, contracts/menus-and-commands.md
-// "Game input defaults"). Remapping and gamepads arrive in G4.
+// "Game input defaults"). The window rebinds it from the Key Bindings page;
+// gamepads arrive in G4.
 
 #include <cutenes/controller.hpp>
 
@@ -25,6 +26,8 @@ public:
 
     ButtonSet buttons(Port port) const;
     void bind(int key, Port port, Button button);
+    // Forgets every binding (and what is held), before a rebind.
+    void unbindAll();
 
 private:
     struct Target {

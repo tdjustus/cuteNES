@@ -162,10 +162,12 @@ Real-time mode in `cutenes-api` (R3), test-first:
   - the token file written for `--attach`, and a Copy Token button;
   - the status-bar automation indicator (FR-071-FR-073);
   - tests A9.
-- [ ] G036 [US3] Hotkeys: `Hotkey` bindings, conflict checks, the Settings >
-  Hotkeys page per the contract's "Remapping shortcuts" section (rebind, a
-  second binding, clear, reset one or all), and menus that show the current
-  bindings.
+- [x] G036 [US3, US5] The Key Bindings page (#108), which replaces the
+  separate Settings > Hotkeys and Settings > Input binding pages: every
+  hotkey and the keyboard game controls of players 1 and 2, with rebind, a
+  second binding, clear, reset one or all, conflict checks, persistence,
+  menus that show the current bindings, and the `gui.*` binding commands,
+  per the contract's "Key Bindings page". The gamepad column joins in G042.
 - [ ] G037 Manual checklist **M3** (it includes attaching Claude Code).
 
 ## Phase G4: Input (branch `feature/gui-input`)
@@ -177,9 +179,9 @@ Real-time mode in `cutenes-api` (R3), test-first:
   - gamepad mapping defaults from a fake device.
 - [ ] G041 [US5] SDL3 gamepads: polling, hot-plug, GUID-stable port
   assignment, and pause on disconnect.
-- [ ] G042 [US5] Settings > Input: per-player bindings with
-  press-to-bind, turbo rate, and opposite directions. Gamepad buttons as
-  hotkeys.
+- [ ] G042 [US5] Gamepads on the Key Bindings page (G036): per-player
+  gamepad bindings with press-to-bind, and gamepad buttons as hotkeys. Turbo
+  rate and opposite directions on Settings > Input.
 - [ ] G043 Manual checklist **M4**.
 
 ## Phase G5: Display and sound (branch `feature/gui-av`)

@@ -6,6 +6,7 @@
 // commands change it on the emulation thread.
 
 #include <QDateTime>
+#include <QMap>
 #include <QSettings>
 #include <QString>
 #include <QStringList>
@@ -63,6 +64,13 @@ public:
     void setShowFps(bool on);
     bool showOsd() const;
     void setShowOsd(bool on);
+
+    // The key bindings that differ from the defaults, in the groups
+    // `hotkeys` and `input` (contract "Key Bindings page"): each id's two
+    // bindings, "" for none. An empty pair is a cleared entry.
+    QMap<QString, QStringList> bindings(const QString& group) const;
+    // Stores `pair`, or removes the id when it is empty (the default).
+    void setBinding(const QString& group, const QString& id, const QStringList& pair);
 
     // The last Settings page shown.
     QString lastSettingsPage() const;

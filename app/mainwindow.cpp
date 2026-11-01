@@ -1,6 +1,7 @@
 #include "mainwindow.hpp"
 
 #include "about_dialog.hpp"
+#include "dialogs/key_bindings_page.hpp"
 #include "dialogs/settings_dialog.hpp"
 #include "library/library_browser.hpp"
 #include "library/library_index.hpp"
@@ -44,10 +45,13 @@
 #include <QtConcurrent/QtConcurrentRun>
 
 #include "host/servers.hpp"
+#include "settings/key_bindings.hpp"
 
 #include <cutenes/api/token.hpp>
 
 #include <filesystem>
+#include <functional>
+#include <map>
 
 namespace cutenes::app {
 
@@ -125,8 +129,11 @@ const QStringList kImplemented = {
     QStringLiteral("gui.set_speed"), QStringLiteral("gui.frame_advance"),
     QStringLiteral("gui.import_battery_save"), QStringLiteral("gui.export_battery_save"),
     QStringLiteral("gui.take_screenshot"), QStringLiteral("gui.toggle_fps"), QStringLiteral("gui.toggle_osd"),
+    QStringLiteral("gui.show_shortcuts"),
 };
-const QStringList kSettingsPages = {QStringLiteral("library"), QStringLiteral("servers")};
+// Settings > Input and Hotkeys open the Key Bindings page (#108).
+const QStringList kSettingsPages = {QStringLiteral("library"), QStringLiteral("servers"), QStringLiteral("input"),
+    QStringLiteral("hotkeys")};
 const QStringList kNeedGame = {
     QStringLiteral("gui.close_game"), QStringLiteral("gui.toggle_pause"),
     QStringLiteral("gui.reset"), QStringLiteral("gui.power_cycle"),
@@ -221,8 +228,11 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_browser = new LibraryBrowser(m_pages);
     m_browser->setLibraryRoot(m_library.root());
     m_view = new qt::EmulationView(m_pages);
+    m_bindingsPage = new KeyBindingsPage(m_pages);
     m_pages->addWidget(m_browser);
     m_pages->addWidget(m_view);
+    m_pages->addWidget(m_bindingsPage);
+    m_bindings = std::make_unique<KeyBindings>(m_settings);
     setCentralWidget(m_pages);
     m_osd = new QLabel(m_pages);
     m_osd->setObjectName(QStringLiteral("osdMessage"));
@@ -264,6 +274,17 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     connect(m_browser, &LibraryBrowser::addFolderRequested, this, &MainWindow::addRomFolder);
     connect(m_browser, &LibraryBrowser::changeLocationRequested, this, &MainWindow::changeLibraryLocation);
     connect(m_browser, &LibraryBrowser::backRequested, this, &MainWindow::returnToGame);
+    connect(m_browser, &LibraryBrowser::keyBindingsRequested, this,
+        [this] { runCommand(QStringLiteral("gui.show_shortcuts")); });
+    connect(m_bindingsPage, &KeyBindingsPage::backRequested, this, &MainWindow::leaveKeyBindings);
+    connect(m_bindingsPage, &KeyBindingsPage::bindRequested, this, &MainWindow::requestBinding);
+    connect(m_bindingsPage, &KeyBindingsPage::clearRequested, this, [this](const QString& id, int index) {
+        runCommand(QStringLiteral("gui.clear_binding"), {{QStringLiteral("id"), id}, {QStringLiteral("index"), index}});
+    });
+    connect(m_bindingsPage, &KeyBindingsPage::resetRequested, this, [this](const QString& id) {
+        runCommand(QStringLiteral("gui.reset_bindings"),
+            id.isEmpty() ? QVariantMap{} : QVariantMap{{QStringLiteral("id"), id}});
+    });
 
     m_host = std::make_unique<GuiHost>(static_cast<GuiHost::Window&>(*this), m_settings, m_battery);
     api::SessionConfig config;
@@ -295,7 +316,6 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_automationTimer->setInterval(250);
     connect(m_automationTimer, &QTimer::timeout, this, &MainWindow::updateAutomation);
     m_automationTimer->start();
-    applyServers();
 
     // Timer pacing at the console's rate (R4); frames requested while
     // nothing runs are dropped by the session.
@@ -306,6 +326,9 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_commands.setMaxThreadCount(2);
     createMenus();
     wireActions();
+    defineBindings();
+    applyBindings();
+    applyServers(); // clients may come now: every command's data is there
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
         const QString command = action->property("command").toString();
         if (command == QLatin1String("gui.toggle_fps")) action->setChecked(m_settings.showFps());
@@ -558,6 +581,141 @@ void MainWindow::wireActions()
             runCommand(command, args);
         });
     }
+}
+
+void MainWindow::defineBindings()
+{
+    // Every menu action with a fixed command, in menu order, labelled by its
+    // menu path; the recent games come and go, so they have none.
+    QVector<KeyBindings::Definition> definitions;
+    const auto plain = [](QString text) { return text.remove(QLatin1Char('&')).remove(QStringLiteral("…")); };
+    std::function<void(QMenu*, const QString&)> walk = [&](QMenu* m, const QString& path) {
+        for (QAction* action : m->actions()) {
+            if (action->menu()) {
+                if (action->menu() != m_recentMenu) walk(action->menu(), path + QStringLiteral(" > ") + plain(action->text()));
+                continue;
+            }
+            const QString command = action->property("command").toString();
+            if (command.isEmpty()) continue;
+            const QString id = KeyBindings::idFor(command, action->property("commandArgs").toMap());
+            m_bindingActions.insert(id, action);
+            if (m_bindingActions.count(id) > 1) continue;
+            KeyBindings::Definition d{id, path + QStringLiteral(" > ") + plain(action->text()), false, {}};
+            const QList<QKeySequence> keys = action->shortcuts();
+            for (qsizetype i = 0; i < qMin(qsizetype(2), keys.size()); ++i) {
+                d.defaults[std::size_t(i)] = keys[i].toString(QKeySequence::PortableText);
+            }
+            definitions.push_back(d);
+        }
+    };
+    // The game buttons first, players 1 and 2 (contract "Game input defaults").
+    const std::pair<const char*, QString> buttons[] = {{"a", tr("A")}, {"b", tr("B")}, {"select", tr("Select")},
+        {"start", tr("Start")}, {"up", tr("Up")}, {"down", tr("Down")}, {"left", tr("Left")}, {"right", tr("Right")}};
+    const std::map<std::string, KeyBindings::Pair> p1 = {{"a", {QStringLiteral("X"), {}}},
+        {"b", {QStringLiteral("Z"), {}}}, {"select", {QStringLiteral("Shift"), {}}},
+        {"start", {QStringLiteral("Return"), QStringLiteral("Enter")}}, {"up", {QStringLiteral("Up"), {}}},
+        {"down", {QStringLiteral("Down"), {}}}, {"left", {QStringLiteral("Left"), {}}},
+        {"right", {QStringLiteral("Right"), {}}}};
+    for (const int player : {1, 2}) {
+        for (const auto& [name, text] : buttons) {
+            KeyBindings::Definition d{QStringLiteral("p%1.%2").arg(player).arg(QLatin1String(name)),
+                tr("Player %1 %2").arg(player).arg(text), true, {}};
+            if (player == 1) d.defaults = p1.at(name);
+            definitions.push_back(d);
+        }
+    }
+    for (QAction* top : menuBar()->actions()) {
+        if (top->menu()) walk(top->menu(), plain(top->text()));
+    }
+    m_bindings->define(definitions);
+}
+
+void MainWindow::applyBindings()
+{
+    m_input.unbindAll();
+    for (const KeyBindings::Entry& e : m_bindings->entries()) {
+        if (e.definition.control) {
+            const QStringList id = e.definition.id.split(QLatin1Char('.'));
+            const Port port = id[0] == QLatin1String("p1") ? Port::One : Port::Two;
+            static const std::map<QString, Button> named = {{QStringLiteral("a"), Button::A},
+                {QStringLiteral("b"), Button::B}, {QStringLiteral("select"), Button::Select},
+                {QStringLiteral("start"), Button::Start}, {QStringLiteral("up"), Button::Up},
+                {QStringLiteral("down"), Button::Down}, {QStringLiteral("left"), Button::Left},
+                {QStringLiteral("right"), Button::Right}};
+            for (const QString& b : e.bindings) {
+                if (const int key = KeyBindings::keyOf(b)) m_input.bind(key, port, named.at(id[1]));
+            }
+            continue;
+        }
+        QList<QKeySequence> keys;
+        for (const QString& b : e.bindings) {
+            if (!b.isEmpty()) keys << QKeySequence::fromString(b, QKeySequence::PortableText);
+        }
+        for (QAction* action : m_bindingActions.values(e.definition.id)) action->setShortcuts(keys);
+    }
+    pushInput();
+    m_bindingsPage->setEntries(m_bindings->entries());
+}
+
+void MainWindow::bindingsChanged()
+{
+    QMetaObject::invokeMethod(this, &MainWindow::applyBindings, Qt::QueuedConnection);
+}
+
+void MainWindow::showKeyBindings(const QString& section, bool paused)
+{
+    QMetaObject::invokeMethod(this, [this, section, paused] {
+        if (m_pages->currentWidget() != m_bindingsPage) m_bindingsReturn = m_pages->currentWidget();
+        if (paused) m_resumeOnReturn = true;
+        m_input.clear();
+        pushInput();
+        m_pages->setCurrentWidget(m_bindingsPage);
+        m_bindingsPage->showSection(section);
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::leaveKeyBindings()
+{
+    if (m_bindingsReturn == m_view && hasGame()) {
+        returnToGame();
+    } else {
+        m_pages->setCurrentWidget(m_browser);
+        m_browser->view()->setFocus();
+    }
+}
+
+void MainWindow::requestBinding(const QString& id, int index, const QString& binding)
+{
+    // The page asks before a conflicting binding is saved (contract "Key
+    // Bindings page"); automation passes force instead.
+    const auto entry = m_bindings->entry(id);
+    if (!entry) return;
+    QString why;
+    const auto normalized = KeyBindings::normalize(binding, entry->definition.control, &why);
+    if (!normalized) return showOsd(why);
+    const QVariantMap args = {{QStringLiteral("id"), id}, {QStringLiteral("index"), index},
+        {QStringLiteral("binding"), *normalized}};
+    const QVector<KeyBindings::Conflict> conflicts = m_bindings->conflicts(id, *normalized);
+    if (conflicts.isEmpty()) {
+        runCommand(QStringLiteral("gui.set_binding"), args);
+        return;
+    }
+    QStringList others;
+    for (const KeyBindings::Conflict& c : conflicts) others << c.label;
+    const QString key = KeyBindings::displayText(*normalized, entry->definition.control);
+    auto* box = new QMessageBox(QMessageBox::Question, tr("Key Bindings"),
+        tr("%1 is already used by %2. Use it for %3 instead?").arg(key, others.join(tr(", ")), entry->definition.label),
+        QMessageBox::Yes | QMessageBox::No, this);
+    box->setObjectName(QStringLiteral("bindingConflict"));
+    box->setDefaultButton(QMessageBox::No);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    connect(box, &QMessageBox::finished, this, [this, box, args](int) {
+        if (box->clickedButton() != box->button(QMessageBox::Yes)) return;
+        QVariantMap forced = args;
+        forced.insert(QStringLiteral("force"), true);
+        runCommand(QStringLiteral("gui.set_binding"), forced);
+    });
+    box->open();
 }
 
 void MainWindow::rebuildRecentMenu()
