@@ -17,7 +17,7 @@
 cuteNES/
 ├── roms/            the user's ROMs (*.nes), scanned recursively; any subfolders
 ├── saves/           battery saves:   <game>.sav  (+ <game>.lock while open), identities.json
-├── states/          save states:     <game>/slot-01.state + slot-01.png … slot-10
+├── states/          save states:     <game>/slot-01.state + .png + .json … slot-10
 │                                     <game>/auto.state    (resume where left off)
 ├── screenshots/     <game>/<YYYYMMDD-HHMMSS>.png   (native 256x240, FR-043)
 ├── movies/          <game>/<name>.cnm
@@ -61,6 +61,7 @@ for their games still go in this library.
 | `.sav` | Raw battery RAM: exactly `sram().size` bytes, the format other emulators use (FR-013). Import pads or trims, as `loadSram` does |
 | `.state` | The core's save-state blob (`captureState`), unchanged. It carries the core version, so a state from another version is refused with `IncompatibleCoreVersion` |
 | `slot-NN.png` | A 256x240 thumbnail taken when the state was saved |
+| `slot-NN.json` | `{"name": …}`: what the menus call the state (by default, the time it was saved) |
 | `.cnm` | A movie: see below |
 | `cheats/<game>.json` | `{"identity": sha1, "cheats": [{"label", "kind": "freeze"\|"set"\|"game_genie", "address", "value", "code", "enabled"}]}` |
 | `.png` | A screenshot: lossless, native resolution, with no filter or scaling |

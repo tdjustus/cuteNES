@@ -64,7 +64,7 @@ met.
   - the sanitize job builds without the GUI (`CUTENES_BUILD_GUI=OFF`) unless
     Qt is available there.
 - [x] G008 README: build prerequisites for the GUI and how to run `cutenes`.
-- [ ] G009 Manual checklist **M0**.
+- [x] G009 Manual checklist **M0**.
 
 ## Phase G1: Play a game (branch `feature/gui-play`)
 
@@ -108,7 +108,7 @@ Real-time mode in `cutenes-api` (R3), test-first:
   `gui.reset`, `gui.power_cycle` and `gui.exit`, with menu items and default
   shortcuts. An unsupported ROM shows the core's reason and keeps the
   running game. Tests A1 (partial) and A7.
-- [ ] G019 Manual checklist **M1**.
+- [x] G019 Manual checklist **M1**.
 
 ## Phase G2: Library (branch `feature/gui-library`)
 
@@ -138,20 +138,19 @@ Real-time mode in `cutenes-api` (R3), test-first:
   - `--library DIR`.
 - [x] G025 [US1] Open Recent and drag-and-drop. The macOS `QFileOpenEvent`
   is handled.
-- [ ] G026 Manual checklist **M2**.
+- [x] G026 Manual checklist **M2**.
 
 ## Phase G3: Menus, states, servers (branch `feature/gui-menus`)
 
-- [ ] G030 [US4] Tests first (A5, A6):
-  - slot save and load give the identical hash;
-  - Undo Load works;
-  - rewind 120 frames lands on the matching hash;
-  - delta and RLE round trips.
-- [ ] G031 [US4] Slots with thumbnails, Select Slot, Quick Save and Load,
-  Undo Load State, and states to and from files. Measure state sizes and set
-  the rewind budget so the default holds at least 30 s.
-- [ ] G032 [US4] Rewind (hold), fast-forward (hold and toggle), speed, Frame
-  Advance, and the audio policy during fast-forward.
+- [x] G030 [US4] Tests first (A5): slot save and load give the identical
+  hash, and Undo Load works.
+- [x] G031 [US4] Slots with thumbnails, Select Slot, Quick Save and Load,
+  Undo Load State, and states to and from files.
+- [ ] G032 [US4] Tests first (A6): rewind 120 frames lands on the matching
+  hash, and delta and RLE round trips. Then rewind (hold), fast-forward
+  (hold and toggle), speed, Frame Advance, and the audio policy during
+  fast-forward. Measure state sizes and set the rewind budget so the default
+  holds at least 30 s.
 - [ ] G033 [P] [US3] Screenshot (F12), the OSD message layer, Show FPS, and
   Open Library Folder. Import and export battery saves.
 - [ ] G034 [US3] The complete menu bar per `contracts/menus-and-commands.md`,
@@ -226,10 +225,15 @@ documented ROM behavior. `contracts/core-additions.md`.
   - a movie from power-on and one from a state each replay to the same hash;
   - a movie for a different game is refused;
   - a read-only takeover truncates the movie;
-  - cheat search on a test ROM finds a counter;
+  - cheat search on a test ROM finds a counter, by value, while the game
+    runs (US8-2), with 1- and 2-byte values;
+  - an edited value reaches the game at the next frame boundary, without a
+    pause (US8-3, FR-053);
   - a freeze holds it.
 - [ ] G071 [US8] Cheats window: freeze, set and Game Genie, stored per game,
-  each switchable on and off. The cheat search window and its commands.
+  each switchable on and off. The cheat search window and its commands,
+  usable while the game runs, with live values, in-place editing and a
+  per-game watch list (FR-053).
 - [ ] G072 [US8] Movies: record from power-on or a state, play, stop,
   read-only and takeover, the `.cnm` format, and the status bar.
 - [ ] G073 Manual checklist **M7**.

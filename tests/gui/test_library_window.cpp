@@ -234,7 +234,7 @@ TEST(GuiLibraryWindow, LibrarySelectFindsAGameByPathOrIdentity)
 
     const Result missing = w.session().call("gui.library_select", {{"path", "/no/such.nes"}});
     ASSERT_TRUE(missing.isError());
-    EXPECT_EQ(missing.error->name, "InvalidArgument");
+    EXPECT_EQ(missing.error->name, "InvalidArguments");
 }
 
 TEST(GuiLibraryWindow, OpenedGamesAreRecentNewestFirst)
@@ -321,7 +321,7 @@ TEST(GuiLibraryWindow, SetSettingMovesTheLibraryLocation)
     for (const char* bad : {"", "relative/path"}) {
         const Result rejected = w.session().call("gui.set_setting", {{"key", "library.root"}, {"value", bad}});
         ASSERT_TRUE(rejected.isError()) << bad;
-        EXPECT_EQ(rejected.error->name, "InvalidArgument") << bad;
+        EXPECT_EQ(rejected.error->name, "InvalidArguments") << bad;
     }
 }
 
@@ -464,7 +464,7 @@ TEST(GuiLibraryWindow, TheLibraryRomsFolderCannotBeRemoved)
     MainWindow w(options);
     const Result r = w.session().call("gui.remove_rom_folder", {{"path", romsDir(options).toStdString()}});
     ASSERT_TRUE(r.isError());
-    EXPECT_EQ(r.error->name, "InvalidArgument");
+    EXPECT_EQ(r.error->name, "InvalidArguments");
     EXPECT_TRUE(QDir(romsDir(options)).exists());
 }
 
@@ -481,7 +481,7 @@ TEST(GuiLibraryWindow, AddingAMissingDuplicateOrNestedFolderFails)
              romsDir(options), QStringLiteral("relative")}) {
         const Result r = w.session().call("gui.add_rom_folder", {{"path", bad.toStdString()}});
         ASSERT_TRUE(r.isError()) << bad.toStdString();
-        EXPECT_EQ(r.error->name, "InvalidArgument") << bad.toStdString();
+        EXPECT_EQ(r.error->name, "InvalidArguments") << bad.toStdString();
     }
     EXPECT_EQ(w.settings().romFolders(), QStringList{mine});
 }

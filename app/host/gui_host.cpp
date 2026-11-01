@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
 
 #include <algorithm>
 
@@ -70,7 +71,7 @@ Result plain(const Result& r)
 
 Result invalid(const std::string& path, const std::string& message)
 {
-    return Result::fail("InvalidArgument", message, {{"path", path}});
+    return Result::fail("InvalidArguments", message, {{"path", path}});
 }
 
 bool isRunning(CallContext& ctx)
@@ -138,6 +139,66 @@ Json entrySchema()
         {"hasSave", s::boolean()}, {"stateCount", s::integer(0, 10)}, {"recent", s::boolean()}});
 }
 
+// A blob's bytes, read the way any API client reads them.
+std::optional<QByteArray> download(CallContext& ctx, const std::string& blobId)
+{
+    QByteArray bytes;
+    for (;;) {
+        const Result r = call(ctx, "session.blob_read", {{"blobId", blobId}, {"offset", bytes.size()}, {"length", kChunk}});
+        if (r.isError()) return std::nullopt;
+        bytes += QByteArray::fromBase64(QByteArray::fromStdString(r.value["bytes"].get<std::string>()));
+        if (r.value["eof"].get<bool>()) return bytes;
+    }
+}
+
+// The last frame as a 256x240 image (null before the first frame).
+QImage currentFrame(CallContext& ctx)
+{
+    const Result screen = call(ctx, "core.screen", {{"format", "raw"}});
+    if (screen.isError() || !screen.value.contains("blobId")) return {};
+    const std::string blobId = screen.value["blobId"].get<std::string>();
+    const std::optional<QByteArray> raw = download(ctx, blobId);
+    call(ctx, "session.blob_delete", {{"blobId", blobId}});
+    if (!raw || raw->size() != 256 * 240 * 4) return {};
+    return QImage(reinterpret_cast<const uchar*>(raw->constData()), 256, 240, QImage::Format_RGB32).copy();
+}
+
+Json slotSchema()
+{
+    return s::integer(1, StateSlots::kSlots);
+}
+
+Json nameSchema()
+{
+    return s::string("what the menus call the state; default: when it was saved");
+}
+
+QString stateName(const Json& args)
+{
+    return QString::fromStdString(args.value("name", std::string()));
+}
+
+Json slotInfoJson(const StateSlots::Info& info)
+{
+    Json v = {{"slot", info.slot}, {"empty", info.empty}};
+    if (!info.empty) {
+        v["name"] = str(info.name);
+        v["savedAt"] = str(info.savedAt.toUTC().toString(Qt::ISODate));
+        v["size"] = info.size;
+        v["state"] = str(info.statePath);
+        if (QFileInfo::exists(info.thumbnailPath)) v["thumbnail"] = str(info.thumbnailPath);
+    }
+    return v;
+}
+
+Json slotInfoSchema()
+{
+    return s::object({{"slot", slotSchema()}, {"empty", s::boolean()}, {"name", s::string()},
+        {"savedAt", s::string("ISO 8601, UTC")}, {"size", s::u64()},
+        {"state", s::string("the .state file")}, {"thumbnail", s::string("the 256x240 PNG")}},
+        {"slot", "empty"});
+}
+
 } // namespace
 
 GuiHost::GuiHost(Window& window, AppSettings& settings, BatterySaver& battery)
@@ -195,6 +256,15 @@ Result GuiHost::openRom(CallContext& ctx, const QString& path)
         battery = m_battery.open(library, id, QFileInfo(path).completeBaseName(), ctx.session.machine());
     }
     m_gameOpen = true;
+    m_identity = id;
+    m_undoState.reset();
+    {
+        std::lock_guard lock(m_slotsMutex);
+        m_slots = id.sha1.isEmpty() || !library.isUsable()
+            ? StateSlots()
+            : StateSlots(library, id, QFileInfo(path).completeBaseName());
+    }
+    m_selectedSlot = id.sha1.isEmpty() ? 1 : m_settings.selectedSlot(id.sha1);
     m_settings.addRecent(path);
     if (!id.sha1.isEmpty()) m_settings.setLastPlayed(id.sha1, QDateTime::currentDateTimeUtc());
     m_window.gameOpened(QFileInfo(path).absoluteFilePath(), id, battery);
@@ -212,6 +282,12 @@ Result GuiHost::closeGame(CallContext& ctx)
     // FR-012: the battery save is written before the cartridge goes.
     m_battery.close(ctx.session.machine());
     m_gameOpen = false;
+    m_identity = {};
+    m_undoState.reset();
+    {
+        std::lock_guard lock(m_slotsMutex);
+        m_slots = StateSlots();
+    }
     Result r = plain(call(ctx, "core.eject"));
     if (!r.isError()) m_window.gameClosed();
     return r;
@@ -265,6 +341,63 @@ Result GuiHost::removeRomFolder(const QString& path)
     return Result::ok({{"romFolders", romFoldersValue(m_settings)}});
 }
 
+StateSlots GuiHost::stateSlots() const
+{
+    std::lock_guard lock(m_slotsMutex);
+    return m_slots;
+}
+
+Result GuiHost::saveState(CallContext& ctx, int slot, const QString& name)
+{
+    const StateSlots gameSlots = stateSlots();
+    if (!gameSlots.isOpen()) return Result::fail("NotFound", "this game has no library folder for save states");
+    const SaveStateBlob blob = ctx.session.machine().captureState();
+    const QByteArray state(reinterpret_cast<const char*>(blob.data), static_cast<qsizetype>(blob.size));
+    QString error;
+    StateSlots writer = gameSlots;
+    if (!writer.save(slot, state, currentFrame(ctx), name, &error)) return Result::fail("WriteError", str(error), {{"slot", slot}});
+    m_window.showMessage(QObject::tr("State saved to slot %1").arg(slot));
+    return Result::ok(slotInfoJson(gameSlots.info(slot)));
+}
+
+Result GuiHost::loadState(CallContext& ctx, int slot)
+{
+    QString error;
+    const std::optional<QByteArray> state = stateSlots().load(slot, &error);
+    if (!state) return Result::fail("NotFound", str(error), {{"slot", slot}});
+    Result r = loadStateBytes(ctx, *state);
+    if (r.isError()) return r;
+    m_window.showMessage(QObject::tr("State loaded from slot %1").arg(slot));
+    return Result::ok({{"slot", slot}});
+}
+
+Result GuiHost::loadStateBytes(CallContext& ctx, const QByteArray& state, bool keepUndo)
+{
+    // The core leaves a loaded machine paused (001 data-model "State
+    // transitions"), and so does the GUI: the player sees PAUSED and goes
+    // on when ready.
+    const SaveStateBlob before = ctx.session.machine().captureState();
+    QByteArray replaced(reinterpret_cast<const char*>(before.data), static_cast<qsizetype>(before.size));
+    std::string blobId;
+    Result r = upload(ctx, state, blobId);
+    if (r.isError()) return r;
+    r = call(ctx, "core.load_state", {{"blobId", blobId}});
+    call(ctx, "session.blob_delete", {{"blobId", blobId}});
+    // A rejected state changes nothing, Undo included (the core never
+    // loads part of one).
+    if (r.isError()) return r;
+    if (keepUndo) m_undoState = std::move(replaced);
+    return Result::ok();
+}
+
+Result GuiHost::selectSlot(int slot)
+{
+    m_selectedSlot = slot;
+    if (!m_identity.sha1.isEmpty()) m_settings.setSelectedSlot(m_identity.sha1, slot);
+    m_window.showMessage(QObject::tr("Slot %1 selected").arg(slot));
+    return Result::ok({{"slot", slot}});
+}
+
 void GuiHost::registerCommands(api::Registry& registry)
 {
     add(registry, "gui.open_rom",
@@ -301,6 +434,84 @@ void GuiHost::registerCommands(api::Registry& registry)
             // Power-on pauses the machine; a game being played keeps playing.
             if (!r.isError() && running) r = call(ctx, "core.resume");
             return plain(r);
+        });
+
+    add(registry, "gui.save_state", "Save the game's state into a slot (replacing what it holds), with a thumbnail",
+        s::object({{"slot", slotSchema()}, {"name", nameSchema()}}, {"slot"}), slotInfoSchema(), true, true,
+        [this](CallContext& ctx, const Json& args) {
+            return saveState(ctx, args["slot"].get<int>(), stateName(args));
+        });
+
+    add(registry, "gui.load_state", "Load a slot (Undo Load State brings back what it replaced)",
+        s::object({{"slot", slotSchema()}}, {"slot"}), s::object({{"slot", slotSchema()}}), true, true,
+        [this](CallContext& ctx, const Json& args) { return loadState(ctx, args["slot"].get<int>()); });
+
+    add(registry, "gui.quick_save", "Save into the selected slot (replacing what it holds)",
+        s::object({{"name", nameSchema()}}), slotInfoSchema(), true, true,
+        [this](CallContext& ctx, const Json& args) { return saveState(ctx, m_selectedSlot.load(), stateName(args)); });
+
+    add(registry, "gui.quick_load", "Load the selected slot", s::object({}), s::object({{"slot", slotSchema()}}),
+        true, true, [this](CallContext& ctx, const Json&) { return loadState(ctx, m_selectedSlot.load()); });
+
+    add(registry, "gui.select_slot", "Choose the slot Quick Save and Quick Load use (per game)",
+        s::object({{"slot", slotSchema()}}, {"slot"}), s::object({{"slot", slotSchema()}}), true, false,
+        [this](CallContext&, const Json& args) { return selectSlot(args["slot"].get<int>()); });
+
+    add(registry, "gui.undo_load_state", "Go back to the state the last load replaced (one level)",
+        s::object({}), s::object({}), true, true, [this](CallContext& ctx, const Json&) {
+            if (!m_undoState) return Result::fail("NotFound", "no state load to undo");
+            const QByteArray state = *m_undoState;
+            Result r = loadStateBytes(ctx, state, false);
+            if (r.isError()) return r;
+            m_undoState.reset();
+            m_window.showMessage(QObject::tr("Load undone"));
+            return Result::ok();
+        });
+
+    add(registry, "gui.save_state_file", "Save the state to a file; without path, show the file dialog",
+        s::object({{"path", s::string("a file path")}}), s::object({{"dialog", s::boolean()}, {"path", s::string()}}),
+        true, true, [this](CallContext& ctx, const Json& args) {
+            if (!args.contains("path")) {
+                m_window.showStateFileDialog(true);
+                return Result::ok({{"dialog", true}});
+            }
+            const QString path = QString::fromStdString(args["path"].get<std::string>());
+            if (QDir::isRelativePath(path)) return invalid("/path", "the path must be absolute");
+            const SaveStateBlob blob = ctx.session.machine().captureState();
+            QString error;
+            if (!StateSlots::writeFile(path,
+                    QByteArray(reinterpret_cast<const char*>(blob.data), static_cast<qsizetype>(blob.size)), &error)) {
+                return Result::fail("WriteError", str(error), {{"path", str(path)}});
+            }
+            m_window.showMessage(QObject::tr("State saved to %1").arg(QFileInfo(path).fileName()));
+            return Result::ok({{"path", str(path)}});
+        });
+
+    add(registry, "gui.load_state_file", "Load a state file; without path, show the file dialog",
+        s::object({{"path", s::string("a file path")}}), s::object({{"dialog", s::boolean()}, {"path", s::string()}}),
+        true, true, [this](CallContext& ctx, const Json& args) {
+            if (!args.contains("path")) {
+                m_window.showStateFileDialog(false);
+                return Result::ok({{"dialog", true}});
+            }
+            const QString path = QString::fromStdString(args["path"].get<std::string>());
+            QString error;
+            const std::optional<QByteArray> state = StateSlots::readFile(path, &error);
+            if (!state) return invalid("/path", str(error));
+            Result r = loadStateBytes(ctx, *state);
+            if (r.isError()) return r;
+            m_window.showMessage(QObject::tr("State loaded from %1").arg(QFileInfo(path).fileName()));
+            return Result::ok({{"path", str(path)}});
+        });
+
+    add(registry, "gui.list_slots", "The game's save-state slots 1-10 and the selected slot",
+        s::object({}), s::object({{"slots", s::array(slotInfoSchema(), StateSlots::kSlots)},
+            {"selectedSlot", slotSchema()}}, {"slots", "selectedSlot"}),
+        false, false, [this](CallContext&, const Json&) {
+            const StateSlots gameSlots = stateSlots();
+            Json list = Json::array();
+            for (int slot = 1; slot <= StateSlots::kSlots; ++slot) list.push_back(slotInfoJson(gameSlots.info(slot)));
+            return Result::ok({{"slots", list}, {"selectedSlot", m_selectedSlot.load()}});
         });
 
     add(registry, "gui.exit", "Quit cuteNES (the battery save is written first)", s::object({}),

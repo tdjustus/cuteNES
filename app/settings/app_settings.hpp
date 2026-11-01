@@ -43,6 +43,10 @@ public:
     QDateTime lastPlayed(const QString& sha1) const;
     void setLastPlayed(const QString& sha1, const QDateTime& when);
 
+    // The selected save-state slot of a game (1-10; 1 if never chosen).
+    int selectedSlot(const QString& sha1) const;
+    void setSelectedSlot(const QString& sha1, int slot);
+
     // The last Settings page shown.
     QString lastSettingsPage() const;
     void setLastSettingsPage(const QString& page);

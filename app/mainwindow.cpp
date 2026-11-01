@@ -31,6 +31,15 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QStandardPaths>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QLabel>
+#include <QLineEdit>
+#include <QVBoxLayout>
+#include <QTimer>
+#include <QLocale>
+#include <QIcon>
+#include <QPixmap>
 #include <QVariant>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -101,12 +110,20 @@ const QStringList kImplemented = {
     QStringLiteral("gui.power_cycle"), QStringLiteral("gui.exit"),
     QStringLiteral("gui.show_about"), QStringLiteral("gui.show_library"),
     QStringLiteral("gui.open_library_folder"), QStringLiteral("gui.clear_recent"),
-    QStringLiteral("gui.show_settings"),
+    QStringLiteral("gui.show_settings"), QStringLiteral("gui.save_state"),
+    QStringLiteral("gui.load_state"), QStringLiteral("gui.quick_save"),
+    QStringLiteral("gui.quick_load"), QStringLiteral("gui.select_slot"),
+    QStringLiteral("gui.undo_load_state"), QStringLiteral("gui.save_state_file"),
+    QStringLiteral("gui.load_state_file"),
 };
 const QStringList kSettingsPages = {QStringLiteral("library")};
 const QStringList kNeedGame = {
     QStringLiteral("gui.close_game"), QStringLiteral("gui.toggle_pause"),
     QStringLiteral("gui.reset"), QStringLiteral("gui.power_cycle"),
+    QStringLiteral("gui.save_state"), QStringLiteral("gui.load_state"),
+    QStringLiteral("gui.quick_save"), QStringLiteral("gui.quick_load"),
+    QStringLiteral("gui.undo_load_state"), QStringLiteral("gui.save_state_file"),
+    QStringLiteral("gui.load_state_file"),
 };
 
 api::Json toJson(const QVariantMap& map)
@@ -182,6 +199,23 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_pages->addWidget(m_browser);
     m_pages->addWidget(m_view);
     setCentralWidget(m_pages);
+    m_osd = new QLabel(m_pages);
+    m_osd->setObjectName(QStringLiteral("osdMessage"));
+    m_osd->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_osd->setStyleSheet(QStringLiteral(
+        "QLabel { color: white; background: rgba(0, 0, 0, 170); border-radius: 6px; padding: 6px 10px; }"));
+    m_osd->hide();
+    m_osdTimer = new QTimer(this);
+    m_osdTimer->setSingleShot(true);
+    m_osdTimer->setInterval(2500);
+    connect(m_osdTimer, &QTimer::timeout, m_osd, &QWidget::hide);
+    m_paused = new QLabel(tr("PAUSED"), m_view);
+    m_paused->setObjectName(QStringLiteral("pausedOverlay"));
+    m_paused->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_paused->setStyleSheet(QStringLiteral("QLabel { color: white; background: rgba(0, 0, 0, 150); border-radius: 10px;"
+                                           " padding: 10px 26px; font-size: 28px; font-weight: 800; letter-spacing: 4px; }"));
+    m_paused->adjustSize();
+    m_paused->hide();
     m_audio = std::make_unique<qt::AudioOutput>();
     m_audio->open(); // silent if no device (spec US7-5)
 
@@ -286,17 +320,24 @@ void MainWindow::createMenus()
     file.item(tr("Game &Library"), "gui.show_library", QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O));
     file.item(tr("&Close Game"), "gui.close_game", QKeySequence(Qt::CTRL | Qt::Key_W));
     file.separator();
-    file.submenu(tr("&Save State")).items(slotList, "gui.save_state", "slot", slotText,
-        functionKey(Qt::ShiftModifier));
-    file.submenu(tr("Load S&tate")).items(slotList, "gui.load_state", "slot", slotText,
-        functionKey(Qt::NoModifier));
+    MenuBuilder saveState = file.submenu(tr("&Save State"));
+    saveState.items(slotList, "gui.save_state", "slot", slotText, functionKey(Qt::ShiftModifier));
+    m_saveStateMenu = saveState.menu();
+    MenuBuilder loadState = file.submenu(tr("Load S&tate"));
+    loadState.items(slotList, "gui.load_state", "slot", slotText, functionKey(Qt::NoModifier));
+    m_loadStateMenu = loadState.menu();
     file.item(tr("&Quick Save"), "gui.quick_save", QKeySequence(Qt::CTRL | Qt::Key_S));
     file.item(tr("Quick &Load"), "gui.quick_load", QKeySequence(Qt::CTRL | Qt::Key_L));
-    file.submenu(tr("Select Slo&t")).items(slotList, "gui.select_slot", "slot", slotText,
-        [](const QVariant& slot) {
-            // Ctrl+1 … Ctrl+9, then Ctrl+0 for slot 10.
-            return QKeySequence(Qt::CTRL | static_cast<Qt::Key>(Qt::Key_0 + slot.toInt() % 10));
-        });
+    MenuBuilder selectSlot = file.submenu(tr("Select Slo&t"));
+    selectSlot.items(slotList, "gui.select_slot", "slot", slotText, [](const QVariant& slot) {
+        // Ctrl+1 … Ctrl+9, then Ctrl+0 for slot 10.
+        return QKeySequence(Qt::CTRL | static_cast<Qt::Key>(Qt::Key_0 + slot.toInt() % 10));
+    });
+    m_selectSlotMenu = selectSlot.menu();
+    for (QAction* action : m_selectSlotMenu->actions()) action->setCheckable(true);
+    for (QMenu* slotMenu : {m_saveStateMenu, m_loadStateMenu, m_selectSlotMenu}) {
+        connect(slotMenu, &QMenu::aboutToShow, this, &MainWindow::updateSlotMenus);
+    }
     file.item(tr("&Undo Load State"), "gui.undo_load_state", QKeySequence(Qt::CTRL | Qt::Key_Z));
     file.item(tr("Save State to File…"), "gui.save_state_file");
     file.item(tr("Load State from File…"), "gui.load_state_file");
@@ -438,7 +479,10 @@ void MainWindow::wireActions()
         action->setToolTip({});
         action->setEnabled(true);
         connect(action, &QAction::triggered, this, [this, action, command] {
-            runCommand(command, action->property("commandArgs").toMap());
+            const QVariantMap args = action->property("commandArgs").toMap();
+            if (command == QLatin1String("gui.save_state")) return askSaveState(args.value(QStringLiteral("slot")).toInt());
+            if (command == QLatin1String("gui.quick_save")) return askSaveState(m_host->selectedSlot());
+            runCommand(command, args);
         });
     }
 }
@@ -500,6 +544,14 @@ void MainWindow::showError(const QString& name, const api::Error& error)
     }
     if (error.data.contains("error") && error.data["error"].is_string()) {
         text += QStringLiteral(" (%1)").arg(QString::fromStdString(error.data["error"].get<std::string>()));
+    }
+    // An empty slot, or nothing to undo, is worth a note, not a dialog
+    // in the middle of play.
+    if (error.name == "NotFound" && (name == QLatin1String("gui.load_state") || name == QLatin1String("gui.quick_load")
+            || name == QLatin1String("gui.undo_load_state"))) {
+        showOsd(text);
+        emit commandFailed(name, text);
+        return;
     }
     auto* box = new QMessageBox(QMessageBox::Warning, QStringLiteral("cuteNES"), text, QMessageBox::Ok, this);
     box->setObjectName(QStringLiteral("commandError"));
@@ -674,6 +726,11 @@ void MainWindow::setRunState(const QString& runState)
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
         if (kNeedGame.contains(action->property("command").toString())) action->setEnabled(game);
     }
+    m_paused->setVisible(game && runState == QLatin1String("Paused"));
+    if (m_paused->isVisible()) {
+        placePaused();
+        m_paused->raise();
+    }
     // The menu offers what the next press does.
     m_pauseAction->setText(runState == QLatin1String("Paused") ? tr("&Resume") : tr("&Pause"));
     if (game) {
@@ -709,6 +766,113 @@ void MainWindow::showOpenRomDialog()
             library().folder(Library::Folder::Roms), tr("NES ROMs (*.nes)"));
         if (!path.isEmpty()) openRom(path);
     }, Qt::QueuedConnection);
+}
+
+void MainWindow::showStateFileDialog(bool save)
+{
+    // Callable from any thread, like showOpenRomDialog.
+    QMetaObject::invokeMethod(this, [this, save] {
+        const QString folder = library().folder(Library::Folder::States);
+        const QString filter = tr("cuteNES states (*.state)");
+        const QString path = save ? QFileDialog::getSaveFileName(this, tr("Save State to File"), folder, filter)
+                                  : QFileDialog::getOpenFileName(this, tr("Load State from File"), folder, filter);
+        if (path.isEmpty()) return;
+        runCommand(save ? QStringLiteral("gui.save_state_file") : QStringLiteral("gui.load_state_file"),
+            {{QStringLiteral("path"), path}});
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::showMessage(const QString& text)
+{
+    QMetaObject::invokeMethod(this, [this, text] { showOsd(text); }, Qt::QueuedConnection);
+}
+
+void MainWindow::showOsd(const QString& text)
+{
+    // The message floats over the page, so it never takes room from the
+    // game (a status bar did, for good).
+    m_osd->setText(text);
+    m_osd->adjustSize();
+    placeOsd();
+    m_osd->show();
+    m_osd->raise();
+    m_osdTimer->start();
+    emit messageShown(text);
+}
+
+void MainWindow::placePaused()
+{
+    m_paused->adjustSize();
+    m_paused->move(m_view->rect().center() - m_paused->rect().center());
+}
+
+void MainWindow::placeOsd()
+{
+    constexpr int kMargin = 12;
+    m_osd->move(kMargin, m_pages->height() - m_osd->height() - kMargin);
+}
+
+void MainWindow::askSaveState(int slot)
+{
+    if (!hasGame() || findChild<QDialog*>(QStringLiteral("saveStateDialog"))) return; // a held key asks once
+    // The state is the moment the key was pressed, not when the name is done.
+    const bool wasRunning = m_runState == QLatin1String("Running");
+    if (wasRunning) runCommand(QStringLiteral("core.pause"), {}, true);
+
+    const StateSlots::Info info = m_host->stateSlots().info(slot);
+    auto* dialog = new QDialog(this);
+    dialog->setObjectName(QStringLiteral("saveStateDialog"));
+    dialog->setWindowTitle(tr("Save State to Slot %1").arg(slot));
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    auto* layout = new QVBoxLayout(dialog);
+    layout->addWidget(new QLabel(tr("Name:"), dialog));
+    auto* name = new QLineEdit(StateSlots::defaultName(), dialog);
+    name->setObjectName(QStringLiteral("stateName"));
+    name->selectAll();
+    name->setMinimumWidth(320);
+    layout->addWidget(name);
+    if (!info.empty) {
+        auto* warning = new QLabel(tr("Slot %1 already holds “%2”, saved %3. Saving replaces it.")
+                                       .arg(slot)
+                                       .arg(info.name.toHtmlEscaped(), QLocale().toString(info.savedAt, QLocale::ShortFormat)),
+            dialog);
+        warning->setObjectName(QStringLiteral("replaceWarning"));
+        warning->setWordWrap(true);
+        layout->addWidget(warning);
+    }
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
+    if (!info.empty) buttons->button(QDialogButtonBox::Save)->setText(tr("Replace"));
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    connect(dialog, &QDialog::finished, this, [this, slot, name, wasRunning](int result) {
+        if (result == QDialog::Accepted) {
+            runCommand(QStringLiteral("gui.save_state"), {{QStringLiteral("slot"), slot}, {QStringLiteral("name"), name->text()}});
+        }
+        if (wasRunning) runCommand(QStringLiteral("core.resume"), {}, true);
+    });
+    dialog->open(); // never blocks: automation keeps running
+}
+
+void MainWindow::updateSlotMenus()
+{
+    const StateSlots gameSlots = m_host->stateSlots();
+    const int selected = m_host->selectedSlot();
+    const QLocale locale;
+    for (QMenu* menu : {m_saveStateMenu, m_loadStateMenu, m_selectSlotMenu}) {
+        for (QAction* action : menu->actions()) {
+            const int slot = action->property("commandArgs").toMap().value(QStringLiteral("slot")).toInt();
+            const StateSlots::Info info = gameSlots.info(slot);
+            QString text = slotText(slot);
+            if (gameSlots.isOpen()) {
+                text = info.empty ? tr("Slot %1 — Empty").arg(slot) : tr("Slot %1 — %2").arg(slot).arg(info.name);
+            }
+            action->setText(text);
+            action->setToolTip(info.empty ? QString() : tr("Saved %1").arg(locale.toString(info.savedAt, QLocale::ShortFormat)));
+            action->setIcon(info.empty ? QIcon() : QIcon(QPixmap(info.thumbnailPath)));
+            if (action->isCheckable()) action->setChecked(slot == selected);
+        }
+    }
 }
 
 void MainWindow::openRom(const QString& path)
@@ -790,6 +954,10 @@ void MainWindow::pushInput()
 bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 {
     switch (event->type()) {
+    case QEvent::Resize: // the application's filter sees every widget's
+        if (watched == m_pages) placeOsd();
+        if (watched == m_view) placePaused();
+        break;
     case QEvent::FileOpen: // macOS "Open With" and drops on the Dock icon
         if (watched == qApp) {
             openRom(static_cast<QFileOpenEvent*>(event)->file());
