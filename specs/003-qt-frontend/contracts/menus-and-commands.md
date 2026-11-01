@@ -310,7 +310,10 @@ so a library under any name works.
 | Updates… | `gui.show_settings` | `page`: `updates` | | |
 
 Every setting can be read and changed without the dialog:
-- `gui.get_settings` (optional `group`) returns every value with its schema.
+- `gui.get_settings` returns every value with its schema. With `group`
+  (`video`, `audio`, `emulation`, `library`, `servers`, `hotkeys`, `input`,
+  `updates`), it returns that group's values alone and only the schema keys
+  under it (`video.scale`, or `hotkeys` itself).
 - `gui.set_setting` (`key`, `value`) validates and applies a value.
 
 Update checks (US10, #105) are the setting `updates.check` (off until the
