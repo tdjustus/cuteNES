@@ -348,6 +348,15 @@ cartridge reads.
 - Packaging runs on tags and weekly, not on every PR. Signing with developer
   certificates is out of scope for 1.0.
 
+**As built (G093).** See [docs/packaging.md](../../docs/packaging.md). The
+app's install rules are its own CMake component (`app`), so
+`cmake --install --component app` gives a runnable package and nothing
+else. On Windows and macOS, Qt's `qt_generate_deploy_app_script` runs
+windeployqt or macdeployqt at install time. On Linux, linuxdeploy and its Qt
+plugin build the AppImage from an AppDir. The CI `package` job smoke-tests
+each package by running it, and names the files the way R16's updater
+expects.
+
 ## R16. Self-update (#105)
 
 **Decision, to be settled before G096.**

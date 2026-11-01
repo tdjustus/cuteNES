@@ -1,0 +1,2 @@
+// The Windows executable's icon (packaging/icons/cutenes.ico).
+IDI_ICON1 ICON "@CUTENES_ICO@"

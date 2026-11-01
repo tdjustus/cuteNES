@@ -7,7 +7,7 @@ name: build
 on:
   pull_request:
   push:
-    tags: ['core-v*']
+    tags: ['core-v*', 'v*']
   schedule:
     - cron: '0 6 * * 1'
   workflow_dispatch:
@@ -41,6 +41,7 @@ jobs:
               - 'app/**'
               - 'tests/**'
               - 'third_party/**'
+              - 'packaging/**'
               - 'CMakeLists.txt'
               - '.gitmodules'
               - '.github/**'
@@ -209,6 +210,170 @@ jobs:
       - name: Test (fast groups, pull requests)
         if: github.event_name == 'pull_request'
         run: ctest --test-dir build --output-on-failure -j 4 -L "unit|tier1|behavior|api|mcp" -LE known-failing
+
+  # Packages (research R13): on tags, the weekly run and by hand, never on
+  # pull requests. Each OS builds the app in Release, installs its `app`
+  # component (Qt deployed into it by windeployqt or macdeployqt, or by
+  # linuxdeploy for the AppImage), runs the packaged program as a smoke
+  # test (a missing library or plugin fails here, not on a user's machine),
+  # and uploads cuteNES-<version>-<os>-<arch>.<ext> (R16's naming) with its
+  # SHA-256. The package-sums job gathers those into SHA256SUMS.
+  package:
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported Ubuntu: an AppImage runs on systems at
+          # least as new as the one it was built on (glibc).
+          - {os: ubuntu-22.04, platform: linux}
+          - {os: macos-latest, platform: macos}
+          - {os: windows-latest, platform: windows}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Install Ninja, SDL3 build dependencies and AppImage tools (Linux)
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update -q && sudo apt-get install -y -q ninja-build
+          libasound2-dev libpulse-dev libudev-dev libfuse2 xvfb
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4.4.1
+        with:
+          version: '6.8.3'
+          arch: ${{ runner.os == 'Windows' && 'win64_msvc2022_64' || '' }}
+          modules: qtshadertools
+          cache: true
+
+      - name: MSVC environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw "no Visual Studio with the x64 C++ tools" }
+          $before = @{}
+          Get-ChildItem env: | ForEach-Object { $before[$_.Name] = $_.Value }
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$' -and $before[$matches[1]] -ne $matches[2]) {
+              "$($matches[1])=$($matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            }
+          }
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_COMPILER=${{ runner.os == 'Windows' && 'cl' || 'c++' }}
+          -DCUTENES_BUILD_GUI=ON
+          -DCUTENES_BUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build --target cutenes cutenes-server
+
+      # The Linux AppDir needs the usr/ layout linuxdeploy expects.
+      - name: Install the app component
+        shell: bash
+        run: |
+          prefix=stage
+          if [ "$RUNNER_OS" = Linux ]; then prefix=AppDir/usr; fi
+          cmake --install build --component app --prefix "$prefix"
+          version=$(sed -n 's/^CMAKE_PROJECT_VERSION:STATIC=//p' build/CMakeCache.txt)
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # Ad-hoc signed (R13): Gatekeeper still asks on first open, but
+          # the bundle's code is consistent after macdeployqt's changes.
+          codesign --force --deep --sign - stage/cutenes.app
+          stage/cutenes.app/Contents/MacOS/cutenes --version
+          stage/cutenes.app/Contents/MacOS/cutenes-server --help
+          name="cuteNES-$VERSION-macos-$(uname -m).zip"
+          ditto -c -k --keepParent stage/cutenes.app "$name"
+          echo "PACKAGE=$name" >> "$GITHUB_ENV"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # --version answers in a message box on Windows (no console), so
+          # the smoke test is that the program starts and stays up: a
+          # missing DLL ends it at once (STATUS_DLL_NOT_FOUND).
+          $p = Start-Process -FilePath stage\cutenes.exe -ArgumentList '--version' -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { throw "cutenes.exe exited with $($p.ExitCode)" }
+          Stop-Process -Id $p.Id -Force
+          & stage\cutenes-server.exe --help
+          if ($LASTEXITCODE -ne 0) { throw "cutenes-server --help failed" }
+          $name = "cuteNES-$env:VERSION-windows-x64.zip"
+          Compress-Archive -Path stage\* -DestinationPath $name
+          "PACKAGE=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          base=https://github.com/linuxdeploy
+          curl -fsSLo linuxdeploy "$base/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage"
+          curl -fsSLo linuxdeploy-plugin-qt "$base/linuxdeploy-plugin-qt/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-qt-x86_64.AppImage"
+          chmod +x linuxdeploy linuxdeploy-plugin-qt
+          name="cuteNES-$VERSION-linux-x86_64.AppImage"
+          export QMAKE="$(command -v qmake6 || command -v qmake)"
+          export LDAI_OUTPUT="$name" OUTPUT="$name"
+          ./linuxdeploy --appdir AppDir --plugin qt --output appimage \
+            --executable AppDir/usr/bin/cutenes \
+            --executable AppDir/usr/bin/cutenes-server \
+            --desktop-file AppDir/usr/share/applications/io.github.tdjustus.cutenes.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/512x512/apps/cutenes.png
+          chmod +x "$name"
+          xvfb-run -a "./$name" --version
+          echo "PACKAGE=$name" >> "$GITHUB_ENV"
+
+      - name: Checksum
+        shell: bash
+        run: |
+          if command -v sha256sum >/dev/null; then sha256sum "$PACKAGE" > "$PACKAGE.sha256"
+          else shasum -a 256 "$PACKAGE" > "$PACKAGE.sha256"; fi
+          cat "$PACKAGE.sha256"
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: package-${{ matrix.platform }}
+          path: |
+            ${{ env.PACKAGE }}
+            ${{ env.PACKAGE }}.sha256
+          if-no-files-found: error
+
+  # One SHA256SUMS for every package of the run (R16: the updater checks a
+  # download against it).
+  package-sums:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: package-*
+          merge-multiple: true
+          path: packages
+      - name: SHA256SUMS
+        run: |
+          cd packages
+          cat ./*.sha256 | sed 's/\r$//' > SHA256SUMS
+          sha256sum -c SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: SHA256SUMS
+          path: packages/SHA256SUMS
+          if-no-files-found: error
 
   # The single required status check for branch protection. It passes when
   # the jobs above passed or were skipped (docs-only PRs), and fails if any

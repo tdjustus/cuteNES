@@ -56,11 +56,28 @@ foreach(file alias IN ZIP_LISTS license_files license_aliases)
 endforeach()
 qt_add_resources(cutenes-app-lib licenses PREFIX /licenses FILES ${license_files})
 
-add_executable(cutenes main.cpp)
+# The icon (packaging/icons, from cutenes.svg by make-icons.sh): the window's
+# from a resource, the bundle's (.icns) on macOS, the executable's (.ico)
+# on Windows.
+set(icon_dir ${PROJECT_SOURCE_DIR}/packaging/icons)
+set_source_files_properties(${icon_dir}/cutenes.png PROPERTIES QT_RESOURCE_ALIAS cutenes.png)
+qt_add_resources(cutenes-app-lib icons PREFIX /icons FILES ${icon_dir}/cutenes.png)
+set(app_sources main.cpp)
+if(WIN32)
+    set(CUTENES_ICO ${icon_dir}/cutenes.ico)
+    configure_file(cutenes.rc.in ${CMAKE_CURRENT_BINARY_DIR}/cutenes.rc @ONLY)
+    list(APPEND app_sources ${CMAKE_CURRENT_BINARY_DIR}/cutenes.rc)
+elseif(APPLE)
+    set_source_files_properties(${icon_dir}/cutenes.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    list(APPEND app_sources ${icon_dir}/cutenes.icns)
+endif()
+
+add_executable(cutenes ${app_sources})
 target_link_libraries(cutenes PRIVATE cutenes-app-lib)
 set_target_properties(cutenes PROPERTIES
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_ICON_FILE cutenes.icns
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in
     MACOSX_BUNDLE_BUNDLE_NAME cuteNES
     MACOSX_BUNDLE_GUI_IDENTIFIER io.github.tdjustus.cutenes
@@ -75,3 +92,44 @@ foreach(target cutenes-app-lib cutenes)
             -Wall -Wextra -Wconversion -Wshadow -Werror)
     endif()
 endforeach()
+
+# Installing (research R13): `cmake --install build --component app
+# --prefix <stage>` lays out a runnable package, Qt included, which the CI
+# package job zips (or, on Linux, turns into an AppImage with linuxdeploy).
+# The component leaves out the core's and test libraries' own install rules
+# (headers, static libraries). Qt's deploy script runs windeployqt or
+# macdeployqt; on Linux linuxdeploy does that work. cutenes-server, for MCP
+# clients (`cutenes-server --attach`), goes beside the app: inside the
+# bundle on macOS. The licenses go with them.
+include(GNUInstallDirs)
+if(APPLE)
+    install(TARGETS cutenes BUNDLE DESTINATION . COMPONENT app)
+    install(TARGETS cutenes-server RUNTIME DESTINATION cutenes.app/Contents/MacOS COMPONENT app)
+    set(license_destination cutenes.app/Contents/Resources/licenses)
+elseif(WIN32)
+    install(TARGETS cutenes cutenes-server RUNTIME DESTINATION . COMPONENT app)
+    # The MSVC runtime DLLs beside the executables, so the zip runs on a
+    # machine without the Visual C++ redistributable.
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT app)
+    include(InstallRequiredSystemLibraries)
+    set(license_destination licenses)
+else()
+    install(TARGETS cutenes cutenes-server RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT app)
+    install(FILES ${PROJECT_SOURCE_DIR}/packaging/linux/io.github.tdjustus.cutenes.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT app)
+    install(FILES ${PROJECT_SOURCE_DIR}/packaging/linux/cutenes-nes.xml
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/mime/packages COMPONENT app)
+    install(FILES ${icon_dir}/cutenes.png
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps COMPONENT app)
+    set(license_destination ${CMAKE_INSTALL_DATADIR}/licenses/cutenes)
+endif()
+foreach(file alias IN ZIP_LISTS license_files license_aliases)
+    install(FILES ${file} DESTINATION ${license_destination} RENAME ${alias} COMPONENT app)
+endforeach()
+if(APPLE OR WIN32)
+    qt_generate_deploy_app_script(TARGET cutenes
+        OUTPUT_SCRIPT deploy_script
+        NO_UNSUPPORTED_PLATFORM_ERROR)
+    install(SCRIPT ${deploy_script} COMPONENT app)
+endif()
