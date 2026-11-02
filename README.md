@@ -165,7 +165,7 @@ Every command is in
 
 ### Versioning
 
-The command surface has a `MAJOR.MINOR` version, currently 0.1. `api.version`
+The command surface has a `MAJOR.MINOR` version, currently 0.3. `api.version`
 and MCP's `serverInfo.version` report it.
 
 - Adding a command or an optional field bumps MINOR.
