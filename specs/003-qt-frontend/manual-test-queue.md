@@ -584,3 +584,21 @@ By hand, with Claude Code (which speaks 2026-07-28):
 2. Open cuteNES with Settings > Servers > MCP server on. Within a few
    seconds, without restarting Claude Code, `/mcp` lists cuteNES's tools,
    and asking Claude to call `session.status` works.
+
+### A state from another game on the same board is refused (#92)
+
+Automated:
+- `ApiBranching.AStateFromAnotherGameOnTheSameBoardIsWrongCartridge`: blargg's 02-implied and 01-basics are on the same board (NROM, 32K PRG, 8K CHR, vertical). A state from one is refused by the other with `WrongCartridge`, and nothing changes. The test failed before the fix.
+- `ApiBranching.AStateWithoutTheRomSectionStillLoads`: a state without the new `ROM ` section, as every earlier build wrote, still loads into its own game.
+- Checked live through the MCP on the new build:
+  - A state file saved from 02-implied was refused by 01-basics with `WrongCartridge`.
+  - 01-basics's own state file loaded.
+  - The file's sections end with an 8-byte `ROM ` section.
+
+By hand:
+1. Save a state to a file in one game, then open another game on the same
+   kind of cartridge (two of blargg's instr_test-v5 singles will do) and
+   Load State from File. It is refused with a message, and the game goes on
+   as it was.
+2. A state saved by cuteNES 0.2.0 (alpha 2), to a slot or a file, still
+   loads into its own game.

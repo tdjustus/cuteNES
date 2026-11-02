@@ -224,6 +224,12 @@ struct Machine::Impl {
     std::vector<std::uint8_t> stateBlob;
 
     std::uint16_t cartridgeId() const;
+    // CRC-32 of the PRG ROM and of the CHR ROM (0 for CHR-RAM, which is
+    // state, not the game), taken once at load: the "ROM " section that
+    // tells two games on the same board apart (#92). Every rewind frame
+    // captures a state, so they are not recomputed there.
+    std::uint32_t prgCrc = 0;
+    std::uint32_t chrCrc = 0;
     SaveStateBlob capture();
     LoadStateError applyState(const std::uint8_t* data, std::size_t size);
 
