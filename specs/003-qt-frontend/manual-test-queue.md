@@ -555,3 +555,18 @@ By hand, on macOS (the original report was with the display asleep, which the au
    `core.run_state`'s frame grows by about 60 a second throughout, not 1.
 4. Pause the game: in Activity Monitor's CPU tab, cuteNES may show
    App Nap "Yes" after a while (an idle app is allowed to nap).
+
+### Movies keep their cheats and battery save (#121)
+
+Automated:
+- `GuiMovies.AMovieKeepsItsCheatsAndBatteryAndLeavesThePlayersAlone`: a recording keeps its cheats, a change to them, and the power-on battery save. Playback uses the movie's own and gives the player's back afterwards. Three broken versions each fail it: one that does not load the movie's battery, one that plays with the player's cheats, and one that does not restore.
+- Checked live through the MCP with nestest: a freeze cheat ($50 = 7) was recorded from power-on and switched off at frame 191. The file's header lists the cheat, and a `cheats` event at frame 191 empties it. With the player's copy disabled, playback still froze $50 to 7. Afterwards the player's cheat list was unchanged.
+
+By hand, with a battery-backed game (for example, one with save files):
+1. Add and enable a cheat, then Movies > Record from power-on. Play a little,
+   turn the cheat off, play a little more, and stop.
+2. Delete or disable the cheat, play on to change the game's save, then
+   Movies > Play the movie. It plays as recorded, from the save it started with,
+   and with the cheat on until the point it was turned off.
+3. When it ends (or on Stop), the cheat list is as you left it and the
+   game's own save is back: the save from step 2, not the movie's.

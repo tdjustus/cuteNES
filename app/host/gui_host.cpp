@@ -337,7 +337,7 @@ bool GuiHost::beginFrame(Machine& machine)
     const SaveStateBlob state = machine.captureState();
     m_rewind.push(state.data, state.size, machine.controller(Port::One), machine.controller(Port::Two));
     // Freeze cheats write before every frame (data-model "Cheat").
-    for (const Cheat& cheat : m_cheats.cheats) {
+    for (const Cheat& cheat : activeCheats()) {
         if (cheat.enabled && cheat.kind == Cheat::Kind::Freeze) machine.writeMemory(cheat.address, &cheat.value, 1);
     }
     if (m_movieMode == MovieStatus::Mode::Recording) {
@@ -491,9 +491,16 @@ bool GuiHost::playMovieFrame(Machine& machine)
         if (e.frame != m_movieFrame || !session) continue;
         if (e.kind == Movie::Event::Kind::Reset) {
             session->call("core.reset");
-        } else {
+        } else if (e.kind == Movie::Event::Kind::Power) {
             session->call("core.power_on");
             session->call("core.resume");
+        } else if (m_movieCheats) {
+            // As recorded: a set cheat switched on writes once, then.
+            for (const Cheat& c : e.cheats) {
+                if (c.kind == Cheat::Kind::Set && !m_movieCheats->contains(c)) machine.writeMemory(c.address, &c.value, 1);
+            }
+            m_movieCheats = e.cheats;
+            applyGameGenie(machine);
         }
     }
     if (m_movieFrame >= m_movie.frames()) {
@@ -567,10 +574,14 @@ Result GuiHost::recordMovie(CallContext& ctx, const QString& path, bool fromPowe
     // Written at once, so a folder that cannot take it is found now.
     QString error;
     if (!movie.write(path, &error)) return Result::fail("WriteError", str(error), {{"path", str(path)}});
+    movie.cheats = enabledCheats();
     if (fromPowerOn) {
         Result r = call(ctx, "core.power_on");
         if (!r.isError()) r = call(ctx, "core.resume");
         if (r.isError()) return r;
+        // The battery RAM the game starts from (a state carries its own).
+        const SramRange sram = machine.sram();
+        if (sram.size > 0) movie.battery = QByteArray(reinterpret_cast<const char*>(sram.data), static_cast<qsizetype>(sram.size));
     }
     m_movie = std::move(movie);
     m_moviePath = path;
@@ -601,9 +612,24 @@ Result GuiHost::playMovie(CallContext& ctx, const QString& path)
             {{"movie", str(movie->region)}, {"game", str(region)}});
     }
     if (m_movieMode != MovieStatus::Mode::None) stopMovie();
+    // The player's battery RAM stays theirs (#121): kept here, not saved
+    // while the movie plays, and put back when it stops.
+    Machine& machine = ctx.session.machine();
+    const SramRange sram = machine.sram();
+    const QByteArray playerBattery(reinterpret_cast<const char*>(sram.data), static_cast<qsizetype>(sram.size));
     Result r = movie->start == Movie::Start::State ? loadStateBytes(ctx, movie->state, false) : call(ctx, "core.power_on");
+    if (!r.isError() && movie->battery && machine.sram().size > 0) {
+        machine.loadSram(reinterpret_cast<const std::uint8_t*>(movie->battery->constData()),
+            static_cast<std::size_t>(movie->battery->size()));
+    }
     if (!r.isError()) r = call(ctx, "core.resume");
     if (r.isError()) return r;
+    if (!playerBattery.isEmpty()) {
+        m_playerBattery = playerBattery;
+        m_battery.hold(true);
+    }
+    m_movieCheats = movie->cheats;
+    applyGameGenie(machine);
     m_movie = std::move(*movie);
     m_moviePath = path;
     m_movieFrame = 0;
@@ -640,6 +666,7 @@ Result GuiHost::stopMovie(bool finished)
     m_movie = Movie();
     m_moviePath.clear();
     m_movieFrame = 0;
+    endMovieOverrides();
     publishMovie(true);
     if (!written) return Result::fail("WriteError", str(error), {{"path", v["path"]}});
     return Result::ok(v);
@@ -652,6 +679,13 @@ Result GuiHost::takeOverMovie()
     m_movie.truncate(m_movieFrame);
     ++m_movie.rerecords;
     m_movieMode = MovieStatus::Mode::Recording;
+    // The player's own cheats from here on, recorded as such. The battery RAM
+    // stays the movie's until the movie stops.
+    if (m_movieCheats) {
+        m_movieCheats.reset();
+        if (api::Session* session = m_session.load()) applyGameGenie(session->machine());
+        recordCheats();
+    }
     QString error;
     if (!m_movie.write(m_moviePath, &error)) return Result::fail("WriteError", str(error), {{"path", str(m_moviePath)}});
     publishMovie(true);
@@ -662,11 +696,51 @@ Result GuiHost::takeOverMovie()
 void GuiHost::applyGameGenie(Machine& machine)
 {
     std::vector<GameGenieCode> codes;
-    for (const Cheat& cheat : m_cheats.cheats) {
+    for (const Cheat& cheat : activeCheats()) {
         if (!cheat.enabled || cheat.kind != Cheat::Kind::GameGenie) continue;
         if (const auto code = decodeGameGenie(cheat.code.toStdString())) codes.push_back(*code);
     }
     machine.setGameGenieCodes(codes);
+}
+
+QVector<Cheat> GuiHost::enabledCheats() const
+{
+    QVector<Cheat> on;
+    for (const Cheat& c : m_cheats.cheats) {
+        if (c.enabled) on.push_back(c);
+    }
+    return on;
+}
+
+void GuiHost::recordCheats()
+{
+    if (m_movieMode != MovieStatus::Mode::Recording) return;
+    Movie::Event e;
+    e.frame = m_movieFrame;
+    e.kind = Movie::Event::Kind::Cheats;
+    e.cheats = enabledCheats();
+    // Two changes before one frame: the last one stands.
+    if (!m_movie.events.isEmpty() && m_movie.events.back().frame == e.frame
+        && m_movie.events.back().kind == Movie::Event::Kind::Cheats) {
+        m_movie.events.back() = e;
+    } else {
+        m_movie.events.push_back(e);
+    }
+}
+
+void GuiHost::endMovieOverrides()
+{
+    m_movieCheats.reset();
+    api::Session* session = m_session.load();
+    if (session) applyGameGenie(session->machine());
+    if (m_playerBattery) {
+        if (session && session->machine().sram().size > 0) {
+            session->machine().loadSram(reinterpret_cast<const std::uint8_t*>(m_playerBattery->constData()),
+                static_cast<std::size_t>(m_playerBattery->size()));
+        }
+        m_playerBattery.reset();
+        m_battery.hold(false);
+    }
 }
 
 CheatSearch::Snapshot GuiHost::snapshot(Machine& machine)
@@ -1184,7 +1258,7 @@ void GuiHost::registerCommands(api::Registry& registry)
             if (Result busy = movieBusy(false); busy.isError()) return busy;
             Result r = plain(call(ctx, "core.reset"));
             if (!r.isError() && m_movieMode == MovieStatus::Mode::Recording) {
-                m_movie.events.push_back({m_movieFrame, Movie::Event::Kind::Reset});
+                m_movie.events.push_back({m_movieFrame, Movie::Event::Kind::Reset, {}});
             }
             return r;
         });
@@ -1197,7 +1271,7 @@ void GuiHost::registerCommands(api::Registry& registry)
             // Power-on pauses the machine; a game being played keeps playing.
             if (!r.isError() && running) r = call(ctx, "core.resume");
             if (!r.isError() && m_movieMode == MovieStatus::Mode::Recording) {
-                m_movie.events.push_back({m_movieFrame, Movie::Event::Kind::Power});
+                m_movie.events.push_back({m_movieFrame, Movie::Event::Kind::Power, {}});
             }
             return plain(r);
         });
@@ -1311,8 +1385,12 @@ void GuiHost::registerCommands(api::Registry& registry)
             m_cheats.cheats.push_back(cheat);
             Machine& machine = ctx.session.machine();
             // Switched on, freeze and set write at once; freeze then before every frame.
-            if (cheat.enabled && cheat.kind != Cheat::Kind::GameGenie) machine.writeMemory(cheat.address, &cheat.value, 1);
+            // Not while a movie's own cheats are in effect: they decide (#121).
+            if (cheat.enabled && cheat.kind != Cheat::Kind::GameGenie && !m_movieCheats) {
+                machine.writeMemory(cheat.address, &cheat.value, 1);
+            }
             applyGameGenie(machine);
+            if (cheat.enabled) recordCheats();
             Result saved = saveCheats();
             if (saved.isError()) return saved;
             return Result::ok({{"index", m_cheats.cheats.size() - 1}});
@@ -1323,8 +1401,10 @@ void GuiHost::registerCommands(api::Registry& registry)
         [this](CallContext& ctx, const Json& args) {
             const int i = args["index"].get<int>();
             if (i >= m_cheats.cheats.size()) return invalid("/index", "there is no such cheat");
+            const bool wasOn = m_cheats.cheats[i].enabled;
             m_cheats.cheats.removeAt(i);
             applyGameGenie(ctx.session.machine());
+            if (wasOn) recordCheats();
             return saveCheats();
         });
 
@@ -1336,11 +1416,13 @@ void GuiHost::registerCommands(api::Registry& registry)
             Cheat& cheat = m_cheats.cheats[i];
             const bool on = args["enabled"].get<bool>();
             Machine& machine = ctx.session.machine();
-            if (on && !cheat.enabled && cheat.kind != Cheat::Kind::GameGenie) {
+            const bool changed = on != cheat.enabled;
+            if (on && !cheat.enabled && cheat.kind != Cheat::Kind::GameGenie && !m_movieCheats) {
                 machine.writeMemory(cheat.address, &cheat.value, 1);
             }
             cheat.enabled = on;
             applyGameGenie(machine);
+            if (changed) recordCheats();
             return saveCheats();
         });
 

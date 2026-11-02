@@ -166,8 +166,18 @@ Movies (FR-052, data-model "Movie"):
   they would break the movie's timeline. Frame Advance records a frame
   like play does.
 - Closing the game, or opening another, stops the movie and writes it.
-- Not in the movie: cheats, and the battery save a power-on starts from.
-  Either can make a replay differ (#121).
+- **What else the movie keeps** (#121), so a replay matches the recording
+  whatever the player has:
+  - the cheats switched on when recording started, and each change while
+    recording (an event at that frame);
+  - the battery RAM a power-on movie starts from. A state's start carries its
+    own.
+
+  Playback uses those, not the player's. The player's cheats, and their
+  battery RAM, are back when the movie stops. Battery saving is held
+  meanwhile, so a movie never reaches the save file. After a Read-Only
+  takeover, the player's cheats apply and are recorded. A movie from before
+  this keeps nothing extra, so it plays with whatever the player has.
 | Record Audio… / Stop Recording | `gui.toggle_audio_recording` | `path` (optional) | | ✓ |
 
 The cheat and movie windows' contents have their own commands:

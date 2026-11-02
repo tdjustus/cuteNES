@@ -228,6 +228,13 @@ private:
     // Cheats (emulation thread): Game Genie codes to the core, a search
     // snapshot, and the game's file.
     void applyGameGenie(Machine& machine);
+    // The cheats in effect: a playing movie's recorded ones (#121), or the game's.
+    const QVector<Cheat>& activeCheats() const { return m_movieCheats ? *m_movieCheats : m_cheats.cheats; }
+    QVector<Cheat> enabledCheats() const;
+    // While recording, notes the cheats switched on from the next frame.
+    void recordCheats();
+    // A movie's cheats and battery RAM end with it: the game's are back.
+    void endMovieOverrides();
     static CheatSearch::Snapshot snapshot(Machine& machine);
     api::Result saveCheats();
     api::Json cheatsJson() const;
@@ -283,6 +290,8 @@ private:
     Movie m_movie;
     QString m_moviePath;
     qint64 m_movieFrame = 0;
+    std::optional<QVector<Cheat>> m_movieCheats; // playing: the movie's cheats, in place of the game's
+    std::optional<QByteArray> m_playerBattery;   // playing: the player's battery RAM, back when it stops
     mutable std::mutex m_movieMutex;
     MovieStatus m_movieStatus; // under m_movieMutex
 
