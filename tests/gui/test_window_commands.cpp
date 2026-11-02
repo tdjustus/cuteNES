@@ -148,3 +148,24 @@ TEST(GuiWindowCommands, GetSettingsWithAGroupReturnsThatGroupOnly)
         EXPECT_EQ(values, whole);
     }
 }
+
+// #124: macOS's App Nap slowed a running game to a few frames a second while
+// its window was not visible (display asleep, an MCP client driving it). The
+// window holds a "user-initiated, latency-critical" activity while a game is
+// running, and only then: pausing or closing the game ends it, so a paused
+// or idle cuteNES still naps. Elsewhere the activity is only bookkeeping.
+TEST(GuiWindowCommands, AnActivityIsHeldExactlyWhileAGameRuns)
+{
+    MainWindow w(windowOptions());
+    w.show();
+    EXPECT_FALSE(w.holdsRunningActivity()) << "no game";
+    openNestest(w);
+    ASSERT_TRUE(waitUntil([&] { return call(w, "core.run_state")["runState"] == "Running"; }));
+    EXPECT_TRUE(waitUntil([&] { return w.holdsRunningActivity(); })) << "running";
+    call(w, "gui.toggle_pause");
+    EXPECT_TRUE(waitUntil([&] { return !w.holdsRunningActivity(); })) << "paused";
+    call(w, "gui.toggle_pause");
+    EXPECT_TRUE(waitUntil([&] { return w.holdsRunningActivity(); })) << "resumed";
+    call(w, "gui.close_game");
+    EXPECT_TRUE(waitUntil([&] { return !w.holdsRunningActivity(); })) << "closed";
+}

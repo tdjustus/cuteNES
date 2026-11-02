@@ -36,6 +36,7 @@ add_library(cutenes-qt STATIC
     src/input_mapper.cpp
     src/media_runtime.cpp
     src/viewport.cpp
+    $<IF:$<PLATFORM_ID:Darwin>,src/running_activity_mac.mm,src/running_activity.cpp>
     # AUTOMOC only scans headers listed as sources.
     include/cutenes/qt/emulation_view.hpp)
 add_library(cutenes-qt::cutenes-qt ALIAS cutenes-qt)
@@ -47,6 +48,12 @@ target_link_libraries(cutenes-qt
 set_target_properties(cutenes-qt PROPERTIES AUTOMOC ON)
 if(WIN32)
     target_link_libraries(cutenes-qt PRIVATE winmm) # timeBeginPeriod
+endif()
+if(APPLE)
+    # RunningActivity's NSProcessInfo activity (#124), in Objective-C++ with ARC.
+    enable_language(OBJCXX)
+    set_source_files_properties(src/running_activity_mac.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+    target_link_libraries(cutenes-qt PRIVATE "-framework Foundation")
 endif()
 
 # The view's shaders, compiled by qsb at build time to SPIR-V, GLSL, HLSL
