@@ -8,9 +8,17 @@
 #include "gui_support.hpp"
 #include "mainwindow.hpp"
 
+#include <QCoreApplication>
 #include <QDialog>
 
 #include <gtest/gtest.h>
+
+#include <chrono>
+#include <cmath>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 using cutenes::api::Json;
 using cutenes::api::Result;
@@ -154,6 +162,64 @@ TEST(GuiWindowCommands, GetSettingsWithAGroupReturnsThatGroupOnly)
 // window holds a "user-initiated, latency-critical" activity while a game is
 // running, and only then: pausing or closing the game ends it, so a paused
 // or idle cuteNES still naps. Elsewhere the activity is only bookkeeping.
+// #151: display pacing runs from the frame clock's own thread at the
+// display's rate; it never waits for the window system to say a frame was
+// shown. A hidden window gets no frame callbacks (Wayland withholds them,
+// and offscreen has none), so a game whose window was shown on a display
+// and then hidden must still run. The floor is far below 60 fps because a
+// loaded CI runner is slow; what it catches is a stall.
+TEST(GuiWindowCommands, DisplayPacingKeepsAHiddenWindowsGameRunning)
+{
+    MainWindow w(windowOptions());
+    call(w, "gui.set_setting", {{"key", "emulation.pauseWhenInactive"}, {"value", false}});
+    call(w, "gui.set_setting", {{"key", "video.pacing"}, {"value", "display"}});
+    w.show();
+    const auto now = [&] { return call(w, "gui.get_settings", {{"group", "video"}})["values"]["video"]["pacingNow"]; };
+    ASSERT_TRUE(waitUntil([&] { return now()["displayHz"].get<double>() > 0; })) << now().dump();
+    const double hz = now()["displayHz"].get<double>();
+    if (std::abs(hz - 60.0988) > 0.600988 && std::abs(hz / 2 - 60.0988) > 0.600988) {
+        GTEST_SKIP() << "a " << hz << " Hz display cannot pace the game, so display pacing is not in use";
+    }
+    w.hide();
+    openNestest(w);
+    EXPECT_EQ(now()["mode"], "display") << now().dump();
+    ASSERT_TRUE(waitUntil([&] { return call(w, "core.run_state")["runState"] == "Running"; }));
+    const auto frame = [&] { return call(w, "core.run_state")["frame"].get<std::uint64_t>(); };
+    const std::uint64_t start = frame();
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (std::chrono::steady_clock::now() < until) QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    EXPECT_GE(frame() - start, 30u) << "a hidden window's game stalled";
+}
+
+// #151: on Windows a running game opts out of power throttling: execution
+// speed (EcoQoS) and the timer-resolution exemption Windows 11 applies to a
+// process whose windows are hidden (FrameClock relies on timeBeginPeriod).
+// Pausing hands the decision back to Windows. Read back from the OS.
+#ifdef _WIN32
+TEST(GuiWindowCommands, OnWindowsARunningGameIsNotThrottled)
+{
+    const auto state = [] {
+        PROCESS_POWER_THROTTLING_STATE s{};
+        s.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+        EXPECT_TRUE(GetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &s, sizeof s))
+            << "GetProcessInformation: " << GetLastError();
+        return s;
+    };
+    constexpr ULONG kBoth = PROCESS_POWER_THROTTLING_EXECUTION_SPEED | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+    MainWindow w(windowOptions());
+    w.show();
+    openNestest(w);
+    ASSERT_TRUE(waitUntil([&] { return w.holdsRunningActivity(); }));
+    PROCESS_POWER_THROTTLING_STATE s = state();
+    EXPECT_EQ(s.ControlMask & kBoth, kBoth) << "Windows decides, not cuteNES";
+    EXPECT_EQ(s.StateMask & kBoth, 0u) << "throttling is on";
+    call(w, "gui.toggle_pause");
+    ASSERT_TRUE(waitUntil([&] { return !w.holdsRunningActivity(); }));
+    s = state();
+    EXPECT_EQ(s.ControlMask & kBoth, 0u) << "paused: Windows decides again";
+}
+#endif
+
 TEST(GuiWindowCommands, AnActivityIsHeldExactlyWhileAGameRuns)
 {
     MainWindow w(windowOptions());
