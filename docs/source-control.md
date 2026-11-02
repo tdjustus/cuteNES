@@ -123,8 +123,8 @@ each has its own users:
 - **Alphas, betas and release candidates.** Each is tagged with the
   `-<kind>.<n>` suffix on the version it leads to. **`<n>` counts that kind
   across the whole project, not within one version**: the alphas so far are
-  alpha 1 (0.1.0) and alpha 2 (0.2.0), so the next alpha is alpha 3, whatever
-  its version. Before tagging, check the last release's number
+  alpha 1 (0.1.0), alpha 2 (0.2.0) and alpha 3 (0.3.0), so the next alpha is
+  alpha 4, whatever its version. Before tagging, check the last release's number
   (`gh release list`), and use the same number in the tag, the release's
   title and its notes. Until 1.0 it is published
   as a normal GitHub release marked **Latest**, not as a GitHub prerelease,
@@ -135,7 +135,8 @@ each has its own users:
   it by hand.
 - History: alpha 1 predates this scheme and is tagged
   `core-v0.1.0-alpha.1`. Alpha 2 is `v0.2.0-alpha.2`. It was first tagged
-  `v0.2.0-alpha.1`, counted within its version, and corrected.
+  `v0.2.0-alpha.1`, counted within its version, and corrected. Alpha 3 is
+  `v0.3.0-alpha.3`.
 
 ## Publishing a release
 
