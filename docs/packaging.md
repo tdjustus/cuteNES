@@ -39,8 +39,6 @@ Every package carries `cutenes-server` (for MCP clients,
 `cutenes-server --attach`; in the AppImage, `<AppImage> server --attach`,
 see "Linux AppRun" below) and the license texts that About shows: cuteNES's
 own, Qt's LGPL-3.0 and GPL-3.0, SDL3's, nlohmann/json's and cpp-httplib's.
-An AppImage starts only its main program, so on Linux `cutenes-server` is
-inside the image but cannot yet be started from it (#134).
 
 Qt Network (the update check, research R16) needs a TLS backend at run
 time. macdeployqt and windeployqt copy Qt's TLS plugins (Secure Transport
