@@ -48,6 +48,11 @@ public:
     void poll(const Machine& machine);
     // Writes any change now and releases the game.
     void close(const Machine& machine);
+    // While held, the RAM is not saved: a movie's playback (#121) runs on
+    // the movie's battery RAM, which must not replace the player's save.
+    // Released, saving resumes from the RAM as last saved. open() releases.
+    void hold(bool held) { m_held = held; }
+    bool held() const { return m_held; }
 
     bool active() const { return m_active; }
     QString path() const { return m_path; }
@@ -59,6 +64,7 @@ private:
 
     const std::chrono::milliseconds m_interval;
     bool m_active = false;
+    bool m_held = false;
     QString m_path;
     std::unique_ptr<QLockFile> m_lock;
     QByteArray m_known; // the RAM as last handed over

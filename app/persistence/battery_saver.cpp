@@ -36,6 +36,7 @@ BatterySaver::Opened BatterySaver::open(const Library& library, const GameIdenti
     const QString& displayName, Machine& machine)
 {
     Opened result;
+    m_held = false;
     if (machine.sram().size == 0) return result;
 
     m_path = library.gameFile(Library::Folder::Saves, id, displayName, QStringLiteral(".sav"));
@@ -75,7 +76,7 @@ BatterySaver::Opened BatterySaver::open(const Library& library, const GameIdenti
 
 void BatterySaver::poll(const Machine& machine)
 {
-    if (!m_active) return;
+    if (!m_active || m_held) return;
     QByteArray now = sramBytes(machine);
     if (now == m_known) return;
     m_known = now;

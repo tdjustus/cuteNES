@@ -70,6 +70,45 @@ QByteArray inputSumRom(char variant = 0)
     return rom;
 }
 
+// #121: like inputSumRom, with battery RAM, and two more terms. The sum
+// starts from the battery RAM's first byte ($6000), and every frame adds
+// $22, which nothing but a freeze cheat sets. So the final sum and picture
+// depend on the battery RAM at power-on and on the cheats, as well as on the
+// input.
+QByteArray batterySumRom()
+{
+    QByteArray rom(16 + 16384 + 8192, '\0');
+    const char header[] = {'N', 'E', 'S', 0x1A, 1, 1, 0x02}; // flags 6: battery
+    std::memcpy(rom.data(), header, sizeof header);
+    const unsigned char program[] = {
+        0xAD, 0x00, 0x60, 0x85, 0x20, // LDA $6000; STA $20 (the sum)
+        0x2C, 0x02, 0x20,             // $C005 wait: BIT $2002 (vblank)
+        0x10, 0xFB,                   // BPL wait
+        0xA9, 0x01, 0x8D, 0x16, 0x40, // strobe controller 1
+        0xA9, 0x00, 0x8D, 0x16, 0x40,
+        0xA2, 0x08,                   // LDX #8
+        0xA9, 0x00, 0x85, 0x21,       // $21 = 0
+        0xAD, 0x16, 0x40,             // read: LDA $4016
+        0x4A, 0x26, 0x21,             // LSR A; ROL $21
+        0xCA, 0xD0, 0xF7,             // DEX; BNE read
+        0xA5, 0x21, 0x18, 0x65, 0x20, // $20 += $21
+        0x85, 0x20,
+        0xA5, 0x20, 0x18, 0x65, 0x22, // $20 += $22 (a freeze cheat's)
+        0x85, 0x20,
+        0xA9, 0x3F, 0x8D, 0x06, 0x20, // PPUADDR = $3F00
+        0xA9, 0x00, 0x8D, 0x06, 0x20,
+        0xA5, 0x20, 0x29, 0x3F,       // PPUDATA = $20 & $3F
+        0x8D, 0x07, 0x20,
+        0xA9, 0x00, 0x8D, 0x06, 0x20, // PPUADDR = $0000
+        0x8D, 0x06, 0x20,
+        0x4C, 0x05, 0xC0,             // JMP wait
+    };
+    std::memcpy(rom.data() + 16, program, sizeof program);
+    rom[16 + 0x3FFC] = 0x00;
+    rom[16 + 0x3FFD] = static_cast<char>(0xC0);
+    return rom;
+}
+
 Json call(MainWindow& w, const char* name, const Json& args = Json::object())
 {
     const Result r = w.session().call(name, args);
@@ -350,4 +389,80 @@ TEST(GuiMovies, StopWithoutAMovieAndClosingTheGameWhileRecording)
     call(w, "gui.close_game");
     EXPECT_GE(readCnm(path).header.value(QStringLiteral("frames")).toInt(), 60);
     EXPECT_EQ(call(w, "gui.movie_status")["mode"], "none");
+}
+
+// #121: a movie carries the cheats it was recorded with (and their changes)
+// and the battery RAM a power-on movie started from, and replays with them
+// whatever the player has. The player's own cheats and battery RAM are back
+// when it ends, and the save file never gets the movie's.
+TEST(GuiMovies, AMovieKeepsItsCheatsAndBatteryAndLeavesThePlayersAlone)
+{
+    Game game;
+    const QString rom = game.folder + QStringLiteral("/battery-sum.nes");
+    {
+        QFile file(rom);
+        ASSERT_TRUE(file.open(QIODevice::WriteOnly));
+        file.write(batterySumRom());
+    }
+    MainWindow w(game.options);
+    game.open(w, rom);
+    const auto sram = [&](unsigned char first) {
+        call(w, "core.load_sram", {{"bytes", QByteArray(1, static_cast<char>(first)).toBase64().toStdString()}});
+    };
+    const auto sramFirst = [&] {
+        const Json r = call(w, "core.read_sram", {{"offset", 0}, {"length", 1}});
+        return static_cast<unsigned char>(QByteArray::fromBase64(QByteArray::fromStdString(r["bytes"].get<std::string>()))[0]);
+    };
+    const auto freeze = [&](int value) {
+        call(w, "gui.add_cheat", {{"kind", "freeze"}, {"address", 0x22}, {"value", value}, {"label", "x"}});
+    };
+    sram(0x10);
+    freeze(1); // cheat 0
+
+    const QString path = game.movie("cheats.cnm");
+    call(w, "gui.record_movie", {{"path", path.toStdString()}, {"from", "power_on"}});
+    play(w);
+    // Paused, so no frame can run between the two changes (a slow runner ran
+    // one while the game was going) and they belong to one frame.
+    call(w, "gui.toggle_pause");
+    call(w, "gui.set_cheat_enabled", {{"index", 0}, {"enabled", false}});
+    freeze(3); // cheat 1, from the same frame
+    call(w, "gui.toggle_pause");
+    play(w);
+    call(w, "gui.toggle_pause");
+    call(w, "gui.stop_movie");
+    const std::string recorded = hash(w);
+    const int recordedSum = sum(w);
+
+    const CnmFile cnm = readCnm(path);
+    const QJsonArray startCheats = cnm.header.value(QStringLiteral("cheats")).toArray();
+    ASSERT_EQ(startCheats.size(), 1) << "the cheats on at the start";
+    EXPECT_EQ(startCheats[0].toObject().value(QStringLiteral("value")).toInt(), 1);
+    const QByteArray battery =
+        QByteArray::fromBase64(cnm.header.value(QStringLiteral("battery")).toString().toLatin1());
+    ASSERT_FALSE(battery.isEmpty()) << "a power-on movie keeps the battery RAM it started from";
+    EXPECT_EQ(static_cast<unsigned char>(battery[0]), 0x10);
+    QJsonArray changes;
+    for (const QJsonValue& e : cnm.header.value(QStringLiteral("events")).toArray()) {
+        if (e.toObject().value(QStringLiteral("event")).toString() == QLatin1String("cheats")) changes.append(e);
+    }
+    ASSERT_EQ(changes.size(), 1) << "two changes before one frame are one event";
+    const QJsonArray then = changes[0].toObject().value(QStringLiteral("cheats")).toArray();
+    ASSERT_EQ(then.size(), 1);
+    EXPECT_EQ(then[0].toObject().value(QStringLiteral("value")).toInt(), 3);
+
+    // The player's own cheats and battery RAM now differ from the movie's.
+    call(w, "gui.set_cheat_enabled", {{"index", 1}, {"enabled", false}});
+    freeze(7); // cheat 2
+    sram(0x55);
+    const Json playerCheats = call(w, "gui.list_cheats");
+
+    call(w, "gui.play_movie", {{"path", path.toStdString()}});
+    playToTheEnd(w);
+    EXPECT_EQ(sum(w), recordedSum) << "the movie's cheats and battery RAM, not the player's";
+    EXPECT_EQ(hash(w), recorded);
+
+    // Over: the player's cheats and battery RAM are back.
+    EXPECT_EQ(call(w, "gui.list_cheats"), playerCheats);
+    EXPECT_EQ(sramFirst(), 0x55);
 }
