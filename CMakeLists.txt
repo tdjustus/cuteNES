@@ -8,6 +8,14 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET 13.0 CACHE STRING "Oldest macOS to run on")
 
 project(cutenes VERSION 0.3.0 LANGUAGES CXX)
 
+if(APPLE)
+    # Objective-C++ for qt/'s RunningActivity (#124). Enabled here, at the
+    # top, because a language enabled in a subdirectory is not visible to
+    # the rest of the build: the package configure (CUTENES_BUILD_TESTS=OFF)
+    # failed to generate with CMAKE_OBJCXX_COMPILE_OBJECT unset.
+    enable_language(OBJCXX)
+endif()
+
 if(WIN32)
     # A Windows package is one flat folder: Windows finds DLLs beside the
     # executable, not in a bin/ under it, and Qt's deploy script puts Qt,

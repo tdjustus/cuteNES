@@ -50,8 +50,8 @@ if(WIN32)
     target_link_libraries(cutenes-qt PRIVATE winmm) # timeBeginPeriod
 endif()
 if(APPLE)
-    # RunningActivity's NSProcessInfo activity (#124), in Objective-C++ with ARC.
-    enable_language(OBJCXX)
+    # RunningActivity's NSProcessInfo activity (#124), in Objective-C++ with
+    # ARC. The language is enabled in the top-level CMakeLists.txt.
     set_source_files_properties(src/running_activity_mac.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
     target_link_libraries(cutenes-qt PRIVATE "-framework Foundation")
 endif()
