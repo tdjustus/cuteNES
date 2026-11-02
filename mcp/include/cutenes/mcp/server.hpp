@@ -26,6 +26,11 @@ std::vector<std::string> supportedVersions();
 // initialize's result (2025-11-25), which needs no session: the --attach
 // bridge gives it while no instance is running.
 Json initializeResult();
+// server/discover's result (2026-07-28), which needs no session either,
+// with the given cache lifetime.
+Json discoverResult(std::int64_t ttlMs);
+// A 2026-07-28 result: `result` with resultType and serverInfo in _meta.
+Json modernResult(Json result);
 
 // JSON-RPC 2.0 codes, and MCP's own.
 inline constexpr int kParseError = -32700;
@@ -39,6 +44,11 @@ inline constexpr int kUnsupportedProtocolVersion = -32022;
 // catalog only changes when a host adds or removes commands, and then a
 // list-changed notification says so.
 inline constexpr std::int64_t kListTtlMs = 60000;
+// The --attach bridge's answers while no instance is running: a client may
+// keep them only briefly, because the real list is a launch away. One that
+// holds a subscription hears list_changed when the instance appears; one
+// that does not asks again after this.
+inline constexpr std::int64_t kOfflineListTtlMs = 5000;
 
 // The _meta keys of 2026-07-28 requests.
 inline constexpr const char* kMetaVersion = "io.modelcontextprotocol/protocolVersion";

@@ -247,6 +247,14 @@ private:
         return message.is_object() && message.contains("id") ? message["id"] : Json();
     }
 
+    // A 2026-07-28 request: its version is in _meta.
+    static bool isModern(const Json& message)
+    {
+        const Json params = message.is_object() ? message.value("params", Json::object()) : Json::object();
+        const Json meta = params.is_object() ? params.value("_meta", Json::object()) : Json::object();
+        return meta.is_object() && meta.contains(kMetaVersion);
+    }
+
     Endpoint endpoint()
     {
         std::lock_guard lock(m_endpointMutex);
@@ -335,15 +343,18 @@ private:
     // A long-lived request (subscriptions/listen) on its own connection.
     // `persistent`: the bridge's own subscription, which reconnects until
     // the bridge finishes, following the instance to a new endpoint.
+    // `hold`: a client subscription the bridge keeps while no instance
+    // answers; called each time none does, and the stream waits and tries
+    // again rather than failing.
     void stream(const std::string& key, std::string raw, Json message,
-        std::function<void(const Json&)> on, bool persistent = false)
+        std::function<void(const Json&)> on, bool persistent = false, std::function<void()> hold = {})
     {
         {
             std::lock_guard lock(m_mutex);
             if (m_finishing) return;
         }
         m_streamThreads.emplace_back([this, key, raw = std::move(raw), message = std::move(message),
-                                         on = std::move(on), persistent] {
+                                         on = std::move(on), persistent, hold = std::move(hold)] {
             bool retried = false;
             for (;;) {
                 auto flight = newFlight();
@@ -357,18 +368,26 @@ private:
                     outcome = exchange(raw, message, *flight, on);
                 }
                 const Endpoint used = flight ? flight->endpoint : endpoint();
+                const bool waiting = hold && !outcome.ok && outcome.retry;
+                if (waiting) hold();
                 {
                     std::unique_lock lock(m_mutex);
                     if (flight) m_streams.erase(key);
                     if (m_finishing || (flight && flight->cancelled)) return;
-                    if (persistent) {
+                    if (waiting) {
+                        // Cancelled while held: nothing is on the wire, so
+                        // cancel() left it for here.
+                        if (m_cancelledBeforeSending.erase(key)) return;
+                        m_cv.wait_for(lock, std::chrono::milliseconds(250), [&] { return m_finishing; });
+                        if (m_finishing || m_cancelledBeforeSending.erase(key)) return;
+                    } else if (persistent) {
                         // The endpoint went away or restarted: wait a moment,
                         // look for its new address, and listen again.
                         m_cv.wait_for(lock, std::chrono::milliseconds(250), [&] { return m_finishing; });
                         if (m_finishing) return;
                     }
                 }
-                if (persistent) {
+                if (persistent || waiting) {
                     refreshFrom(used);
                     continue;
                 }
@@ -382,6 +401,38 @@ private:
                 return;
             }
         });
+    }
+
+    // A client's subscriptions/listen. While no instance answers, the bridge
+    // acknowledges it itself (with the notifications it will deliver: list
+    // changes, the only kind the instance has) and holds it, looking for the
+    // instance every quarter second. When the instance acknowledges, that is
+    // news to the client, whose tool list was the bridge's empty one: it
+    // hears notifications/tools/list_changed on the subscription instead of
+    // a second acknowledgement, and the instance's own notifications after.
+    void listen(const std::string& key, const std::string& raw, const Json& message)
+    {
+        const Json id = idOf(message);
+        const Json filter = message.value("params", Json::object()).value("notifications", Json::object());
+        const bool tools = filter.is_object() && filter.value("toolsListChanged", Json()) == true;
+        auto held = std::make_shared<std::atomic<bool>>(false);
+        auto relay = [this, id, tools, held](const Json& m) {
+            if (held->exchange(false) && stringAt(m, "method") == "notifications/subscriptions/acknowledged") {
+                if (tools) {
+                    write({{"jsonrpc", "2.0"}, {"method", "notifications/tools/list_changed"},
+                        {"params", {{"_meta", {{kMetaSubscription, id}}}}}});
+                }
+                return;
+            }
+            write(m);
+        };
+        auto hold = [this, id, tools, held] {
+            if (held->exchange(true)) return; // acknowledged already
+            write({{"jsonrpc", "2.0"}, {"method", "notifications/subscriptions/acknowledged"},
+                {"params", {{"_meta", {{kMetaSubscription, id}}},
+                               {"notifications", tools ? Json{{"toolsListChanged", true}} : Json::object()}}}});
+        };
+        stream(key, raw, message, relay, /*persistent=*/false, isModern(message) ? hold : std::function<void()>());
     }
 
     // A 2025-11-25 client has no subscriptions/listen, and Streamable HTTP
@@ -417,15 +468,27 @@ private:
         if (wait) ready.wait_for(std::chrono::seconds(5));
     }
 
-    // While no instance answers, a 2025-11-25 client is still initialized
-    // (and sees no tools), so that it keeps the bridge; true when answered.
+    // While no instance answers, a client still gets started, and sees no
+    // tools, so that it keeps the bridge: a 2025-11-25 client is
+    // initialized, a 2026-07-28 one discovers the server. True when
+    // answered. The modern answers may be cached only briefly.
     bool answerOffline(const Json& message)
     {
         const std::string method = stringAt(message, "method");
-        const Json params = message.value("params", Json::object());
-        const Json meta = params.is_object() ? params.value("_meta", Json::object()) : Json::object();
-        if (meta.is_object() && meta.contains(kMetaVersion)) return false; // 2026-07-28
         Json result;
+        if (isModern(message)) {
+            if (method == "server/discover") {
+                result = discoverResult(kOfflineListTtlMs);
+            } else if (method == "tools/list") {
+                result = modernResult(
+                    {{"tools", Json::array()}, {"ttlMs", kOfflineListTtlMs}, {"cacheScope", "private"}});
+            } else {
+                return false;
+            }
+            m_answeredOffline = true;
+            write({{"jsonrpc", "2.0"}, {"id", idOf(message)}, {"result", result}});
+            return true;
+        }
         if (method == "initialize") {
             m_legacyVersion = kLegacyVersion;
             result = initializeResult();
@@ -459,7 +522,7 @@ private:
             const std::string key = keyOf(q.message);
             const std::string method = stringAt(q.message, "method");
             if (method == "subscriptions/listen" && !key.empty()) {
-                stream(key, q.raw, q.message, [this](const Json& m) { write(m); });
+                listen(key, q.raw, q.message);
                 continue;
             }
             {

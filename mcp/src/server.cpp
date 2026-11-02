@@ -39,15 +39,6 @@ Json serverInfo()
 
 Json capabilities() { return {{"tools", {{"listChanged", true}}}}; }
 
-// A 2026-07-28 result: resultType, and serverInfo in _meta (the schema's
-// "SHOULD include this field on every response").
-Json modernResult(Json result)
-{
-    result["resultType"] = "complete";
-    result["_meta"][kMetaServerInfo] = serverInfo();
-    return result;
-}
-
 Json response(const Json& id, Json result)
 {
     return {{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}};
@@ -130,6 +121,21 @@ Json initializeResult()
         {"serverInfo", serverInfo()}, {"instructions", kInstructions}};
 }
 
+// resultType, and serverInfo in _meta (the schema's "SHOULD include this
+// field on every response").
+Json modernResult(Json result)
+{
+    result["resultType"] = "complete";
+    result["_meta"][kMetaServerInfo] = serverInfo();
+    return result;
+}
+
+Json discoverResult(std::int64_t ttlMs)
+{
+    return modernResult({{"supportedVersions", supportedVersions()}, {"capabilities", capabilities()},
+        {"instructions", kInstructions}, {"ttlMs", ttlMs}, {"cacheScope", "private"}});
+}
+
 std::string serialize(const Json& message)
 {
     return message.dump(-1, ' ', false, Json::error_handler_t::replace);
@@ -165,13 +171,6 @@ Json toolResponse(const Json& id, const std::string& tool, const api::Result& re
 
 struct McpServer::Impl {
     explicit Impl(api::Session& s) : session(s) {}
-
-    Json discover() const
-    {
-        return modernResult({{"supportedVersions", supportedVersions()},
-            {"capabilities", capabilities()}, {"instructions", kInstructions},
-            {"ttlMs", kListTtlMs}, {"cacheScope", "private"}});
-    }
 
     // One tool per command, in the registry's order (by name).
     Json toolsList(bool modern) const
@@ -352,7 +351,7 @@ Reply McpServer::handle(const Json& message, Connection& connection, const Send&
         return now(response(id, initializeResult()));
     }
     if (method == "server/discover") {
-        return now(response(id, m_impl->discover()));
+        return now(response(id, discoverResult(kListTtlMs)));
     }
     if (method == "tools/list") {
         return now(response(id, m_impl->toolsList(modern)));

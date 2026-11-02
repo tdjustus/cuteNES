@@ -45,10 +45,14 @@ int probe(const Endpoint& endpoint, std::string& error);
 // list-changed subscription reconnects the same way.
 //
 // `endpoint` may be empty (no instance yet), and the instance may go away.
-// While nothing answers, a 2025-11-25 client's initialize, tools/list (no
-// tools) and ping are answered by the bridge, and other requests fail
-// saying what to turn on. When an instance answers again (or for the first
-// time after that), the client hears notifications/tools/list_changed.
+// While nothing answers, the bridge answers what starts a client, with no
+// tools: a 2025-11-25 client's initialize, tools/list and ping, and a
+// 2026-07-28 client's server/discover and tools/list (cached briefly,
+// kOfflineListTtlMs). It acknowledges a 2026-07-28 subscriptions/listen and
+// holds it. Other requests fail saying what to turn on. When an instance
+// answers again (or for the first time after that), the client hears
+// notifications/tools/list_changed: on its held subscription, or as the
+// 2025-11-25 notification.
 using RefreshEndpoint = std::function<std::optional<Endpoint>()>;
 bool serveBridge(const Endpoint& endpoint, std::istream& in, std::ostream& out,
     const std::atomic<bool>& stop, RefreshEndpoint refresh = {});
