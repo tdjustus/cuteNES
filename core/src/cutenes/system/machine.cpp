@@ -154,6 +154,8 @@ LoadResult Machine::loadCartridge(const std::uint8_t* data, std::size_t size)
     // Region resolves from the override, else the header (NES 2.0) with
     // the NTSC default.
     impl.applyRegion();
+    impl.prgCrc = StateWriter::crc32(impl.cart.prg.data(), impl.cart.prg.size());
+    impl.chrCrc = impl.cart.chr.empty() ? 0 : StateWriter::crc32(impl.cart.chr.data(), impl.cart.chr.size());
     m_impl->ppu->attachCartridge(&m_impl->cart);
     m_impl->cart.attachScheduler(m_impl->scheduler);
     applyMmc3Revision(); // header default or the stored manual override
@@ -192,6 +194,7 @@ void Machine::ejectCartridge()
 {
     auto& impl = *m_impl;
     impl.cart = Cartridge{};
+    impl.prgCrc = impl.chrCrc = 0;
     impl.ppu->attachCartridge(nullptr);
     impl.runState = RunState::NeedsRom;
 }
@@ -467,6 +470,11 @@ SaveStateBlob Machine::Impl::capture()
     w.w<std::uint64_t>(scheduler.frameIndex());
     w.w<std::uint64_t>(frameCounter);
     w.end();
+    // ROM: which game, beyond the header's board (cartridgeId).
+    w.begin("ROM ");
+    w.w<std::uint32_t>(prgCrc);
+    w.w<std::uint32_t>(chrCrc);
+    w.end();
     // SRAM (flag bit 0).
     if (!cart.prgRam.empty() && cart.info.battery) {
         w.begin("SRAM");
@@ -506,6 +514,18 @@ LoadStateError Machine::Impl::applyState(const std::uint8_t* data,
     if (!r.seek("CPU ") || !r.seek("PPU ") || !r.seek("APU ")
         || !r.seek("RAM ") || !r.seek("SCH ")) {
         return LoadStateError::IncompatibleFormat;
+    }
+    // Another game on the same board (#92). A state from before the
+    // section existed has only the board check.
+    if (r.seek("ROM ")) {
+        if (r.sectionRemaining() < 8) {
+            return LoadStateError::IncompatibleFormat;
+        }
+        const auto prg = r.get<std::uint32_t>();
+        const auto chr = r.get<std::uint32_t>();
+        if (prg != prgCrc || chr != chrCrc) {
+            return LoadStateError::WrongCartridge;
+        }
     }
     // Apply.
     r.seek("CPU ");

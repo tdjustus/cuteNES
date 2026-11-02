@@ -73,7 +73,9 @@ exact moment. Each game has ten slots.
   load, if you loaded by mistake.
 - A loaded state starts paused. Press P to play.
 - **Save State to File…** and **Load State from File…** keep a state
-  anywhere you like.
+  anywhere you like. A state loads only into the game that saved it; for
+  another game, even one on the same kind of cartridge, it is refused and
+  the game carries on unchanged.
 
 The File menu's slot lists show each state's name; hover for the time it
 was saved.

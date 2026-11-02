@@ -49,6 +49,9 @@ public:
         return false;
     }
 
+    // Bytes left in the section seek() found.
+    std::size_t sectionRemaining() const { return m_end - m_cursor; }
+
     template <typename T>
     T get()
     {

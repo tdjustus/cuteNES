@@ -26,7 +26,7 @@ After the header, a sequence of sections:
 
 | Field | Size | Notes |
 |-------|------|-------|
-| sectionTag | 4 | `"CPU "`, `"PPU "`, `"APU "`, `"RAM "`, `"MAP "`, `"INP "`, `"SCH "`, `"SRAM"` |
+| sectionTag | 4 | `"CPU "`, `"PPU "`, `"APU "`, `"RAM "`, `"MAP "`, `"INP "`, `"SCH "`, `"ROM "`, `"SRAM"` |
 | length | 4 | payload byte count |
 | payload | length | component-private, but layout-versioned by formatVersion |
 
@@ -55,6 +55,18 @@ boundary":
 - **INP**: both controllers' shift registers + strobe state.
 - **SCH**: master cycle (absolute), frame counter, any scheduled events as
   absolute master-clock deltas.
+- **ROM**: which game the state belongs to. It holds the CRC-32 of the PRG
+  ROM, then the CRC-32 of the CHR ROM (0 when the board has CHR-RAM, whose
+  contents are state rather than the game), 4 bytes each.
+  - **Why it exists:** the header's `cartridgeId` identifies only the
+    board, so two games on the same mapper with the same sizes and
+    mirroring would accept each other's states and run corrupted (#92).
+  - **Compatibility:** the section was added without a formatVersion bump.
+    A reader skips unknown tags, so earlier readers ignore it. States
+    written before it existed carry only the board check.
+  - **Why CRC-32:** it guards against an accidental mix-up, not a forged
+    state, and it is computed once when the ROM loads, because rewind
+    captures a state every frame.
 
 ## Validation and rejection
 
@@ -66,6 +78,9 @@ boundary":
    (window = exact match until the first stable release; spec assumption)
 4. cartridgeId mismatch ⇒ `WrongCartridge`
 5. checksum mismatch ⇒ `ChecksumMismatch`
+6. a `ROM ` section that differs from the loaded ROM's ⇒ `WrongCartridge`
+   (checked after the checksum, so its contents are trusted); one shorter
+   than 8 bytes ⇒ `IncompatibleFormat`
 
 Never partially apply: validation completes before any state mutation.
 
