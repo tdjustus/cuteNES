@@ -90,7 +90,21 @@ The header is:
   state;
 - `frames` and `rerecords`;
 - `events`: a list of `{"frame": n, "event": "reset"|"power"}`, the
-  console button pressed before frame `n` (counted from 0) ran.
+  console button pressed before frame `n` (counted from 0) ran, or
+  `{"frame": n, "event": "cheats", "cheats": [...]}`, the cheats switched on
+  from frame `n` (#121);
+- `cheats` (optional, #121): the cheats switched on when recording started.
+  Each is a cheats-file object (`label`, `kind`, `address` and `value`, or
+  `code`, and `enabled`). Without `cheats`, playback uses the player's;
+- `battery` (optional, #121, power-on movies of battery-backed games): the
+  battery RAM the movie started from, in base64. It is loaded after the power
+  on, before the first frame.
+
+`cheats` and `battery` are optional, so movies from before them still play,
+with what the player has. The magic stays `CNM1`. An older cuteNES ignores
+the two header fields, so a movie that uses them plays there without them.
+It refuses a movie with a `cheats` event, naming the unknown event, so a
+replay that would differ is not played silently.
 
 The body has `frames` × 2 bytes, so a file whose body is shorter or
 longer is refused as damaged.

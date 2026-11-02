@@ -18,7 +18,28 @@ const QByteArray kMagic = QByteArrayLiteral("CNM1\n");
 
 QString eventName(Movie::Event::Kind kind)
 {
-    return kind == Movie::Event::Kind::Power ? QStringLiteral("power") : QStringLiteral("reset");
+    switch (kind) {
+    case Movie::Event::Kind::Power: return QStringLiteral("power");
+    case Movie::Event::Kind::Cheats: return QStringLiteral("cheats");
+    case Movie::Event::Kind::Reset: break;
+    }
+    return QStringLiteral("reset");
+}
+
+QJsonArray cheatArray(const QVector<Cheat>& cheats)
+{
+    QJsonArray a;
+    for (const Cheat& c : cheats) a.append(cheatToJson(c));
+    return a;
+}
+
+QVector<Cheat> cheatsFrom(const QJsonArray& array)
+{
+    QVector<Cheat> cheats;
+    for (const QJsonValue& v : array) {
+        if (const std::optional<Cheat> c = cheatFromJson(v.toObject())) cheats.push_back(*c);
+    }
+    return cheats;
 }
 
 bool fail(QString* error, const QString& message)
@@ -40,7 +61,9 @@ QByteArray Movie::serialize() const
 {
     QJsonArray eventArray;
     for (const Event& e : events) {
-        eventArray.append(QJsonObject{{QStringLiteral("frame"), e.frame}, {QStringLiteral("event"), eventName(e.kind)}});
+        QJsonObject o{{QStringLiteral("frame"), e.frame}, {QStringLiteral("event"), eventName(e.kind)}};
+        if (e.kind == Event::Kind::Cheats) o.insert(QStringLiteral("cheats"), cheatArray(e.cheats));
+        eventArray.append(o);
     }
     QJsonObject header{{QStringLiteral("identity"), identity}, {QStringLiteral("core"), core},
         {QStringLiteral("region"), region},
@@ -48,6 +71,8 @@ QByteArray Movie::serialize() const
         {QStringLiteral("frames"), frames()}, {QStringLiteral("rerecords"), rerecords},
         {QStringLiteral("events"), eventArray}};
     if (start == Start::State) header.insert(QStringLiteral("state"), QString::fromLatin1(state.toBase64()));
+    if (cheats) header.insert(QStringLiteral("cheats"), cheatArray(*cheats));
+    if (battery) header.insert(QStringLiteral("battery"), QString::fromLatin1(battery->toBase64()));
     return kMagic + QJsonDocument(header).toJson(QJsonDocument::Compact) + '\n' + input;
 }
 
@@ -83,6 +108,10 @@ std::optional<Movie> Movie::parse(const QByteArray& bytes, QString* error)
         return std::nullopt;
     }
     m.rerecords = h.value(QStringLiteral("rerecords")).toInteger();
+    if (h.contains(QStringLiteral("cheats"))) m.cheats = cheatsFrom(h.value(QStringLiteral("cheats")).toArray());
+    if (h.contains(QStringLiteral("battery"))) {
+        m.battery = QByteArray::fromBase64(h.value(QStringLiteral("battery")).toString().toLatin1());
+    }
     m.input = bytes.mid(end + 1);
     const qint64 frames = h.value(QStringLiteral("frames")).toInteger(-1);
     if (frames < 0 || m.input.size() != frames * 2) {
@@ -93,12 +122,20 @@ std::optional<Movie> Movie::parse(const QByteArray& bytes, QString* error)
     for (const QJsonValue& v : h.value(QStringLiteral("events")).toArray()) {
         const QJsonObject o = v.toObject();
         const QString name = o.value(QStringLiteral("event")).toString();
-        if (name != QLatin1String("reset") && name != QLatin1String("power")) {
+        Event e;
+        e.frame = o.value(QStringLiteral("frame")).toInteger();
+        if (name == QLatin1String("reset")) {
+            e.kind = Event::Kind::Reset;
+        } else if (name == QLatin1String("power")) {
+            e.kind = Event::Kind::Power;
+        } else if (name == QLatin1String("cheats")) {
+            e.kind = Event::Kind::Cheats;
+            e.cheats = cheatsFrom(o.value(QStringLiteral("cheats")).toArray());
+        } else {
             fail(error, QStringLiteral("the movie has an unknown event \"%1\"").arg(name));
             return std::nullopt;
         }
-        m.events.push_back({o.value(QStringLiteral("frame")).toInteger(),
-            name == QLatin1String("power") ? Event::Kind::Power : Event::Kind::Reset});
+        m.events.push_back(e);
     }
     std::stable_sort(m.events.begin(), m.events.end(), [](const Event& a, const Event& b) { return a.frame < b.frame; });
     return m;

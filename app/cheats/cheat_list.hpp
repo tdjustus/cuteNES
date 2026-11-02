@@ -12,6 +12,7 @@
 
 #include "library/game_identity.hpp"
 
+#include <QJsonObject>
 #include <QString>
 #include <QVector>
 
@@ -40,6 +41,11 @@ struct Watch {
 
 QString kindName(Cheat::Kind kind);
 std::optional<Cheat::Kind> kindFromName(const QString& name);
+
+// One cheat as the cheats file stores it (and a movie, #121); nullopt for a
+// kind this version does not know.
+QJsonObject cheatToJson(const Cheat& cheat);
+std::optional<Cheat> cheatFromJson(const QJsonObject& object);
 
 struct CheatList {
     QVector<Cheat> cheats;

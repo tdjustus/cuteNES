@@ -28,6 +28,33 @@ std::optional<Cheat::Kind> kindFromName(const QString& name)
     return std::nullopt;
 }
 
+QJsonObject cheatToJson(const Cheat& c)
+{
+    QJsonObject o{{QStringLiteral("label"), c.label}, {QStringLiteral("kind"), kindName(c.kind)},
+        {QStringLiteral("enabled"), c.enabled}};
+    if (c.kind == Cheat::Kind::GameGenie) {
+        o.insert(QStringLiteral("code"), c.code);
+    } else {
+        o.insert(QStringLiteral("address"), c.address);
+        o.insert(QStringLiteral("value"), c.value);
+    }
+    return o;
+}
+
+std::optional<Cheat> cheatFromJson(const QJsonObject& o)
+{
+    const std::optional<Cheat::Kind> kind = kindFromName(o.value(QStringLiteral("kind")).toString());
+    if (!kind) return std::nullopt;
+    Cheat c;
+    c.label = o.value(QStringLiteral("label")).toString();
+    c.kind = *kind;
+    c.address = static_cast<std::uint16_t>(o.value(QStringLiteral("address")).toInt());
+    c.value = static_cast<std::uint8_t>(o.value(QStringLiteral("value")).toInt());
+    c.code = o.value(QStringLiteral("code")).toString();
+    c.enabled = o.value(QStringLiteral("enabled")).toBool(true);
+    return c;
+}
+
 CheatList CheatList::read(const QString& path, QString* error)
 {
     CheatList list;
@@ -44,17 +71,8 @@ CheatList CheatList::read(const QString& path, QString* error)
         return list;
     }
     for (const QJsonValue& v : root.value(QStringLiteral("cheats")).toArray()) {
-        const QJsonObject o = v.toObject();
-        const std::optional<Cheat::Kind> kind = kindFromName(o.value(QStringLiteral("kind")).toString());
-        if (!kind) continue; // a kind from a newer version: skipped, not lost on purpose
-        Cheat c;
-        c.label = o.value(QStringLiteral("label")).toString();
-        c.kind = *kind;
-        c.address = static_cast<std::uint16_t>(o.value(QStringLiteral("address")).toInt());
-        c.value = static_cast<std::uint8_t>(o.value(QStringLiteral("value")).toInt());
-        c.code = o.value(QStringLiteral("code")).toString();
-        c.enabled = o.value(QStringLiteral("enabled")).toBool(true);
-        list.cheats.push_back(c);
+        // A kind from a newer version is skipped, not lost on purpose.
+        if (const std::optional<Cheat> c = cheatFromJson(v.toObject())) list.cheats.push_back(*c);
     }
     for (const QJsonValue& v : root.value(QStringLiteral("watches")).toArray()) {
         const QJsonObject o = v.toObject();
@@ -77,17 +95,7 @@ bool CheatList::write(const QString& path, const GameIdentity& identity, QString
         return true;
     }
     QJsonArray cheatArray;
-    for (const Cheat& c : cheats) {
-        QJsonObject o{{QStringLiteral("label"), c.label}, {QStringLiteral("kind"), kindName(c.kind)},
-            {QStringLiteral("enabled"), c.enabled}};
-        if (c.kind == Cheat::Kind::GameGenie) {
-            o.insert(QStringLiteral("code"), c.code);
-        } else {
-            o.insert(QStringLiteral("address"), c.address);
-            o.insert(QStringLiteral("value"), c.value);
-        }
-        cheatArray.push_back(o);
-    }
+    for (const Cheat& c : cheats) cheatArray.push_back(cheatToJson(c));
     QJsonArray watchArray;
     for (const Watch& w : watches) {
         watchArray.push_back(QJsonObject{
