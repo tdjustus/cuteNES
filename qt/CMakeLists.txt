@@ -36,7 +36,7 @@ add_library(cutenes-qt STATIC
     src/input_mapper.cpp
     src/media_runtime.cpp
     src/viewport.cpp
-    $<IF:$<PLATFORM_ID:Darwin>,src/running_activity_mac.mm,src/running_activity.cpp>
+    $<IF:$<PLATFORM_ID:Darwin>,src/running_activity_mac.mm,$<IF:$<PLATFORM_ID:Windows>,src/running_activity_win.cpp,src/running_activity.cpp>>
     # AUTOMOC only scans headers listed as sources.
     include/cutenes/qt/emulation_view.hpp)
 add_library(cutenes-qt::cutenes-qt ALIAS cutenes-qt)

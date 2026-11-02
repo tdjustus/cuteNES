@@ -11,12 +11,19 @@
 // running, and ends it on pause or close, so an idle cuteNES still naps and
 // the Mac may still sleep when idle.
 //
+// Windows (#151) throttles background and hidden-window processes (EcoQoS)
+// and, on Windows 11, ignores timeBeginPeriod for a process whose windows
+// are all hidden. While a game runs, RunningActivity opts out of both with
+// SetProcessInformation(ProcessPowerThrottling), and on pause hands the
+// decision back to Windows.
+//
+// Linux needs nothing: no desktop throttles a hidden window's timers the
+// way App Nap does. Wayland withholds frame callbacks from hidden windows,
+// but the frame clock never waits on them: display pacing only sets the
+// clock's rate to the display's (MainWindow::playbackChanged).
+//
 // General, not NES-specific: any emulator or real-time app paced by timers
-// needs this on macOS. On Windows and Linux this only records the state for
-// now. Their equivalents are not handled yet (#151): Windows 11's power
-// throttling of background processes, which also ignores timeBeginPeriod for
-// hidden windows, and Wayland withholding frame callbacks from hidden
-// windows.
+// needs the macOS and Windows opt-outs.
 
 namespace cutenes::qt {
 

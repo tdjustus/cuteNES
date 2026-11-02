@@ -602,3 +602,20 @@ By hand:
    as it was.
 2. A state saved by cuteNES 0.2.0 (alpha 2), to a slot or a file, still
    loads into its own game.
+
+### Windows and Linux: a hidden game keeps its speed (#151)
+
+Automated:
+- `GuiWindowCommands.OnWindowsARunningGameIsNotThrottled` (Windows CI only): while a game runs, Windows reports both bits in the power-throttling control mask, execution speed and the timer-resolution exemption, with no throttling. Paused, the control mask is empty and Windows decides again.
+- `GuiWindowCommands.DisplayPacingKeepsAHiddenWindowsGameRunning`: with display pacing in use (offscreen reports 60 Hz) and Pause When Inactive off, the window is shown and then hidden, and the game keeps running. The frame clock never waits for the window system's frame callbacks, which Wayland withholds from hidden windows.
+- Not checked live: this Mac cannot run Windows or a Wayland session.
+
+By hand, on Windows 11 and on a Linux Wayland desktop:
+1. Turn off Settings > Emulation > Pause When Inactive, set Settings > Video
+   > Frame pacing to Display, and open a game.
+2. Minimize the window for a minute, with an MCP client connected (or
+   watch View > Show FPS when you bring it back). Through the MCP,
+   `core.run_state`'s frame grows by about 60 a second throughout.
+3. Windows: in Task Manager's Details tab, add the "Efficiency mode"
+   column. cuteNES is not in efficiency mode while the game runs, and the
+   leaf icon may appear once it is paused.

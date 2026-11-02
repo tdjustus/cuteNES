@@ -1,6 +1,6 @@
 #include <cutenes/qt/running_activity.hpp>
 
-// Everything but macOS: nothing to tell the OS (see the header).
+// Linux and others: nothing to tell the OS (see the header).
 
 namespace cutenes::qt {
 
