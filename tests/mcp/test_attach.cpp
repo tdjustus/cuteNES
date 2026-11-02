@@ -246,6 +246,69 @@ TEST(McpAttach, TheBridgeConnectsToAnInstanceThatStartsLater)
     EXPECT_TRUE(status.contains("result")) << status.dump();
 }
 
+// #111: the same for a 2026-07-28 client, which has no initialize. Until an
+// instance appears the bridge answers server/discover and an empty
+// tools/list with a short cache lifetime (MCP caching: ttlMs), so the client
+// does not keep the empty list for long. It acknowledges subscriptions/listen
+// and holds it (MCP subscriptions: the acknowledgement comes first). When an
+// instance appears, the client hears notifications/tools/list_changed on
+// that subscription, and from then on the instance's own notifications.
+TEST(McpAttach, TheBridgeAnswersA20260728ClientUntilAnInstanceStarts)
+{
+    const auto tokenFile = tempTokenPath();
+    StdioServer b({"--attach", "--mcp-token-file", tokenFile.string()});
+    ASSERT_TRUE(b.started);
+    Json discover = b.request(modern("server/discover"), 10s);
+    ASSERT_TRUE(discover.contains("result")) << discover.dump();
+    EXPECT_EQ(discover["result"]["supportedVersions"][0], "2026-07-28") << discover.dump();
+    EXPECT_EQ(discover["result"]["capabilities"]["tools"]["listChanged"], true) << discover.dump();
+    EXPECT_EQ(discover["result"]["resultType"], "complete") << discover.dump();
+    EXPECT_EQ(discover["result"]["_meta"][kMetaServerInfo]["name"], "cuteNES") << discover.dump();
+    EXPECT_LT(discover["result"]["ttlMs"].get<std::int64_t>(), kListTtlMs) << discover.dump();
+
+    Json none = b.request(modern("tools/list", {}, 2), 10s);
+    ASSERT_TRUE(none.contains("result")) << none.dump();
+    EXPECT_EQ(none["result"]["tools"], Json::array()) << none.dump();
+    EXPECT_EQ(none["result"]["resultType"], "complete") << none.dump();
+    EXPECT_LT(none["result"]["ttlMs"].get<std::int64_t>(), kListTtlMs) << none.dump();
+
+    Json refused = b.request(toolCall("session.status", {}, 3), 10s);
+    ASSERT_TRUE(refused.contains("error")) << refused.dump();
+    EXPECT_NE(refused["error"]["message"].get<std::string>().find("MCP server"), std::string::npos)
+        << refused.dump();
+
+    b.send(modern("subscriptions/listen", {{"notifications", {{"toolsListChanged", true}}}}, "s1"));
+    auto ack = b.next(10s);
+    ASSERT_TRUE(ack) << "the subscription was not acknowledged while offline";
+    EXPECT_EQ((*ack)["method"], "notifications/subscriptions/acknowledged") << ack->dump();
+    EXPECT_EQ((*ack)["params"]["_meta"][kMetaSubscription], "s1") << ack->dump();
+    EXPECT_EQ((*ack)["params"]["notifications"]["toolsListChanged"], true) << ack->dump();
+
+    InstanceA instance(tokenFile);
+    ASSERT_TRUE(instance.a.started);
+    std::optional<Json> changed;
+    for (int i = 0; i < 200 && !changed; ++i) changed = b.next(50ms);
+    ASSERT_TRUE(changed) << "no list change when the instance appeared";
+    EXPECT_EQ((*changed)["method"], "notifications/tools/list_changed") << changed->dump();
+    EXPECT_EQ((*changed)["params"]["_meta"][kMetaSubscription], "s1") << changed->dump();
+
+    Json tools = b.request(modern("tools/list", {}, 4), 10s);
+    EXPECT_FALSE(tools["result"]["tools"].empty()) << tools.dump();
+    EXPECT_EQ(tools["result"]["ttlMs"], kListTtlMs) << "the instance's own answer";
+
+    // Relayed from now on: a change on the instance reaches the subscription,
+    // and its own acknowledgement was not passed on as a second one.
+    b.notifications.clear();
+    Json toggled = b.request(toolCall("gui.test_toggle", {}, 5), 10s);
+    EXPECT_TRUE(toggled.contains("result")) << toggled.dump();
+    for (int i = 0; i < 200 && b.notifications.empty(); ++i) {
+        if (auto m = b.next(50ms)) b.notifications.push_back(*m);
+    }
+    ASSERT_EQ(b.notifications.size(), 1u);
+    EXPECT_EQ(b.notifications[0]["method"], "notifications/tools/list_changed");
+    EXPECT_EQ(b.notifications[0]["params"]["_meta"][kMetaSubscription], "s1");
+}
+
 TEST(McpAttach, TheBridgeRunsNoSessionOfItsOwn)
 {
     std::string message;

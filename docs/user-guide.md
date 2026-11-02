@@ -268,6 +268,9 @@ sees the same game you do, and you can play while it watches or helps.
    AppImage with `server` first,
    `claude mcp add cutenes -- /path/to/cuteNES-<version>-linux-x86_64.AppImage server --attach`,
    or make a link named `cutenes-server` to the AppImage and use that.
+   Your MCP client may start before cuteNES does. Its cuteNES tools then
+   appear once cuteNES is open with the MCP server on, without restarting
+   the client.
 3. While an agent is connected, **AUTOMATION** shows at the bottom right of
    the window. Click it to open Settings > Servers.
 

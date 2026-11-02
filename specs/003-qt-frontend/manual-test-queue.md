@@ -570,3 +570,17 @@ By hand, with a battery-backed game (for example, one with save files):
    and with the cheat on until the point it was turned off.
 3. When it ends (or on Stop), the cheat list is as you left it and the
    game's own save is back: the save from step 2, not the movie's.
+
+### MCP client started before cuteNES (#111)
+
+Automated:
+- `McpAttach.TheBridgeAnswersA20260728ClientUntilAnInstanceStarts`: with no instance, a 2026-07-28 client's `server/discover` and empty `tools/list` are answered with a 5 s cache lifetime, a call fails naming the setting, and `subscriptions/listen` is acknowledged. When an instance starts, the subscription hears `notifications/tools/list_changed` instead of a second acknowledgement, and then the instance's own list changes. A version that passes the instance's acknowledgement through fails it.
+- Checked live with the built `cutenes-server --attach` and the running app. The bridge first pointed at an empty token path: discover, an empty list, a refused call and an acknowledged subscription. Copying the app's `mcp.token` there brought `list_changed` on the subscription, 150 tools, and a working `session.status`.
+
+By hand, with Claude Code (which speaks 2026-07-28):
+1. Quit cuteNES. Start Claude Code with cuteNES registered
+   (`claude mcp add cuteNES -- /path/to/cutenes-server --attach`). `/mcp`
+   shows cuteNES connected, with no tools.
+2. Open cuteNES with Settings > Servers > MCP server on. Within a few
+   seconds, without restarting Claude Code, `/mcp` lists cuteNES's tools,
+   and asking Claude to call `session.status` works.

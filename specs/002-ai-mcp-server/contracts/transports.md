@@ -84,6 +84,17 @@ cutenes-server [--library DIR] [--debug-dir DIR]
   the file names a different endpoint, sends the request once more there.
   Its own list-changed subscription reconnects the same way. A request
   that had reached the endpoint is never sent twice.
+- While no instance answers, the bridge keeps the client started, with no
+  tools, so that the client keeps the bridge. A 2025-11-25 client's
+  `initialize`, `tools/list` and `ping` are answered by the bridge. A
+  2026-07-28 client's `server/discover` and `tools/list` are answered with
+  `ttlMs` 5000 instead of the instance's 60000, because the real list is
+  only a launch away. A 2026-07-28 `subscriptions/listen` is acknowledged
+  (with `toolsListChanged` if asked for) and held. Every other request fails,
+  naming the setting to turn on. When an instance answers, the client hears
+  `notifications/tools/list_changed`: on its held subscription in place of
+  the instance's own acknowledgement, or as the 2025-11-25 notification.
+  From then on everything is relayed (#111).
 - Disabling the API closes the MCP endpoint. In-flight and queued calls
   fail with `ShuttingDown`, open streams end, and emulation continues
   (FR-020).
