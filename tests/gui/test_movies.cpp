@@ -422,8 +422,12 @@ TEST(GuiMovies, AMovieKeepsItsCheatsAndBatteryAndLeavesThePlayersAlone)
     const QString path = game.movie("cheats.cnm");
     call(w, "gui.record_movie", {{"path", path.toStdString()}, {"from", "power_on"}});
     play(w);
+    // Paused, so no frame can run between the two changes (a slow runner ran
+    // one while the game was going) and they belong to one frame.
+    call(w, "gui.toggle_pause");
     call(w, "gui.set_cheat_enabled", {{"index", 0}, {"enabled", false}});
     freeze(3); // cheat 1, from the same frame
+    call(w, "gui.toggle_pause");
     play(w);
     call(w, "gui.toggle_pause");
     call(w, "gui.stop_movie");
