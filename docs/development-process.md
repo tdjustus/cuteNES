@@ -99,8 +99,10 @@ need a person.
 ## 7. Release
 
 Releases are tagged from `main`. Before 1.0, each is an alpha or beta, with
-the count running across the project (alpha 4 was `v0.3.1-alpha.4`). The
-tag's CI builds the packages for all three platforms and their
+the count running across the project (alpha 4 was `v0.3.1-alpha.4`; the
+first beta will be `v0.9.0-beta.1`). An alpha may ship with manual checks
+still queued; a beta or a production release waits until every manual test
+has passed. The tag's CI builds the packages for all three platforms and their
 `SHA256SUMS`; the packages are downloaded, checked against the sums, and
 published with notes that say what changed, what is known not to work, how
 to open an unsigned build, and the licenses. Every line of the notes is
@@ -108,7 +110,8 @@ checked against the code or the previous release before publishing. The
 steps are in [`source-control.md`](source-control.md), "Publishing a
 release".
 
-Version 1.0 ships when its milestone has no open issues.
+Version 1.0 ships when its milestone has no open issues and every manual
+test has passed.
 
 ## Working with Claude Code
 
