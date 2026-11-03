@@ -21,8 +21,9 @@ Current hand-set timing constants (inventory):
 | # | Location | Constant | What it stands for | Status |
 |---|----------|----------|--------------------|--------|
 | 1 | `cpu.cpp` `tickHalf`/`rd`/`wr` | half-cycle = 6 ticks; access at mid-cycle | CPU phi2 sample point | Fixed by the design; the value is implied, not named |
-| 2 | `cpu.cpp` `rd` | `$2002` pre-access `sampleNmi()` | NMI edge latched before the clearing read | Calibrated (comment: Holy Mapperel hang) |
-| 3 | `ppu.cpp` `cpuRead` | `$2002` set-race window: dot <= 2 clears the flag; dot 1..4 kills NMI | VBL race (nesdev PPU_registers) | Calibrated |
+| 2 | `cpu.cpp` `endCycle` | NMI sampled once per cycle, `kNmiSampleLeadTicks` (1) before its end, on every cycle type | NMI edge detection during phi2 | Replaced the pre-`$2002`-read sample and the mid-cycle/end-of-cycle split (#42) |
+| 3 | `ppu.cpp` `cpuRead` | `$2002` sees the status of the last dot run; a read one dot before the set suppresses it | VBL race (nesdev PPU frame timing, rules 1-3) | Derived from the rules; replaced the lag and the race and kill windows (#42) |
+| 3a | `ppu.cpp` `stepDot` | odd-frame skip decided as dot 338 of the pre-render line ends (`kOddFrameSkipDecisionDot`) | rendering-enable check for the skipped dot | Calibrated against `10-even_odd_timing` (#42) |
 | 4 | `ppu.cpp` `stepDot` | VBL set at (241,1); pre-render clear at (261,1) | VBL flag edges | Clear dot is the disputed value (see 03-vbl) |
 | 5 | `ppu.cpp` ctor | ignore `$2000/$2001/$2005/$2006` for 29658 CPU cycles | post-reset PPU warm-up | Measured; keep, but name it |
 | 6 | `apu.cpp` `stepApuCycle` (removed) / `k4`,`k5` | frame checkpoints 7457, 14913, 22371, 29830 | frame sequencer | 14913 is calibrated against `5-len_timing` tests 2/3 |
@@ -168,9 +169,13 @@ single value that makes all of its tests pass together.
 - **Taken branches and NMI.** The "poll before the second cycle" quirk of a taken
   non-page-crossing branch applies to the IRQ sample only; NMI is polled at the
   normal penultimate cycle (blargg Branch Timing Tests 3).
-- **Open: NMI visibility at one-PPU-clock precision.** `vbl_nmi_timing/7`
-  needs a different NMI-visibility threshold for each of its three CPU/PPU
-  alignments; the core runs the CPU on whole three-dot cycles with a fixed
-  phase, so no single rule passes all three (issue #42). A master-tick
-  sweep and a Mesen2-style access split (FIX_ATTEMPTS.md, 2026-10-29) show
-  that the cause is the `$2002` read model, not the NMI sample point.
+- **Resolved: NMI visibility at one-PPU-clock precision (#42).**
+  `vbl_nmi_timing/7` passes since the `$2002` status-read redesign
+  (STATUS_READ_MODEL.md; the sweep is in FIX_ATTEMPTS.md, 2026-11-03). A read
+  sees the status of the last dot run, with no lag and no windows; the CPU
+  samples NMI once per cycle, one master tick before the cycle ends, which
+  sees exactly one dot more than the cycle's bus access. Two timings that had
+  been calibrated against the old lag moved with it: the odd-frame skip is
+  decided as dot 338 ends (item 3a), and the CPU samples the IRQ line after
+  the cycle's first half, with the PPU and mappers caught up, instead of
+  before it (`mmc3_test/4-scanline_timing`).

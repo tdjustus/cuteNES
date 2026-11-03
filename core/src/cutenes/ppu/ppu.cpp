@@ -115,7 +115,6 @@ void Ppu::reset(bool /*cold*/)
     m_dot = 0;
     m_oddFrame = false;
     m_suppressSet = false;
-    m_nmiKilled = false;
     // Writes to $2000/$2001/$2005/$2006 are ignored for ~29658 CPU cycles
     // after reset (research.md D4).
     m_ignoreWritesUntil =
@@ -156,34 +155,22 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
     std::uint8_t value = decayedBusValue();
     switch (addr) {
     case 0x2002:
-        // Open-bus low 5 bits decay into the returned status byte.
+        // A read sees the status as of the last dot the PPU has run: a flag
+        // change is visible once its dot has run, and not before. This one
+        // rule covers every bit and both edges (nesdev "PPU frame timing";
+        // STATUS_READ_MODEL.md, rule 1). The open-bus low 5 bits decay into
+        // the returned byte.
         value = static_cast<std::uint8_t>(
-            (m_statusLag & 0xE0) | (decayedBusValue() & 0x1F));
-        // Race: reading at (or within a CPU clock of) the set dot returns
-        // the flag clear and suppresses it for the rest of the frame
-        // (nesdev PPU_registers; exercised by 02-vbl_set_time).
-        if (m_scanline == kVblankLine && m_dot <= timing::kVblRaceDotMax) {
-            // Reading at the set dot: the flag reads clear; the phi2 sample
-            // after this read sees the line low, so this cycle is covered.
-            value &= static_cast<std::uint8_t>(~0x80);
-        } else if ((m_status & 0x80) != 0 && (m_statusLag & 0x80) == 0
-            && m_scanline == kVblankLine) {
-            // Asymmetric lag (T037 session 25): the CLEAR transition reads
-            // back set through the end of its dot (03-vbl_clear_time), but
-            // a SET that landed earlier in THIS dot is already visible —
-            // the hardware flag rises mid-dot and a later phi2 sample in
-            // the same dot reads it (the sprdma boot poll: one fewer 7-
-            // cycle iteration per blargg's validated alignment).
-            value |= 0x80;
-        }
-        if (m_scanline == kVblankLine && m_dot >= timing::kNmiKillDotMin && m_dot <= timing::kNmiKillDotMax) {
-            // Read within ~2 PPU clocks of the set: cancel this frame's NMI
-            // even if a phi2 sample already latched the edge (rows 5-6).
-            m_nmiKilled = true;
-            m_status &= static_cast<std::uint8_t>(~0x80);
+            (m_status & 0xE0) | (decayedBusValue() & 0x1F));
+        if (m_scanline == kVblankLine && m_dot == timing::kVblSetDot) {
+            // The set dot is next: "Reading one PPU clock before reads it as
+            // clear and never sets the flag or generates NMI for that frame"
+            // (rule 2). A read on the set dot or later sees the flag and
+            // clears it below; whether the NMI was missed is then up to the
+            // CPU's sample (rule 3).
+            m_suppressSet = true;
         }
         m_status &= static_cast<std::uint8_t>(~0x80); // reading clears VBlank
-        m_statusLag = m_status; // a read's side effects are visible to the next read
         m_w = 0;
         break;
     case 0x2004:
@@ -954,17 +941,9 @@ void Ppu::renderPixel(std::uint32_t x)
 
 void Ppu::stepDot()
 {
-    m_statusLag = m_status; // the read path sees the previous dot's status
     if (m_cart != nullptr && m_dot == 0) {
         m_cart->onScanline(m_scanline, renderingEnabled());
     }
-    // The pre-render line is 261 (NTSC) or 311 (PAL); NTSC alone skips a dot
-    // on odd frames while rendering.
-    if (m_scanline == preRenderLine() && m_dot == 339 && m_oddFrame
-        && oddFrameSkips() && renderingEnabled()) {
-        m_dot = 340; // skip the final idle dot of the odd frame
-    }
-
     // (A12 tracking is fetch-level: see notifyA12 / the fetch sites.)
 
     if (m_scanline < kVisibleLines) {
@@ -1035,15 +1014,25 @@ void Ppu::stepDot()
         m_frameComplete = true; // final visible pixel emitted (239,255)
     }
     if (m_scanline == kVblankLine && m_dot == timing::kVblSetDot) {
-        m_status |= 0x80; // NMI line rises; the CPU samples at phi2
+        if (!m_suppressSet) {
+            m_status |= 0x80; // NMI line rises; the CPU samples at phi2
+        }
+        m_suppressSet = false;
     }
     if (m_scanline == preRenderLine() && m_dot == timing::kVblClearDot) {
         m_status &= static_cast<std::uint8_t>(~0xE0); // clear V/S0/O
-        m_suppressSet = false;
-        m_nmiKilled = false;
         m_oddFrame = !m_oddFrame;
     }
 
+    // The pre-render line is 261 (NTSC) or 311 (PAL); NTSC alone skips a dot
+    // on odd frames while rendering. The decision is taken as this dot ends,
+    // so a $2001 write that lands before the next dot is too late for it
+    // (timing.hpp, kOddFrameSkipDecisionDot).
+    if (m_scanline == preRenderLine()
+        && m_dot == timing::kOddFrameSkipDecisionDot && m_oddFrame
+        && oddFrameSkips() && renderingEnabled()) {
+        ++m_dot; // skip one idle dot of the odd frame
+    }
     ++m_dot;
     if (m_dot > 340) {
         m_dot = 0;
@@ -1149,7 +1138,7 @@ void Ppu::saveState(StateWriter& w) const
     w.w(m_ctrl);
     w.w(m_mask);
     w.w(m_status);
-    w.w(m_statusLag);
+    w.w(std::uint8_t{0}); // reserved: was the status lag (format 1 layout)
     w.w(m_v);
     w.w(m_t);
     w.w(m_fineX);
@@ -1184,7 +1173,7 @@ void Ppu::saveState(StateWriter& w) const
     w.w(m_oddFrame);
     w.w(m_frameComplete);
     w.w(m_suppressSet);
-    w.w(m_nmiKilled);
+    w.w(std::uint8_t{0}); // reserved: was the NMI kill flag
     w.w(m_ignoreWritesUntil);
     w.w(m_unitCount);
     w.w(m_spriteZeroNext);
@@ -1204,7 +1193,7 @@ void Ppu::loadState(StateReader& r)
     m_ctrl = r.get<std::uint8_t>();
     m_mask = r.get<std::uint8_t>();
     m_status = r.get<std::uint8_t>();
-    m_statusLag = r.get<std::uint8_t>();
+    (void)r.get<std::uint8_t>(); // reserved
     m_v = r.get<std::uint16_t>();
     m_t = r.get<std::uint16_t>();
     m_fineX = r.get<std::uint8_t>();
@@ -1239,7 +1228,7 @@ void Ppu::loadState(StateReader& r)
     m_oddFrame = r.get<std::uint8_t>() != 0;
     m_frameComplete = r.get<std::uint8_t>() != 0;
     m_suppressSet = r.get<std::uint8_t>() != 0;
-    m_nmiKilled = r.get<std::uint8_t>() != 0;
+    (void)r.get<std::uint8_t>(); // reserved
     m_ignoreWritesUntil = r.get<std::uint64_t>();
     m_unitCount = r.get<std::int32_t>();
     m_spriteZeroNext = r.get<std::uint8_t>() != 0;

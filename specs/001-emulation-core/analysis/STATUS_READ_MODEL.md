@@ -1,7 +1,8 @@
 # `$2002` status-read and NMI model: redesign (issue #42)
 
-**Status:** design, not started. The maintainer has scheduled it after the MCP
-server (#31) and the Qt frontend (#32), and it must land before 1.0.
+**Status:** implemented (2026-11-03). `vbl_nmi_timing/7` passes, with the
+whole gate below. See "Outcome" at the end for what was built and where it
+departs from this plan. The design below is kept as written.
 
 **Why:** `vbl_nmi_timing/7.nmi_timing` fails ("NMI 2 PPU clocks too early").
 The 2026-10-29 attempt (`FIX_ATTEMPTS.md`) showed the cause is not where NMI
@@ -174,3 +175,50 @@ make one ROM pass: that recreates the patchwork this design replaces.
   exhaustively against the full gate. Prune with the hardware constraints
   first: read and write offsets inside the M2-high part of the cycle, and
   NMI sampled once per cycle.
+
+## Outcome (2026-11-03)
+
+What landed, against the plan above:
+
+- **Visibility rule.** A `$2002` read sees `m_status` as of the last dot the
+  PPU has run. The sweep found `kStatusReadLatency` = 0, so there is no
+  `statusPrev`/`statusChangedAt`: the status byte alone is enough. Removed:
+  `m_statusLag`, the asymmetric branch, `kVblRaceDotMax`, `kNmiKill*`,
+  `consumeNmiKill` and `m_nmiKilled`.
+- **Rule 2.** `m_suppressSet` is now wired: a read whose next dot is the set
+  dot arms it, and the set dot then leaves the flag clear.
+- **Rule 3.** The CPU samples the NMI line once per cycle, in `Cpu::endCycle`,
+  `kNmiSampleLeadTicks` (1) master ticks before the cycle ends, with the PPU
+  caught up. The pre-`$2002`-read sample is gone; Holy Mapperel still passes.
+- **Read and write offsets.** Not changed. With 4-tick dots and cycles that
+  start on multiples of 12, the existing mid-cycle access (tick 6) already
+  sees the same PPU dot as Mesen2's read at 5 and write at 7, so
+  `kCpuReadOffset`/`kCpuWriteOffset` would have been constants with no
+  effect. The 12-tick PPU reset lag is unchanged, so nestest's log still
+  matches.
+- **The cause of the earlier failures.** Bus cycles sampled NMI mid-cycle
+  while internal cycles (`Cpu::tick`) sampled at the very end. The
+  2026-10-29 "sample at cycle end" attempt changed only the bus cycles. With
+  one sample point for every cycle type, the NMI-related ROMs pass together.
+- **Two calibrations that moved with the lag.** Both are timed against a
+  `$2002` sync, so they had absorbed the old one-dot lag:
+  - the odd-frame skip is decided as dot 338 of the pre-render line ends
+    (`kOddFrameSkipDecisionDot`), not when dot 339 starts
+    (`10-even_odd_timing`);
+  - the CPU samples the IRQ line after the cycle's first half, with the PPU
+    and mappers caught up, rather than before it
+    (`mmc3_test/4-scanline_timing`).
+- **Save states.** The plan's step 5 (bump `formatVersion` to 2) was not
+  needed. No field changed meaning, and the two retired PPU bytes are written
+  as zero and ignored on load, so states saved by earlier builds still load.
+- **Sweep harness.** Not committed (step 2). Once the analysis showed the
+  read and write offsets were already right, the space was a handful of
+  discrete choices (read latency 0 or 1, NMI sample lead, skip decision dot,
+  IRQ sample point). They were swept with temporary environment knobs
+  against the gate; the matrix is in `FIX_ATTEMPTS.md` (2026-11-03), and the
+  knobs were removed.
+- **Re-pinned hashes.** Five moved, and each was viewed and explained where it
+  is pinned: the goldens `full_palette` (2 px shift) and `mmc5_exram` (copper
+  bar ends), and the playtests `super-mario-bros-boot-changes` (one frame
+  ahead) and `action53-test28-v004` (an OAMADDR row corruption on the
+  interim screen; the final verdict is unchanged).

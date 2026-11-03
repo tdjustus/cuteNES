@@ -314,7 +314,12 @@ Cpu::Cpu(Bus& bus, Scheduler& scheduler, Tickable* ppu, Tickable* apu)
 
 void Cpu::tickHalf(bool /*phi2*/)
 {
-    m_sched.advanceMaster(m_sched.cpuCycleToMaster(1) / timing::kCpuHalvesPerCycle);
+    tickHalf(false, m_sched.cpuCycleToMaster(1) / timing::kCpuHalvesPerCycle);
+}
+
+void Cpu::tickHalf(bool /*phi2*/, std::uint64_t ticks)
+{
+    m_sched.advanceMaster(ticks);
     const std::uint64_t now = m_sched.now();
     if (m_ppu != nullptr) {
         m_ppu->runTo(now);
@@ -322,6 +327,24 @@ void Cpu::tickHalf(bool /*phi2*/)
     if (m_apu != nullptr) {
         m_apu->runTo(now);
     }
+}
+
+// The second half of every CPU cycle (bus or internal). The NMI edge detector
+// "polls the status of the NMI line during φ2 of each CPU cycle" (nesdev "CPU
+// interrupts"), so the line is sampled once per cycle, near its end, with the
+// PPU caught up to that instant (timing::kNmiSampleLeadTicks). A level that a
+// $2002 read drops before the sample is never seen, which is the hardware's
+// read-on-the-set-dot NMI suppression (STATUS_READ_MODEL.md, rule 3).
+void Cpu::endCycle()
+{
+    const std::uint64_t half =
+        m_sched.cpuCycleToMaster(1) / timing::kCpuHalvesPerCycle;
+    m_sched.advanceMaster(half - timing::kNmiSampleLeadTicks);
+    if (m_ppu != nullptr) {
+        m_ppu->runTo(m_sched.now());
+    }
+    sampleNmi();
+    tickHalf(false, timing::kNmiSampleLeadTicks);
 }
 
 // A pending DMC fetch halts the CPU only on a read (or internal) cycle:
@@ -390,10 +413,6 @@ void Cpu::sampleNmi()
     if (m_ppu == nullptr) {
         return;
     }
-    // The pins are sampled right after the bus access (during phi2), before
-    // the cycle's second half advances time — a $2000 write that enables
-    // NMI one cycle before the flag clear still raises the line in time
-    // (07-nmi_on_timing rows 3-4).
     if (m_ppu != nullptr) {
         const bool line = m_ppu->nmiLine();
         if (line && !m_nmiWasHigh) {
@@ -412,19 +431,11 @@ std::uint8_t Cpu::rd(std::uint16_t addr)
 {
     serviceDmcIfDue(true); // reads (and internal cycles) are haltable
     ++m_cycles;
-    sampleIrqCycle();
     // A DMC fetch due at this cycle boundary has already been serviced by
     // serviceDmcIfDue() above: the halt/dummy/align cycles are consumed
     // there and m_dmaServicedThisHalf is set for the re-issue below.
-    // Pre-access NMI sample: the silicon edge detector is continuous, so
-    // the line must be observed after catch-up but BEFORE a $2002 read
-    // clears the flag — a tight poll loop otherwise never latches the
-    // edge (the Holy Mapperel vsync hang). The kill window still cancels
-    // latched edges, preserving the suppression tests.
-    if ((addr & 0x3FFF) == 0x2002) {
-        sampleNmi();
-    }
     tickHalf(false);
+    sampleIrqCycle();
     // A DMC-stalled access re-issues on the bus as READS (the halt drives
     // the address bus; blargg dmc_dma_during_read4): $2007 refills the
     // read buffer and increments v twice ("2-3 extra $2007 reads") while
@@ -447,14 +458,7 @@ std::uint8_t Cpu::rd(std::uint16_t addr)
     }
     m_dmaServicedThisHalf = false;
     const std::uint8_t value = m_bus.read(addr);
-    if ((addr & 0x3FFF) == 0x2002 && m_ppu != nullptr) {
-        // A $2002 read in the suppression window cancels the frame's NMI.
-        if (m_ppu->consumeNmiKill()) {
-            m_nmiPending = false;
-        }
-    }
-    sampleNmi();
-    tickHalf(false);
+    endCycle();
     return value;
 }
 
@@ -462,8 +466,7 @@ std::uint8_t Cpu::rawRead(std::uint16_t addr)
 {
     tickHalf(false);
     const std::uint8_t value = m_bus.read(addr);
-    sampleNmi();
-    tickHalf(false);
+    endCycle();
     return value;
 }
 
@@ -471,8 +474,8 @@ void Cpu::wr(std::uint16_t addr, std::uint8_t value)
 {
     serviceDmcIfDue(false); // a write cycle never accepts the halt
     ++m_cycles;
-    sampleIrqCycle();
     tickHalf(false);
+    sampleIrqCycle();
     // A stalled $2007 WRITE re-issues as reads (buffer refill + v
     // increment) while the byte itself lands once — "DMC DMA during
     // $2007 write has no effect" on VRAM content (dmc_dma_during_read4).
@@ -488,8 +491,7 @@ void Cpu::wr(std::uint16_t addr, std::uint8_t value)
     }
     m_dmaServicedThisHalf = false;
     m_bus.write(addr, value);
-    sampleNmi();
-    tickHalf(false);
+    endCycle();
 }
 
 void Cpu::push(std::uint8_t value)
@@ -804,7 +806,8 @@ void Cpu::setIrqLineSource(std::function<bool()> source)
     m_irqLineSource = std::move(source);
 }
 
-// Sample the live IRQ line at the start of a normal CPU cycle. DMA stall
+// Sample the live IRQ line once per normal CPU cycle, after its first half
+// with the PPU and mappers caught up (mmc3_test 4-scanline_timing; #42). DMA stall
 // cycles (sprite/DMC) never reach this path, so they do not count toward the
 // instruction's architectural length — the poll for `sta $4014` therefore
 // lands on its hi-byte-fetch cycle, before the DMA stretches the write cycle.

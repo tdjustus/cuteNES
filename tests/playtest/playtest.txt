@@ -55,7 +55,9 @@ rom ../../roms-local/super-mario-bros.nes
 run 600 none
 expect-changes 1
 # Pinned after viewing the frame: see docs/test-corpus.md (re-pin procedure).
-expect-hash 6cde0dac
+# Re-pinned for #42: the attract demo runs one frame ahead (this frame is
+# the old frame 601), since a boot-time $2002 poll no longer misses a VBL.
+expect-hash 6681cf81
 end
 
 entry tetris-boot-changes

@@ -37,15 +37,6 @@ public:
     static const std::array<std::uint32_t, 64>& defaultPalette() { return kPalette; }
 
     // NMI line: vblank flag AND enable (the CPU samples and edge-detects).
-    bool consumeNmiKill() override
-    {
-        if (m_nmiKilled) {
-            m_nmiKilled = false;
-            return true;
-        }
-        return false;
-    }
-
     bool nmiLine() const override
     {
         const bool high =
@@ -153,10 +144,6 @@ private:
 
     // Register file + scroll latches.
     std::uint8_t m_ctrl = 0, m_mask = 0, m_status = 0;
-    // $2002 bit 7 as of the previous dot: the read path observes the
-    // VBL flag one dot behind the live level the NMI sees (03-vbl_clear_time
-    // vs 07-nmi_on_timing; timing.hpp item 3/4).
-    std::uint8_t m_statusLag = 0;
     std::uint16_t m_v = 0, m_t = 0;
     std::uint8_t m_fineX = 0, m_w = 0, m_readBuffer = 0;
     std::uint64_t m_lastVramReadMaster = ~0ull; // double-2007 quirk state
@@ -197,8 +184,7 @@ private:
     int m_scanline = 0; // 0-239 visible, 241-260 vblank, 261 pre-render
     int m_dot = 0;
     bool m_oddFrame = false;
-    bool m_suppressSet = false; // read 1 dot before the set
-    bool m_nmiKilled = false;   // $2002 read inside the NMI kill window
+    bool m_suppressSet = false; // $2002 read 1 dot before the set (rule 2)
 
     // Per-dot sprite evaluation state (research.md D3; task T035). OAMADDR
     // itself is the evaluation pointer: evaluation starts at its dot-65
