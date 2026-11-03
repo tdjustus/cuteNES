@@ -328,9 +328,17 @@ cutenes [--fullscreen] [--library DIR] [--load-state SLOT|FILE]
 ```
 
 - `ROM` starts that game straight away, and `--load-state` then loads a slot
-  (1-10) or a state file.
+  (1-10) or a state file. A number is a slot; to load a state file whose
+  name is only digits, write it as a path, such as `./3`.
 - `--library DIR` uses another library folder for this run only.
-- `--api` and `--mcp` turn the servers on for this run only.
+- `--api` and `--mcp` turn the servers on for this run only. `--mcp` turns
+  the API on too, because MCP needs it. `--api-port N` and `--mcp-port N`
+  choose the ports for this run (0 picks a free one); without them, the
+  ports in Settings > Servers are used. Your saved settings stay as they
+  are. If you change Settings > Servers during the run, the settings decide
+  from then on.
+- An option cuteNES does not know, or a missing or invalid value, prints the
+  usage and exits with code 2.
 
 ## Troubleshooting
 

@@ -259,3 +259,34 @@ TEST(GuiServers, TheSettingsPageShowsAndChangesTheServers)
         EXPECT_TRUE(waitUntil([&] { return QFile::exists(tokens + QStringLiteral("/mcp.token")); }));
     }
 }
+
+// contracts/cli.md "Run-only options": --mcp turns both servers on for this
+// run and leaves the saved settings alone; a change to the Servers settings
+// then decides, as it would without the option.
+TEST(GuiServers, RunOnlyServersLeaveTheSettingsAlone)
+{
+    QString tokens;
+    MainWindow::Options options = serverOptions(&tokens);
+    options.runApi = true;
+    options.runMcp = true;
+    options.runApiPort = 0;
+    options.runMcpPort = 0;
+    MainWindow w(options);
+    const QString mcpFile = tokens + QStringLiteral("/mcp.token");
+    const QString apiFile = tokens + QStringLiteral("/api.token");
+    ASSERT_TRUE(waitUntil([&] { return QFile::exists(mcpFile) && QFile::exists(apiFile); }));
+    std::string error;
+    const auto endpoint = cutenes::mcp::readTokenFile(mcpFile.toStdString(), error);
+    ASSERT_TRUE(endpoint) << error;
+    EXPECT_EQ(cutenes::mcp::probe(*endpoint, error), 0) << error;
+
+    const Json saved = call(w, "gui.get_settings", {{"group", "servers"}})["values"]["servers"];
+    EXPECT_EQ(saved["apiEnabled"], false) << "run-only";
+    EXPECT_EQ(saved["mcpEnabled"], false);
+    EXPECT_EQ(saved["apiPort"], 8765) << "the port given is not saved either";
+    EXPECT_EQ(saved["mcpPort"], 8766);
+
+    // Any change to the Servers settings: they decide from then on.
+    call(w, "gui.set_setting", {{"key", "servers.mcpEnabled"}, {"value", false}});
+    EXPECT_TRUE(waitUntil([&] { return !QFile::exists(mcpFile) && !QFile::exists(apiFile); }));
+}

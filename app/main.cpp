@@ -1,5 +1,5 @@
 // cutenes: the Qt desktop frontend (specs/003-qt-frontend). The command
-// line follows contracts/cli.md; options of later phases arrive with them.
+// line follows contracts/cli.md.
 
 #include "cli.hpp"
 #include "log/app_log.hpp"
@@ -44,6 +44,10 @@ int main(int argc, char* argv[])
 
     cutenes::app::MainWindow::Options options;
     options.libraryRoot = cli.library;
+    options.runApi = cli.api;
+    options.runApiPort = cli.apiPort;
+    options.runMcp = cli.mcp;
+    options.runMcpPort = cli.mcpPort;
     cutenes::app::MainWindow window(options);
     if (cli.fullscreen) {
         window.showFullScreen();
@@ -52,6 +56,6 @@ int main(int argc, char* argv[])
     }
     window.checkLibrary();
     window.startUpdates(!cli.rom.isEmpty());
-    if (!cli.rom.isEmpty()) window.openRom(cli.rom);
+    if (!cli.rom.isEmpty()) window.openRom(cli.rom, cli.loadSlot, cli.loadFile);
     return QApplication::exec();
 }
