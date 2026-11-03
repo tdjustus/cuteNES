@@ -110,7 +110,7 @@ each has its own users:
 | What | Version lives in | Tag | Who reads it |
 |---|---|---|---|
 | The application (GUI, servers, packages) | `project(cutenes VERSION ...)` in the top-level `CMakeLists.txt`: About, the macOS bundle, `User-Agent`, the update check and the package names all take it from there | `v<major>.<minor>.<patch>`, or `v<...>-alpha.<n>` / `-beta.<n>` / `-rc.<n>` for a prerelease | people downloading a package, and the self-update (research R16) |
-| The emulation core (the library) | `core/include/cutenes/version.hpp` and `core/src/cutenes/version.cpp` (and `tests/unit/test_version.cpp`) | `core-v<major>.<minor>.<patch>` | projects embedding the core (README "Using the core") |
+| The emulation core (the library) | `core/include/cutenes/version.hpp` and `core/src/cutenes/version.cpp` (and `tests/unit/test_version.cpp`) | `core-v<major>.<minor>.<patch>` | projects embedding the core ([`using-the-core.md`](using-the-core.md)) |
 
 - **Why separate.** The core's version is written into every save state, and
   until 1.0 a state loads only into the exact core version that wrote it
