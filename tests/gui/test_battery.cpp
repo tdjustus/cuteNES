@@ -67,6 +67,12 @@ bool waitForFile(const QString& path, std::chrono::milliseconds limit)
     return QFile::exists(path);
 }
 
+// The byte at `index`, or 0 while the file is missing or shorter.
+uchar byteAt(const QByteArray& bytes, qsizetype index)
+{
+    return index < bytes.size() ? uchar(bytes[index]) : 0;
+}
+
 bool hasSignature(const QByteArray& save)
 {
     return save.size() > 3 && uchar(save[1]) == 0xDE && uchar(save[2]) == 0xB0 && uchar(save[3]) == 0x61;
@@ -113,11 +119,18 @@ TEST(GuiBattery, WritesAtMostOncePerInterval)
         QThread::msleep(20);
     }
     const auto elapsed = std::chrono::steady_clock::now() - start;
-    QThread::msleep(500);
+    // The last value lands one interval after the previous write, at most.
+    // Wait for it generously: a Debug write on a CI runner can take longer
+    // than the slack a fixed sleep leaves.
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (byteAt(readAll(saver.path()), 0x1000) != a + 19
+        && std::chrono::steady_clock::now() < deadline) {
+        QThread::msleep(10);
+    }
     const int allowed = 1 + static_cast<int>(elapsed / 400ms) + 1;
     EXPECT_GE(saver.writes(), 1);
     EXPECT_LE(saver.writes(), allowed);
-    EXPECT_EQ(uchar(readAll(saver.path())[0x1000]), a + 19) << "the last value wins";
+    EXPECT_EQ(byteAt(readAll(saver.path()), 0x1000), a + 19) << "the last value wins";
 }
 
 TEST(GuiBattery, ClosingWritesAtOnce)
@@ -133,6 +146,31 @@ TEST(GuiBattery, ClosingWritesAtOnce)
     saver.close(game.machine);
     EXPECT_TRUE(hasSignature(readAll(opened.path)));
     EXPECT_FALSE(saver.active());
+}
+
+// An explicit change, such as importing a save (#162), is written at once,
+// not when the interval next allows.
+TEST(GuiBattery, SaveNowWritesAtOnceInsideTheInterval)
+{
+    QTemporaryDir tmp;
+    const Library library(tmp.path());
+    ASSERT_TRUE(library.ensureLayout());
+    Game game;
+    BatterySaver saver(1h);
+    const auto opened = saver.open(library, game.id, QStringLiteral("G"), game.machine);
+    ASSERT_TRUE(opened.active);
+    game.run(60);
+    saver.poll(game.machine); // the first write; the next is an hour away
+    ASSERT_TRUE(waitForFile(opened.path, 2s));
+    for (int i = 0; i < 400 && saver.writes() < 1; ++i) QThread::msleep(5);
+    ASSERT_EQ(saver.writes(), 1);
+
+    const std::uint8_t v = 0x5A;
+    game.machine.writeMemory(0x7000, &v, 1);
+    saver.saveNow(game.machine);
+    EXPECT_EQ(uchar(readAll(opened.path)[0x1000]), 0x5A);
+    EXPECT_EQ(saver.writes(), 2);
+    EXPECT_TRUE(saver.active()) << "saving goes on afterwards";
 }
 
 TEST(GuiBattery, ASaveIsLoadedByIdentity)

@@ -248,8 +248,9 @@ TEST(GuiTools, ExportWritesTheBatteryRamAndImportReplacesIt)
     call(w, "gui.import_battery_save", {{"path", imported.toStdString()}});
     EXPECT_EQ(call(w, "core.run_state")["runState"], "Paused") << "a paused game stays paused";
     EXPECT_EQ(sram(w), other);
-    // The library's own save follows at once, even while paused.
-    EXPECT_TRUE(waitUntil([&] { return readAll(saved) == other; }));
+    // The library's own save follows at once, even while paused, although
+    // the game wrote its RAM moments ago (#162: not after the interval).
+    EXPECT_EQ(readAll(saved), other);
 
     // A short save is padded with zeros, a long one trimmed (library-layout ".sav").
     ASSERT_TRUE(writeAll(imported, QByteArray("\x01\x02\x03", 3)));

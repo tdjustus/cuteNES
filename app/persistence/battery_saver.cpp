@@ -88,6 +88,22 @@ void BatterySaver::poll(const Machine& machine)
     m_wake.notify_all();
 }
 
+void BatterySaver::saveNow(const Machine& machine)
+{
+    if (!m_active || m_held) return;
+    QByteArray now = sramBytes(machine);
+    {
+        std::lock_guard lock(m_mutex);
+        m_known = now;
+        m_pending.clear(); // superseded by this write
+        m_hasPending = false;
+        m_lastWrite = std::chrono::steady_clock::now();
+        ++m_generation;
+    }
+    std::lock_guard writing(m_writeMutex);
+    write(now);
+}
+
 void BatterySaver::close(const Machine& machine)
 {
     if (!m_active) return;
@@ -99,6 +115,7 @@ void BatterySaver::close(const Machine& machine)
         has = m_hasPending;
         last = std::move(m_pending);
         m_hasPending = false;
+        ++m_generation;
     }
     if (has) {
         std::lock_guard lock(m_writeMutex);
@@ -119,19 +136,24 @@ void BatterySaver::run()
         m_wake.wait(lock, [this] { return m_stopping || m_hasPending; });
         if (m_stopping) return;
         // At most one write per interval; newer RAM replaces older meanwhile.
-        const auto due = m_lastWrite + m_interval;
-        if (std::chrono::steady_clock::now() < due) {
-            m_wake.wait_until(lock, due, [this] { return m_stopping; });
+        if (m_lastWrite && std::chrono::steady_clock::now() < *m_lastWrite + m_interval) {
+            m_wake.wait_until(lock, *m_lastWrite + m_interval, [this] { return m_stopping; });
             if (m_stopping) return;
             if (!m_hasPending) continue; // close() took it
         }
         QByteArray bytes = std::move(m_pending);
         m_hasPending = false;
         m_lastWrite = std::chrono::steady_clock::now();
+        const std::uint64_t generation = m_generation;
         lock.unlock();
         {
             std::lock_guard writing(m_writeMutex);
-            write(bytes);
+            bool current = false;
+            {
+                std::lock_guard check(m_mutex);
+                current = generation == m_generation;
+            }
+            if (current) write(bytes);
         }
         lock.lock();
     }

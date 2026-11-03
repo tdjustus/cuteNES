@@ -1592,10 +1592,11 @@ void GuiHost::registerCommands(api::Registry& registry)
             const Result loaded = call(ctx, "core.load_sram", {{"bytes", ram.toBase64().toStdString()}});
             if (loaded.isError()) return loaded;
             // Games read their save when they start, so the game starts
-            // again; the library's save follows now, even while paused.
+            // again; the library's save follows now, even while paused, and
+            // even if the game wrote its RAM moments ago (#162).
             const Result reset = call(ctx, "core.reset");
             if (reset.isError()) return reset;
-            m_battery.poll(machine);
+            m_battery.saveNow(machine);
             m_window.showMessage(QObject::tr("Battery save imported from %1").arg(QFileInfo(path).fileName()));
             return Result::ok({{"path", str(path)}});
         });
