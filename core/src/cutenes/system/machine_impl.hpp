@@ -102,10 +102,11 @@ struct ApuIoBridge final : CpuBusDevice {
     // get (even cycles get, odd put). A pending DMC fetch preempts an OAM
     // get; its dummy/align cycles overlap the OAM stream (wiki: DMC DMA
     // during OAM DMA), costing one stolen get plus one OAM realign. Every
-    // cycle advances PPU and APU catch-up.
+    // cycle advances PPU and APU catch-up. Cycles are the region's (12
+    // master ticks NTSC, 16 PAL; #160).
     void dmaCycle()
     {
-        sched->advanceMaster(12);
+        sched->advanceMaster(sched->cpuCycleToMaster(1));
         ppu->runTo(sched->now());
         apu->runTo(sched->now());
     }
@@ -115,7 +116,7 @@ struct ApuIoBridge final : CpuBusDevice {
     // so the next cycle is now/12 + 1.
     bool nextIsGet() const
     {
-        return ((sched->now() / 12) + 1) % 2 == 0;
+        return ((sched->now() / sched->cpuCycleToMaster(1)) + 1) % 2 == 0;
     }
 
     // The DMC get: consumes this get cycle and refills the sample buffer.
