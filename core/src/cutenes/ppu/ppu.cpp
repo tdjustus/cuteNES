@@ -1054,11 +1054,12 @@ void Ppu::evaluateSpritesForLine0()
 void Ppu::runTo(std::uint64_t masterClock)
 {
     // PPU lags the CPU by one cycle at power-on (the hardware reset
-    // synchronizer): the PPU state reflects dots completed by
-    // master - 12 (T037 session 25; with the 8-cycle reset this yields
-    // first-fetch PPU (0,21) per nestest.log).
-    if (masterClock >= 12) {
-        masterClock -= 12;
+    // synchronizer): the PPU state reflects dots completed by master minus
+    // one CPU cycle of the region, 12 ticks on NTSC and 16 on PAL (T037
+    // session 25; with the 8-cycle reset this yields first-fetch PPU
+    // (0,21) per nestest.log; Mesen2's NesCpu::Reset; #171).
+    if (masterClock >= m_profile.cpuDivisor) {
+        masterClock -= m_profile.cpuDivisor;
     } else {
         masterClock = 0;
     }
