@@ -59,7 +59,7 @@ for their games still go in this library.
 | File | Format |
 |---|---|
 | `.sav` | Raw battery RAM: exactly `sram().size` bytes, the format other emulators use (FR-013). Import replaces the whole save: a short file is padded with zeros, a long one trimmed |
-| `.state` | The core's save-state blob (`captureState`), unchanged. It carries the core version, so a state from another version is refused with `IncompatibleCoreVersion` |
+| `.state` | The core's save-state blob (`captureState`), unchanged. It carries its format version and the core version that wrote it; a state of another format version is refused with `IncompatibleFormat`, and one from another core version loads (#166) |
 | `slot-NN.png` | A 256x240 thumbnail taken when the state was saved |
 | `slot-NN.json` | `{"name": …}`: what the menus call the state (by default, the time it was saved) |
 | `.cnm` | A movie: see below |

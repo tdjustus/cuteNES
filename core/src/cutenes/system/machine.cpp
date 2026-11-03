@@ -496,11 +496,10 @@ LoadStateError Machine::Impl::applyState(const std::uint8_t* data,
         return LoadStateError::BadMagic;
     }
     StateReader r(data, size);
+    // The format version alone decides: the core version that wrote the
+    // state is information (#166), so states load across core releases.
     if (r.formatVersion() != 1) {
         return LoadStateError::IncompatibleFormat;
-    }
-    if (r.coreVersion() != coreVersion) {
-        return LoadStateError::IncompatibleCoreVersion;
     }
     if (r.cartridgeId() != cartridgeId()) {
         return LoadStateError::WrongCartridge;

@@ -112,11 +112,13 @@ each has its own users:
 | The application (GUI, servers, packages) | `project(cutenes VERSION ...)` in the top-level `CMakeLists.txt`: About, the macOS bundle, `User-Agent`, the update check and the package names all take it from there | `v<major>.<minor>.<patch>`, or `v<...>-alpha.<n>` / `-beta.<n>` / `-rc.<n>` for a prerelease | people downloading a package, and the self-update (research R16) |
 | The emulation core (the library) | `core/include/cutenes/version.hpp` and `core/src/cutenes/version.cpp` (and `tests/unit/test_version.cpp`) | `core-v<major>.<minor>.<patch>` | projects embedding the core ([`using-the-core.md`](using-the-core.md)) |
 
-- **Why separate.** The core's version is written into every save state, and
-  until 1.0 a state loads only into the exact core version that wrote it
-  (`IncompatibleCoreVersion`). Raising it makes every user's save states
-  unusable, so it changes only when the core itself is released, not with
-  every app release.
+- **Why separate.** The core is a library that other projects embed, so its
+  version describes the core alone. **Raise it in every release that changes
+  the core** (check `git log core-v<last>..main -- core/`), and tag
+  `core-v<version>` with the maintainer's approval. Save states do not
+  depend on it: they load when their format version matches (#166). Until
+  that change, states were tied to the exact core version, which is why it
+  stayed at 0.1.0 for so long.
 - **Which part to raise.** Pre-1.0, a release with new features raises the
   minor version, and a release with fixes only raises the patch version.
   From 1.0 on, an incompatible change raises the major version.

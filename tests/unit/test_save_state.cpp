@@ -87,3 +87,61 @@ TEST(SaveState, MachineRejectsFormatAndChecksum)
     EXPECT_NE(machine.loadState(blob.data(), blob.size()),
         cutenes::LoadStateError::Ok);
 }
+
+namespace {
+
+// NROM-128 whose reset vector points at JMP $C000: enough to run frames.
+std::vector<std::uint8_t> makeLoopRom()
+{
+    std::vector<std::uint8_t> rom{'N', 'E', 'S', 0x1A, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    rom.resize(16 + 16384, 0);
+    const std::uint8_t loop[] = {0x4C, 0x00, 0xC0}; // JMP $C000
+    std::copy(std::begin(loop), std::end(loop), rom.begin() + 16);
+    rom[16 + 0x3FFC] = 0x00;
+    rom[16 + 0x3FFD] = 0xC0;
+    return rom;
+}
+
+// A state captured 10 frames in, copied out of the core's buffer.
+std::vector<std::uint8_t> capturedState(cutenes::Machine& machine, const std::vector<std::uint8_t>& rom)
+{
+    EXPECT_EQ(machine.loadCartridge(rom.data(), rom.size()).error, cutenes::LoadError::Ok);
+    machine.powerOn();
+    machine.runFrames(10);
+    const cutenes::SaveStateBlob view = machine.captureState();
+    return {view.data, view.data + view.size};
+}
+
+void patchU64(std::vector<std::uint8_t>& blob, std::size_t at, std::uint64_t value)
+{
+    for (std::size_t i = 0; i < 8; ++i) blob[at + i] = static_cast<std::uint8_t>(value >> (8 * i));
+}
+
+} // namespace
+
+// #166, save-state-format.md "Validation": the format version decides
+// whether a state loads. The core version that wrote it is information
+// only, so a newer core still loads an older core's states.
+TEST(SaveState, AStateFromAnotherCoreVersionLoads)
+{
+    const auto rom = makeLoopRom();
+    cutenes::Machine machine;
+    auto blob = capturedState(machine, rom);
+    // The header's coreVersion field (offset 8) is outside the checksum,
+    // which covers the sections only.
+    patchU64(blob, 8, (std::uint64_t{0} << 22) | (std::uint64_t{1} << 12)); // 0.1.0
+    ASSERT_NE(StateReader(blob.data(), blob.size()).coreVersion(), cutenes::coreVersion);
+    machine.runFrames(5);
+    EXPECT_EQ(machine.loadState(blob.data(), blob.size()), cutenes::LoadStateError::Ok);
+    EXPECT_EQ(machine.frameCounter(), 10u);
+}
+
+TEST(SaveState, AnotherFormatVersionIsRefused)
+{
+    const auto rom = makeLoopRom();
+    cutenes::Machine machine;
+    auto blob = capturedState(machine, rom);
+    blob[4] = 2; // formatVersion (u16 at offset 4)
+    blob[5] = 0;
+    EXPECT_EQ(machine.loadState(blob.data(), blob.size()), cutenes::LoadStateError::IncompatibleFormat);
+}

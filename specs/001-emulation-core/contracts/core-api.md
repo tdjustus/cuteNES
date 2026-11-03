@@ -207,6 +207,8 @@ SaveStateBlob Machine::captureState();        // any instant, mid-frame included
 LoadStateError Machine::loadState(const std::uint8_t* data, std::size_t size);
 // LoadStateError: Ok | BadMagic | IncompatibleFormat | IncompatibleCoreVersion
 //                | WrongCartridge | ChecksumMismatch
+// IncompatibleCoreVersion is no longer returned: the format version decides
+// (save-state-format.md, amendment 2026-11-03, #166).
 
 SramRange Machine::sram() const;              // const view when battery; empty otherwise (#71)
 void      Machine::loadSram(const std::uint8_t* data, std::size_t size); // pad/trim per header

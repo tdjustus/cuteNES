@@ -76,8 +76,9 @@ per-frame video hashes and byte-identical audio; report shows zero diffs
 
 **Expected**: run to frame 1000, capture, continue to 2000 recording hashes;
 restore the frame-1000 blob, rerun — hashes match the original run exactly
-(FR-011, SC-006). Also verifies rejection: a blob from a different core
-build is refused with `IncompatibleCoreVersion`.
+(FR-011, SC-006). A blob from a different core version still loads,
+because the format version decides (amendment 2026-11-03, #166); a blob of
+another format version is refused with `IncompatibleFormat`.
 
 ### 6. Commercial-game smoke test (mapper coverage)
 
