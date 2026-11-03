@@ -55,7 +55,8 @@ principles every feature follows are in the constitution,
 - [002: AI and MCP server](../specs/002-ai-mcp-server/spec.md);
 - [003: Qt frontend](../specs/003-qt-frontend/spec.md).
 
-## Still to come
+## Reference
 
-Issue [#116](https://github.com/tdjustus/cuteNES/issues/116) adds, before
-1.0: decision records and a glossary.
+- [Decision records](decisions.md): the significant decisions, what was
+  rejected and why, with links to the full records, and lessons learned.
+- [Glossary](glossary.md): NES, emulation and project terms.
