@@ -432,7 +432,7 @@ unchecked:
 3. Read it as a new player would. Note anything wrong, unclear, or
    missing; it is written from the contracts, so a difference from what
    the app does is a bug in one of them.
-4. README "Using the GUI" reads well on GitHub, and its link to the guide
+4. The README's "Getting started" and "Learn more" read well on GitHub, and its link to the guide
    works.
 
 ### Log and Open Log Folder (G094a)
