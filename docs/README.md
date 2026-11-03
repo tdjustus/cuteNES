@@ -4,6 +4,14 @@ The [README](../README.md) is for players. These documents are for
 everyone else: people who build cuteNES from source, drive it from a
 program, embed its core, or work on it.
 
+## How cuteNES is designed
+
+- [Design philosophy](design-philosophy.md): the principles behind the
+  project, why each exists, and what it bought, separating the general idea
+  from how it applies to the NES.
+- [Architecture](architecture.md): the layers, the one emulation thread,
+  the other threads, and how frames, sound, input and commands move.
+
 ## Using cuteNES
 
 - [User guide](user-guide.md): the desktop application, menu by menu. It is
@@ -43,6 +51,6 @@ principles every feature follows are in the constitution,
 ## Still to come
 
 Issue [#116](https://github.com/tdjustus/cuteNES/issues/116) adds, before
-1.0: the design philosophy, the architecture, the core internals, the
-development process, decision records, contributor how-tos (adding a
-mapper, an automation command or a GUI feature) and a glossary.
+1.0: the core internals, the development process, decision records,
+contributor how-tos (adding a mapper, an automation command or a GUI
+feature) and a glossary.
