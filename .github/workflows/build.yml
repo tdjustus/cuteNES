@@ -408,17 +408,22 @@ jobs:
           if-no-files-found: error
 
   # The single required status check for branch protection. It passes when
-  # the jobs above passed or were skipped (docs-only PRs), and fails if any
-  # failed or was cancelled.
+  # the jobs above passed or were skipped (docs-only PRs), and fails on any
+  # other result. It lists the results it accepts rather than the ones it
+  # rejects: a matrix whose runner was lost reports "abandoned", which a
+  # check for "failure" or "cancelled" let through (PR #165's macOS leg).
   ci-ok:
     if: always()
     needs: [changes, build-test, sanitize]
     runs-on: ubuntu-latest
     steps:
       - name: Check results
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          echo '${{ toJSON(needs) }}'
-          if [ "${{ contains(needs.*.result, 'failure') }}" = "true" ] \
-             || [ "${{ contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+          echo "$NEEDS"
+          bad=$(jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key): \(.value.result)"' <<<"$NEEDS")
+          if [ -n "$bad" ]; then
+            echo "$bad"
             exit 1
           fi
