@@ -17,6 +17,8 @@ enum class LoadStateError : std::uint8_t {
     Ok,
     BadMagic,
     IncompatibleFormat,
+    // No longer returned: states load across core versions (#166). Kept so
+    // the values that follow keep their numbers.
     IncompatibleCoreVersion,
     WrongCartridge,
     ChecksumMismatch,

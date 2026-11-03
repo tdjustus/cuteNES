@@ -146,11 +146,11 @@ Everything is little-endian with explicit widths. All sub-cycle state is
 saved, down to the PPU's shift registers and pending latches, so a state
 taken mid-frame resumes exactly. Tables that can be rebuilt are rebuilt,
 not saved. A load is validated completely before anything is applied, and
-unknown section tags are skipped. Until a stable release declares a
-compatibility window, a state loads only into the exact core version that
-wrote it (`IncompatibleCoreVersion`); that is why the core's version
-changes only when the core is released
-([`source-control.md`](source-control.md), "Versions and tags").
+unknown section tags are skipped. A state loads when its **format
+version** matches; the core version in its header is information only
+(#166). The format version is raised only when the layout changes, so a
+state from an older core release resumes under the newer core. Exact replay
+across core releases is the movies' concern, not the save states'.
 
 ## Determinism
 

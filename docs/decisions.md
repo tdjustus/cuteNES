@@ -58,10 +58,12 @@ a research file.
 - **No CI run after a merge.** A pull request is tested up to date with
   `main`, so a post-merge run would repeat a tested tree. A weekly run
   catches runner-image drift; the tag run gates releases.
-- **Separate application and core versions.** The core's version is written
-  into every save state, and until 1.0 a state loads only into its exact
-  core version. Raising it with every application release would break
-  every user's save states.
+- **Separate application and core versions.** The core is a library others
+  embed, so its version describes the core alone and rises with each
+  release that changes the core, not with every application release. Save
+  states once loaded only into their exact core version, which kept the
+  core at 0.1.0 through releases that changed it. Since #166 they load
+  when their format version matches, and the core is at 0.2.0.
 - **Pre-1.0 releases are normal GitHub releases marked Latest**, not
   prereleases: every pre-1.0 build is a test build, and GitHub never shows
   a prerelease as Latest.
@@ -106,5 +108,7 @@ does differently now.
   it is used.
 - **Timing changes can break recordings silently.** The #42 and #160 fixes
   kept the core version, so save states still load, but a movie recorded
-  before them can replay differently with no warning. The policy is still
-  open (#166).
+  before them can replay differently with no warning. *Lesson:* a version
+  that gates compatibility should not also have to describe releases. #166
+  separates them: states gate on the format version, the core version
+  follows releases, and movies get an emulation revision and checkpoints.

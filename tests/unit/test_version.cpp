@@ -6,9 +6,9 @@
 
 TEST(Version, PackedIdentifierMatchesString)
 {
-    // (0 << 22) | (1 << 12) | 0
-    EXPECT_EQ(cutenes::coreVersion, 0x1000u);
-    EXPECT_STREQ(cutenes::coreVersionString(), "0.1.0");
+    // (0 << 22) | (2 << 12) | 0
+    EXPECT_EQ(cutenes::coreVersion, 0x2000u);
+    EXPECT_STREQ(cutenes::coreVersionString(), "0.2.0");
 }
 
 TEST(Version, CpuStateDefaultsMatchPowerOnState)

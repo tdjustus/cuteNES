@@ -432,6 +432,6 @@ verify neither surface ever observes a torn or inconsistent machine state.
     cycle counts. Pin a frame only where nothing else can express the check,
     and then only after viewing it, as `docs/test-corpus.md` requires.
   - Save-state blobs are not a stable format before 1.0. Do not commit
-    save-state fixtures. Tests create states at run time. The core already
-    rejects states from another core version (`IncompatibleCoreVersion`), and
-    #42 will raise the format version.
+    save-state fixtures. Tests create states at run time. The core rejects
+    states of another format version (`IncompatibleFormat`); since #166 it
+    no longer checks the core version.
