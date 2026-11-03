@@ -26,6 +26,11 @@ program, embed its core, or work on it.
 
 ## Working on cuteNES
 
+- [Development process](development-process.md): from an issue to a
+  release: specs, branches, tests first, checking in the real program,
+  pull requests and releases.
+- [Contributing](contributing.md): step-by-step recipes for adding a
+  mapper, an automation command or a GUI feature.
 - [Building and testing](building-and-testing.md): building from source,
   the test groups and what each proves, CI, and the ROM harness.
 - [Test corpus](test-corpus.md): the test ROMs, how each folder is used, and
@@ -53,5 +58,4 @@ principles every feature follows are in the constitution,
 ## Still to come
 
 Issue [#116](https://github.com/tdjustus/cuteNES/issues/116) adds, before
-1.0: the development process, decision records, contributor how-tos
-(adding a mapper, an automation command or a GUI feature) and a glossary.
+1.0: decision records and a glossary.

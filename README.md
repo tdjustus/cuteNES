@@ -90,6 +90,8 @@ the core is checked against the community's hardware test ROMs.
 
 - [Documentation index](docs/README.md)
 - [Building and testing](docs/building-and-testing.md)
+- [Contributing](docs/contributing.md) and the
+  [development process](docs/development-process.md)
 - [Automation: MCP and the API](docs/automation.md)
 - [Using the core in your own program](docs/using-the-core.md)
 - [Source control and releases](docs/source-control.md)
