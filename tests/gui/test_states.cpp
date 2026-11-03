@@ -70,6 +70,13 @@ std::uint64_t frame(MainWindow& w)
     return call(w, "core.counters")["frame"].get<std::uint64_t>();
 }
 
+// The frame, or 0 while no game is in (the ROM still opening).
+std::uint64_t framesSoFar(MainWindow& w)
+{
+    const Result r = w.session().call("core.counters", Json::object());
+    return r.isError() ? 0 : r.value["frame"].get<std::uint64_t>();
+}
+
 QAction* slotAction(MainWindow& w, const char* command, int slot)
 {
     for (QAction* a : w.menuBar()->findChildren<QAction*>()) {
@@ -441,4 +448,37 @@ TEST(GuiStates, APausedGameShowsPaused)
     EXPECT_EQ(paused->geometry().center(), w.view()->rect().center());
     call(w, "gui.toggle_pause");
     EXPECT_TRUE(waitUntil([&] { return !paused->isVisible(); }));
+}
+
+// contracts/cli.md: --load-state loads the slot after ROM boots. The slot was
+// saved 1200 frames in; booting alone would take 20 seconds to get there.
+TEST(GuiStates, TheCommandLineLoadsASlotAfterTheRomBoots)
+{
+    MainWindow w(windowOptions());
+    openPaused(w);
+    call(w, "core.run_frames", {{"frames", 1170}});
+    call(w, "gui.save_state", {{"slot", 3}});
+    const std::uint64_t savedFrame = frame(w);
+    ASSERT_GE(savedFrame, 1200u);
+    call(w, "gui.close_game");
+
+    w.openRom(kRom, 3);
+    ASSERT_TRUE(waitUntil([&] { return framesSoFar(w) >= savedFrame; }, 3000)) << framesSoFar(w);
+    EXPECT_LT(frame(w), savedFrame + 600) << "loaded, not 1200 frames run";
+}
+
+TEST(GuiStates, TheCommandLineLoadsAStateFileAfterTheRomBoots)
+{
+    MainWindow w(windowOptions());
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("boss.state"));
+    openPaused(w);
+    call(w, "core.run_frames", {{"frames", 1170}});
+    call(w, "gui.save_state_file", {{"path", path.toStdString()}});
+    const std::uint64_t savedFrame = frame(w);
+    call(w, "gui.close_game");
+
+    w.openRom(kRom, std::nullopt, path);
+    ASSERT_TRUE(waitUntil([&] { return framesSoFar(w) >= savedFrame; }, 3000)) << framesSoFar(w);
+    EXPECT_LT(frame(w), savedFrame + 600);
 }

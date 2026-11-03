@@ -87,7 +87,9 @@ claude mcp add cuteNES -- /path/to/cuteNES-<version>-linux-x86_64.AppImage serve
 ```
 
 The client can start before the application does: it gets the tools once
-the application is open with its MCP server on.
+the application is open with its MCP server on. To turn the MCP server on
+for one run without changing the setting, start the application with
+`cutenes --mcp` (see the user guide's "Command line").
 
 ## Versioning
 

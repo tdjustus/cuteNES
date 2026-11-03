@@ -285,3 +285,71 @@ TEST(GuiCli, HelpAndVersionExitZeroAndErrorsExitTwo)
     EXPECT_EQ(parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("a.nes"), QStringLiteral("b.nes")})
                   .exitCode, 2);
 }
+
+// contracts/cli.md: --load-state SLOT|FILE needs ROM. A number names a slot
+// (1-10); anything else is a state file, made absolute like --library.
+TEST(GuiCli, LoadStateNamesASlotOrAFileAndNeedsARom)
+{
+    using cutenes::app::parseCommandLine;
+    const auto slot = parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("--load-state"), QStringLiteral("3"),
+        QStringLiteral("game.nes")});
+    EXPECT_FALSE(slot.exitCode.has_value()) << slot.output.toStdString();
+    EXPECT_EQ(slot.loadSlot, 3);
+    EXPECT_TRUE(slot.loadFile.isEmpty());
+
+    const auto file = parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("--load-state"),
+        QStringLiteral("saves/boss.state"), QStringLiteral("game.nes")});
+    EXPECT_FALSE(file.exitCode.has_value());
+    EXPECT_FALSE(file.loadSlot.has_value());
+    EXPECT_EQ(file.loadFile, QDir(QStringLiteral("saves/boss.state")).absolutePath());
+
+    EXPECT_FALSE(parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("game.nes")}).loadSlot.has_value());
+    const auto noRom = parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("--load-state"), QStringLiteral("3")});
+    EXPECT_EQ(noRom.exitCode, 2);
+    EXPECT_TRUE(noRom.output.contains(QStringLiteral("ROM")));
+    for (const char* bad : {"0", "11"}) {
+        EXPECT_EQ(parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("--load-state"), QString::fromLatin1(bad),
+                      QStringLiteral("game.nes")}).exitCode, 2) << bad << ": slots are 1-10";
+    }
+}
+
+// contracts/cli.md: --api and --mcp turn the servers on for this run, on the
+// port setting or the one given. MCP needs the API, so --mcp turns it on.
+TEST(GuiCli, ApiAndMcpTurnTheServersOnForThisRun)
+{
+    using cutenes::app::parseCommandLine;
+    const auto none = parseCommandLine({QStringLiteral("cutenes")});
+    EXPECT_FALSE(none.api);
+    EXPECT_FALSE(none.mcp);
+
+    const auto api = parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("--api"), QStringLiteral("--api-port"),
+        QStringLiteral("9000")});
+    EXPECT_FALSE(api.exitCode.has_value()) << api.output.toStdString();
+    EXPECT_TRUE(api.api);
+    EXPECT_FALSE(api.mcp);
+    EXPECT_EQ(api.apiPort, 9000);
+    EXPECT_FALSE(api.mcpPort.has_value());
+
+    const auto mcp = parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("--mcp"), QStringLiteral("--mcp-port"),
+        QStringLiteral("0")});
+    EXPECT_FALSE(mcp.exitCode.has_value()) << mcp.output.toStdString();
+    EXPECT_TRUE(mcp.api) << "MCP needs the API";
+    EXPECT_TRUE(mcp.mcp);
+    EXPECT_FALSE(mcp.apiPort.has_value()) << "the API keeps its port setting";
+    EXPECT_EQ(mcp.mcpPort, 0) << "0 picks a free port, as in Settings";
+}
+
+TEST(GuiCli, APortNeedsItsServerAndARealPort)
+{
+    using cutenes::app::parseCommandLine;
+    EXPECT_EQ(parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("--api-port"), QStringLiteral("9000")})
+                  .exitCode, 2) << "the synopsis nests --api-port in --api";
+    EXPECT_EQ(parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("--api"), QStringLiteral("--mcp-port"),
+                  QStringLiteral("9000")}).exitCode, 2);
+    for (const char* bad : {"65536", "-1", "port"}) {
+        const auto r = parseCommandLine({QStringLiteral("cutenes"), QStringLiteral("--api"), QStringLiteral("--api-port"),
+            QString::fromLatin1(bad)});
+        EXPECT_EQ(r.exitCode, 2) << bad;
+        EXPECT_TRUE(r.output.contains(QStringLiteral("Usage"))) << bad;
+    }
+}

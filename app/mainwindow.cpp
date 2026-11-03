@@ -311,7 +311,7 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     connect(m_index, &LibraryIndex::entriesChanged, this, [this] { m_browser->setEntries(m_index->entries()); });
     m_index->setLibrary(m_library);
 
-    connect(m_browser, &LibraryBrowser::openRequested, this, &MainWindow::openRom);
+    connect(m_browser, &LibraryBrowser::openRequested, this, [this](const QString& path) { openRom(path); });
     connect(m_browser, &LibraryBrowser::openFileRequested, this,
         [this] { runCommand(QStringLiteral("gui.open_rom")); });
     connect(m_browser, &LibraryBrowser::addFolderRequested, this, &MainWindow::addRomFolder);
@@ -402,6 +402,7 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     connect(m_padTimer, &QTimer::timeout, this, &MainWindow::pollGamepads);
     m_padTimer->start();
 
+    m_runServers = m_options.runApi || m_options.runMcp;
     applyServers(); // clients may come now: every command's data is there
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
         const QString command = action->property("command").toString();
@@ -1491,21 +1492,35 @@ void MainWindow::openExternal(const QUrl& url)
 void MainWindow::serversChanged()
 {
     // Queued: the call that changed the setting may be on the listener
-    // being stopped, and it must have its reply first.
-    QMetaObject::invokeMethod(this, [this] { applyServers(); }, Qt::QueuedConnection);
+    // being stopped, and it must have its reply first. The settings decide
+    // from now on, not --api or --mcp.
+    QMetaObject::invokeMethod(this, [this] {
+        m_runServers = false;
+        applyServers();
+    }, Qt::QueuedConnection);
 }
 
 void MainWindow::applyServers()
 {
     AppSettings::ServerSettings wanted = m_settings.servers();
+    if (m_runServers) { // contracts/cli.md: on for this run, not saved
+        const MainWindowOptions& o = m_options;
+        wanted.apiEnabled = wanted.apiEnabled || o.runApi || o.runMcp;
+        wanted.mcpEnabled = wanted.mcpEnabled || o.runMcp;
+        if (o.runApiPort) wanted.apiPort = *o.runApiPort;
+        if (o.runMcpPort) wanted.mcpPort = *o.runMcpPort;
+    }
     QString error;
     const bool apiBefore = m_servers->api().on;
     const bool mcpBefore = m_servers->mcp().on;
     if (!m_servers->apply(wanted.apiEnabled, wanted.apiPort, wanted.mcpEnabled, wanted.mcpPort, &error)) {
-        // A port in use: what could not start is turned off (spec edge case).
-        wanted.apiEnabled = m_servers->api().on;
-        wanted.mcpEnabled = m_servers->mcp().on;
-        m_settings.setServers(wanted);
+        // A port in use: what could not start is turned off (spec edge
+        // case), in the settings too unless the command line asked for it.
+        if (!m_runServers) {
+            wanted.apiEnabled = m_servers->api().on;
+            wanted.mcpEnabled = m_servers->mcp().on;
+            m_settings.setServers(wanted);
+        }
         showWarning(error);
     }
     // By address only: the tokens stay in their files.
@@ -2215,9 +2230,19 @@ void MainWindow::updateSlotMenus()
     }
 }
 
-void MainWindow::openRom(const QString& path)
+void MainWindow::openRom(const QString& path, std::optional<int> loadSlot, const QString& loadFile)
 {
-    runCommand(QStringLiteral("gui.open_rom"), {{QStringLiteral("path"), path}});
+    QFuture<api::Result> opened = runCommand(QStringLiteral("gui.open_rom"), {{QStringLiteral("path"), path}});
+    if (!loadSlot && loadFile.isEmpty()) return;
+    // After the boot: commands run on two threads, so not in order.
+    opened.then(this, [this, loadSlot, loadFile](const api::Result& result) {
+        if (result.isError()) return; // the error is shown already
+        if (loadSlot) {
+            runCommand(QStringLiteral("gui.load_state"), {{QStringLiteral("slot"), *loadSlot}});
+        } else {
+            runCommand(QStringLiteral("gui.load_state_file"), {{QStringLiteral("path"), loadFile}});
+        }
+    });
 }
 
 void MainWindow::checkLibrary()

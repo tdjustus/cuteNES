@@ -104,6 +104,13 @@ struct MainWindowOptions {
     std::optional<QStringList> arguments;
     // The gamepads; null: SDL's (tests give a fake).
     std::shared_ptr<qt::GamepadBackend> gamepads;
+    // --api, --mcp (contracts/cli.md): on for this run whatever the
+    // Servers settings say, which are not changed, until the user changes
+    // them. A port left out is the setting's.
+    bool runApi = false;
+    std::optional<int> runApiPort;
+    bool runMcp = false;
+    std::optional<int> runMcpPort;
 };
 
 class MainWindow : public QMainWindow, private GuiHost::Window {
@@ -155,7 +162,9 @@ public:
 public slots:
     void showAbout() override;
     void showOpenRomDialog() override;
-    void openRom(const QString& path);
+    // Then, once it boots, load slot `loadSlot` or the state file
+    // `loadFile` if given (--load-state).
+    void openRom(const QString& path, std::optional<int> loadSlot = std::nullopt, const QString& loadFile = {});
     // Save State ▸ Slot N and Quick Save from the menus or keys: pauses the
     // game and asks for the state's name (the time by default), warning
     // when the slot already holds a state. Automation saves without asking.
@@ -281,6 +290,9 @@ private:
     bool hasGame() const { return m_runState != QLatin1String("NeedsRom"); }
 
     Options m_options;
+    // The --api/--mcp servers still apply: the user has not changed the
+    // Servers settings since.
+    bool m_runServers = false;
     AppSettings m_settings;
     mutable std::mutex m_libraryMutex;
     Library m_library;
