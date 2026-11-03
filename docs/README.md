@@ -11,6 +11,8 @@ program, embed its core, or work on it.
   from how it applies to the NES.
 - [Architecture](architecture.md): the layers, the one emulation thread,
   the other threads, and how frames, sound, input and commands move.
+- [Core internals](core-internals.md): the master clock, catch-up, the CPU,
+  PPU and APU, mappers, save states and determinism.
 
 ## Using cuteNES
 
@@ -51,6 +53,5 @@ principles every feature follows are in the constitution,
 ## Still to come
 
 Issue [#116](https://github.com/tdjustus/cuteNES/issues/116) adds, before
-1.0: the core internals, the development process, decision records,
-contributor how-tos (adding a mapper, an automation command or a GUI
-feature) and a glossary.
+1.0: the development process, decision records, contributor how-tos
+(adding a mapper, an automation command or a GUI feature) and a glossary.
