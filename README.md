@@ -93,7 +93,7 @@ the core is checked against the community's hardware test ROMs.
 - [Automation: MCP and the API](docs/automation.md)
 - [Using the core in your own program](docs/using-the-core.md)
 - [Source control and releases](docs/source-control.md)
-- The project's principles: the [constitution](.specify/memory/constitution.md)
+- [Design philosophy](docs/design-philosophy.md) and [architecture](docs/architecture.md)
 
 ## Legal use
 
