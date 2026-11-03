@@ -50,9 +50,6 @@ public:
     virtual void runTo(std::uint64_t masterClock) = 0;
     // NMI line level (PPU only); the CPU edge-detects by sampling at phi2.
     virtual bool nmiLine() const { return false; }
-    // True once (consumed) if a $2002 read landed in the suppression window
-    // and this frame's NMI must be cancelled (06-suppression rows 5-6).
-    virtual bool consumeNmiKill() { return false; }
     // CPU-serviced DMC memory fetch (APU only; task T037).
     virtual bool dmcFetchPending() const { return false; }
     // Same fetch without the CPU halt-parity gate: the OAM DMA engine

@@ -2,12 +2,7 @@
 # `ctest -L known-failing`). Each entry states the result the ROM documents as
 # correct; it fails because the emulator disagrees. Other emulators in the
 # corpus status table (tests/roms/status.txt) pass these. Move an entry to
-# corpus.txt when it is fixed. Tracked in the GitHub 1.0 milestone:
-#  - vbl-nmi-timing 7: documented limitation (sub-cycle CPU/PPU phase), #42;
-#    see docs/test-corpus.md. The issue stays open.
-
-entry vbl-nmi-timing-7-nmi-timing
-rom ../roms/vbl_nmi_timing/7.nmi_timing.nes
-run 1500 none
-expect-text PASSED
-end
+# corpus.txt when it is fixed, and track each one in the GitHub 1.0 milestone.
+#
+# Empty: the last entry, vbl-nmi-timing 7 (#42), passes since the $2002
+# status-read redesign and moved to corpus.txt.

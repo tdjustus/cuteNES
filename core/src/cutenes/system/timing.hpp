@@ -16,12 +16,26 @@ inline constexpr std::uint32_t kCpuHalvesPerCycle = 2;
 // PPU writes ignored after reset, in CPU cycles (research.md D4; item 5).
 inline constexpr std::uint64_t kPostResetWriteIgnoreCpuCycles = 29658;
 
-// PPU VBL edges and the $2002 race window, in PPU dots (items 3, 4).
+// PPU VBL edges, in PPU dots (items 3, 4). A $2002 read sees an edge once
+// its dot has run. The read race and the NMI suppression follow from that
+// and from the CPU's once-per-cycle NMI sample; they have no windows of their
+// own (STATUS_READ_MODEL.md, #42).
 inline constexpr int kVblSetDot = 1;        // VBL flag rises at (241, 1)
 inline constexpr int kVblClearDot = 1;      // pre-render clears at (261, 1)
-inline constexpr int kVblRaceDotMax = 2;    // $2002 read here returns flag clear
-inline constexpr int kNmiKillDotMin = 1;    // $2002 read here cancels this NMI
-inline constexpr int kNmiKillDotMax = 4;
+
+// The CPU samples the NMI line this many master ticks before a cycle ends,
+// with the PPU caught up to that instant (item 2). On NTSC any value from 1
+// to 4 lets the sample see exactly one PPU dot more than the cycle's bus
+// access, which is what vbl_nmi_timing 7 and ppu_vbl_nmi 05-08 need; 1 is
+// Mesen2's arrangement (edge detection at the cycle's end, the PPU one
+// master tick behind).
+inline constexpr std::uint64_t kNmiSampleLeadTicks = 1;
+
+// The odd-frame skip decision: rendering must be enabled when this dot of
+// the pre-render line ends, before any CPU write can land ahead of the next
+// dot (ppu_vbl_nmi 10-even_odd_timing; item 3a). The dot after it is
+// skipped.
+inline constexpr int kOddFrameSkipDecisionDot = 338;
 
 // Frame sequencer checkpoints, in CPU cycles from the sequence base (item 6).
 // The 5-step table ends with the wrap point at 37281.

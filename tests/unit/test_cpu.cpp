@@ -241,3 +241,97 @@ TEST(Cpu, UnofficialSloShiftsMemoryThenOra)
     EXPECT_EQ(h.cpu.state().a, 0x0F | 0x02);
     EXPECT_NE(h.cpu.state().p & 0x01, 0); // C from the shift
 }
+
+// --- NMI sampling (issue #42) ----------------------------------------------
+// nesdev "CPU interrupts": the edge detector "polls the status of the NMI
+// line during φ2 of each CPU cycle (i.e., during the second half of each
+// cycle)". nesdev "PPU frame timing": a $2002 read on the set dot clears the
+// flag, and "the $2002 read pulling the NMI line back up too quickly after it
+// drops" means no NMI. So the line is sampled once per cycle, at the end of
+// φ2, and a level that comes and goes between two samples is never seen.
+namespace {
+
+// A PPU stand-in whose NMI line rises at a chosen master time and drops on a
+// $2002 read or a $2000 write.
+struct FakeNmiPpu final : cutenes::CpuBusDevice, cutenes::Tickable {
+    std::uint64_t riseAt = ~0ull;
+    std::uint64_t now = 0;
+    bool dropped = false;
+
+    void runTo(std::uint64_t masterClock) override { now = masterClock; }
+    bool nmiLine() const override { return now >= riseAt && !dropped; }
+    std::uint8_t cpuRead(std::uint16_t addr) override
+    {
+        const bool high = nmiLine();
+        if (addr == 0x2002) {
+            dropped = true;
+        }
+        return high ? 0x80 : 0x00;
+    }
+    void cpuWrite(std::uint16_t addr, std::uint8_t) override
+    {
+        if (addr == 0x2000) {
+            dropped = true;
+        }
+    }
+};
+
+struct NmiHarness {
+    cutenes::Scheduler scheduler{cutenes::regionProfile(cutenes::Region::Ntsc)};
+    cutenes::Bus bus;
+    FakePrg prg;
+    FakeNmiPpu ppu;
+    cutenes::Cpu cpu{bus, scheduler, &ppu, nullptr};
+
+    // Runs one 4-cycle instruction at $8000 whose last cycle accesses the
+    // PPU (cycles 0-12, 12-24, 24-36 and 36-48 in master ticks), then one
+    // more step. Returns true if that step took the NMI.
+    bool nmiAfter(std::initializer_list<std::uint8_t> instruction,
+                  std::uint64_t riseAt)
+    {
+        bus.attachCartridge(&prg);
+        bus.attachPpu(&ppu);
+        prg.prg[(0xFFFA - 0x8000) & 0x3FFF] = 0x00;
+        prg.prg[(0xFFFB - 0x8000) & 0x3FFF] = 0x90;
+        std::size_t i = 0;
+        for (const std::uint8_t b : instruction) {
+            prg.prg[i++] = b;
+        }
+        prg.prg[i] = 0xEA; // NOP
+        cpu.reset(/*cold=*/true);
+        cpu.restartClockForTest();
+        cpu.setProgramCounter(0x8000);
+        ppu.riseAt = riseAt;
+        cpu.step();
+        cpu.step();
+        return cpu.state().pc == 0x9000;
+    }
+};
+
+constexpr std::initializer_list<std::uint8_t> kLda2002{0xAD, 0x02, 0x20};
+constexpr std::initializer_list<std::uint8_t> kSta2000{0x8D, 0x00, 0x20};
+
+} // namespace
+
+// High through the end of cycle 3, dropped by the write in cycle 4: the
+// cycle-3 sample sees it, so the NMI is taken after the STA.
+TEST(CpuNmiSampling, ALineHighAtTheEndOfACycleIsLatched)
+{
+    NmiHarness h;
+    EXPECT_TRUE(h.nmiAfter(kSta2000, 32));
+}
+
+// Rises in cycle 4 before the $2002 read, which drops it before cycle 4's
+// sample: no sample ever sees it high (rule 3).
+TEST(CpuNmiSampling, AReadThatDropsTheLineBeforeTheNextSampleHidesTheNmi)
+{
+    NmiHarness h;
+    EXPECT_FALSE(h.nmiAfter(kLda2002, 38));
+}
+
+// Rises in cycle 3: the cycle-3 sample latches it before the read drops it.
+TEST(CpuNmiSampling, AReadAfterTheSampleDoesNotCancelTheNmi)
+{
+    NmiHarness h;
+    EXPECT_TRUE(h.nmiAfter(kLda2002, 32));
+}

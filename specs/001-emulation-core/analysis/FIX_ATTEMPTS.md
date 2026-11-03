@@ -1732,3 +1732,70 @@ and no separate race/kill windows. Getting there means replacing
 the Holy Mapperel vsync poll and the sprdma boot alignment). That is a
 redesign, not a recalibration, and needs its own design before work starts.
 That design is `STATUS_READ_MODEL.md`.
+
+## RESOLVED: `vbl_nmi_timing/7.nmi_timing` by the `$2002` status-read redesign (#42, 2026-11-03)
+
+Followed `STATUS_READ_MODEL.md`: unit tests from the hardware rules first
+(`PpuStatusRead.*` in `test_ppu.cpp`, `CpuNmiSampling.*` in `test_cpu.cpp`;
+five of the six PPU tests and two of the three CPU tests failed on the old
+model), then the model, then a sweep with temporary environment knobs.
+
+**Knobs.** `lat`: a read sees the status of the last dot run (0) or the dot
+before (1). `line`: the NMI line uses the live status (live) or the same
+one-dot-old view (lagged). `lead`: master ticks before the cycle's end at
+which NMI is sampled. Discriminators: ppu_vbl_nmi 01-10, vbl_nmi_timing 1-7,
+cpu_interrupts_v2, branch_timing_tests, mmc3_test, sprdma/dmc_dma, Holy
+Mapperel, the goldens and the playtests.
+
+First pass, with bus cycles sampled at `endCycle` and internal cycles
+(`Cpu::tick`) still sampled at the very end:
+
+| lat | line | lead | 7.nmi_timing | other failures |
+|---|---|---|---|---|
+| 0 | live | 0 | FAILED | ppu_vbl_nmi 05-08, 2-nmi_and_brk, vbl_nmi 5/6, 10-even_odd, 4-scanline_timing, goldens, 2 playtests |
+| 0 | live | 1, 3, 4 | FAILED | 10-even_odd, 4-scanline_timing, goldens, 2 playtests |
+| 1 | live | 0, 1, 4 | FAILED | ppu_vbl_nmi 05-08, 2-nmi_and_brk, vbl_nmi 5/6 (and goldens at lead 0) |
+| 1 | lagged | 1, 4 | FAILED #4 | none: the old behaviour, as one uniform rule (lead 0 fails the NMI ROMs; leads 2, 5 and 8 also give test 7 FAILED #4) |
+| 0 | lagged | 0 | **PASSED** | 10-even_odd, 4-scanline_timing, goldens, 2 playtests |
+
+`0/lagged/0` and `0/live/4` should see the same dots, but did not behave the
+same. An edge log showed why: samples were unevenly spaced, because
+`Cpu::tick` sampled at the cycle's end while bus cycles used the lead. With
+`tick` going through `endCycle` too, `0/live/1`, `0/live/4` and `0/lagged/0`
+give the same results, and all three pass test 7. (The 2026-10-29 "sample at cycle end" attempt had the same split
+in the other direction.)
+
+The remaining failures were ROMs that time a PPU event against a `$2002`
+sync. They had been calibrated with the read one dot late:
+- `10-even_odd_timing` ("clock is skipped too late, relative to enabling
+  BG"): the skip decision taken as dot 337, 338 or 339 ends gives FAILED #2,
+  PASSED and FAILED #3. It is now taken as dot 338 ends
+  (`kOddFrameSkipDecisionDot`). The old code decided when dot 339 started,
+  which let a write landing between the two dots count.
+- `mmc3_test/4-scanline_timing` ("Scanline 0 IRQ should occur sooner"):
+  sampling the IRQ line after the cycle's first half (PPU and mapper caught
+  up) instead of before it passes, along with the rest of `mmc3_test` and
+  `mmc3_irq_tests`.
+
+**Chosen:** lat 0, live line, lead 1, skip decided at 338, IRQ sampled
+mid-cycle. Full suite 777/777, speed unchanged (SMB 7.24x vs 7.27x).
+
+**Moved pins**, each compared against the old build's frames:
+- `super-mario-bros-boot-changes`: the new frame 600 is byte-identical to the
+  old frame 601. A boot VBL poll no longer falls in the old 3-dot race
+  window, so the game runs one frame ahead.
+- `action53-test28-v004`, the interim "press Reset" screen: two cursor
+  sprites are hidden. Every CPU event lands 6 dots (2 cycles) earlier, so the
+  `$2001` write that turns rendering off on scanline 59 lands at dot 189
+  instead of 195, while sprite evaluation has OAMADDR at 248. Re-enabling
+  rendering then triggers the 2C02 OAMADDR row corruption (8 bytes from
+  `$F8` copied over sprites 0-1). The shadow OAM in RAM is identical in both
+  builds, and the final verdict screen after Reset matches its pin.
+- golden `full_palette`: the old frame shifted exactly 2 px left, with no
+  other difference (its `$2002`-synced palette writes land 2 dots earlier).
+- golden `mmc5_exram`: only the right ends of the copper bars (x 248-255).
+
+**Lesson.** When two configurations that "should" be equivalent behave
+differently, log the events (here, NMI edge times) under both and diff them
+before reasoning further. The uneven sample spacing was invisible in the
+code, because the two sample points sat in different functions.

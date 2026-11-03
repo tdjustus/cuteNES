@@ -47,10 +47,11 @@ public:
     // edge-triggered (the PPU calls assertNmi() exactly at the vblank dot).
     void assertNmi();
     void setIrq(bool level);
-    // Live IRQ source, sampled at every CPU cycle start. When set, the
-    // interrupt decision uses the line level at the second-to-last cycle of
-    // the instruction (hardware polls IRQ in the penultimate cycle); when
-    // unset, setIrq()'s boundary level is used (unit tests).
+    // Live IRQ source, sampled once per CPU cycle, after its first half.
+    // When set, the interrupt decision uses the line level at the
+    // second-to-last cycle of the instruction (hardware polls IRQ in the
+    // penultimate cycle); when unset, setIrq()'s boundary level is used
+    // (unit tests).
     void setIrqLineSource(std::function<bool()> source);
 
     CpuState state() const;
@@ -77,6 +78,9 @@ private:
     std::uint8_t rd(std::uint16_t addr);
     void wr(std::uint16_t addr, std::uint8_t value);
     void tickHalf(bool phi2);
+    void tickHalf(bool phi2, std::uint64_t ticks);
+    // The cycle's second half: catch up, sample NMI, finish (see cpu.cpp).
+    void endCycle();
     void advanceDmcCycle(); // one stalled CPU cycle of a DMC DMA
     void serviceDmcDma(); // halt/dummy/[align]/get at the drain instant
     void serviceDmcIfDue(bool haltable); // start-of-cycle halt attempt
@@ -92,10 +96,9 @@ private:
     {
         serviceDmcIfDue(true); // an internal cycle is a (dummy) read
         m_dmaServicedThisHalf = false;
+        tickHalf(false);
         sampleIrqCycle();
-        tickHalf(false);
-        tickHalf(false);
-        sampleNmi();
+        endCycle();
     }
     std::uint8_t fetch() { return rd(m_pc++); }
 

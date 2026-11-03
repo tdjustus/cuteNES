@@ -115,6 +115,12 @@ run 1500 none
 expect-text PASSED
 end
 
+entry vbl-nmi-timing-7-nmi-timing
+rom ../roms/vbl_nmi_timing/7.nmi_timing.nes
+run 1500 none
+expect-text PASSED
+end
+
 entry pal-apu-01-len-ctr
 rom ../roms/pal_apu_tests/01.len_ctr.nes
 region pal
@@ -211,7 +217,9 @@ rom ../../third_party/test28/test28.nes
 run 120 none
 run 10 Start
 run 1500 none
-expect-hash 21c2b5de
+# Re-pinned for #42 after viewing: two cursor sprites are hidden by the
+# 2C02 OAMADDR row corruption (docs/test-corpus.md, "Action 53").
+expect-hash 1f9598e1
 reset
 run 60 none
 expect-hash 085c2845

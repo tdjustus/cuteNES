@@ -57,24 +57,34 @@ verdict: `nestest`, `mmc1_a12`, `mmc5_test_v2`, `mmc5_exram`, `a53_streemerz`,
 `mmc5_test`, `mmc5_firefly`) or **WRONG** (a pinned frame known to be incorrect;
 none at present: `full_palette` was one until #49).
 
-## Documented limitation: `vbl_nmi_timing/7.nmi_timing` (#42)
+## `vbl_nmi_timing/7.nmi_timing` (#42, fixed)
 
-This 2005 ROM checks NMI delivery to one PPU clock at three CPU/PPU alignments.
-Sweeping the point at which the NMI line is seen (in PPU dots) showed that each
-alignment needs a different threshold (1, 2 and 2-3 dots), so no single rule
-passes all three; the core runs the CPU on whole 3-dot cycles with one fixed
-phase. The newer `ppu_vbl_nmi` set (tier 1, CPU-cycle precision, all 10 ROMs
-including `05-nmi_timing` and `07-nmi_on_timing`) passes, and so do tests 1-6
-of this ROM. A second, master-tick-resolution attempt (2026-10-29,
-`specs/001-emulation-core/analysis/FIX_ATTEMPTS.md`) found that neither NMI
-sample placement nor a Mesen2-style read/write split passes it. The ROM's
-`$2002`-based sync routines do not land one PPU clock apart in this core, so
-the fix is a redesign of the `$2002` status-read model (previous-dot lag,
-race and kill windows), not an NMI change. That redesign is in
-`specs/001-emulation-core/analysis/STATUS_READ_MODEL.md`. It is scheduled
-after the MCP server and the GUI, and it must land before 1.0. The issue
-stays open in the 1.0 milestone; the entry stays in `corpus-known-failing.txt`
-until the redesign makes it pass.
+This 2005 ROM checks NMI delivery to one PPU clock at three CPU/PPU
+alignments, against `$2002`-polling sync routines. It failed for a long time
+(`FAILED #3`, "NMI 2 PPU clocks too early") while the newer `ppu_vbl_nmi` set
+passed. No NMI threshold or sample point fixed it, because the old `$2002`
+read model was four patches calibrated against one another: a previous-dot
+status lag, an in-dot exception to it, a 3-dot "race" window and a 4-dot NMI
+"kill" window. They disagreed about when a flag change became visible, so the
+ROM's three sync alignments did not land one PPU clock apart.
+
+The redesign (`specs/001-emulation-core/analysis/STATUS_READ_MODEL.md`)
+replaced them with the hardware's rules:
+
+- a `$2002` read sees a flag change once the dot that makes it has run, for
+  every bit and both edges;
+- a read one dot before the VBL set reads clear and suppresses the flag and
+  the NMI for that frame;
+- the CPU samples the NMI line once per cycle, near the cycle's end, so a
+  read that clears the flag before that sample hides the NMI. No window is
+  needed.
+
+Two event timings measured against a `$2002` sync were calibrated against the
+lag and moved with it: the odd-frame skip decision (`10-even_odd_timing`) and
+the CPU's IRQ sample (`mmc3_test/4-scanline_timing`). Five pinned hashes moved;
+each was viewed and is explained where it is pinned (`golden/roms.txt`,
+`playtest.txt`, `corpus.txt`). The sweep that chose the parameters is in
+`FIX_ATTEMPTS.md` (2026-11-03). All seven ROMs of the set are in `corpus.txt`.
 
 ## Performance gate
 
@@ -93,7 +103,7 @@ locally before releases.
 |---|---|---|
 | `blargg_apu_2005.07.30` | 11 | All 11 pass (`$01` = passed, per `tests.txt`): `corpus.txt` (10 and 11 since the half-frame write-simultaneity fix) |
 | `branch_timing_tests` | 3 | All 3 pass: `corpus.txt` (3 since a taken branch stopped delaying NMI) |
-| `vbl_nmi_timing` | 7 | 1-6 pass: `corpus.txt`. 7 fails (`FAILED #3`): documented limitation, see below; kept as known-failing |
+| `vbl_nmi_timing` | 7 | All 7 pass: `corpus.txt` (7 since the `$2002` status-read redesign, #42; see above) |
 | `pal_apu_tests` | 10 | Run as PAL (`region pal`, through the core's region override). All 10 pass: `corpus.txt` (PAL frame-counter steps, noise and DMC tables) |
 | `cpu_dummy_writes` | 2 | Tier 1 |
 | `instr_misc` | 5 | The four `rom_singles` are tier 1. `instr_misc.nes` is the same four tests combined; not registered |

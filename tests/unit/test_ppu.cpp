@@ -221,3 +221,113 @@ TEST(Ppu, IdleOutputUsesBackdropWhenVIsOutsidePaletteRam)
 {
     EXPECT_EQ(idlePixel(0x2005, 0x21), idlePixel(0x3F00, 0x21));
 }
+
+// --- $2002 status reads around the VBL edges (issue #42) -------------------
+// Rules from nesdev "PPU frame timing" and "PPU registers", restated in
+// specs/001-emulation-core/analysis/STATUS_READ_MODEL.md. They are written in
+// PPU dots, relative to the dot the PPU last ran, so they hold whatever the
+// CPU/PPU calibration is: a read sees a flag change once the dot that makes
+// it has run, and not before.
+namespace {
+
+// Runs the PPU dot by dot until (scanline, dot) is the last dot it has run,
+// with NMI output enabled and past the post-reset write-ignore window.
+struct VblHarness : PpuHarness {
+    VblHarness()
+    {
+        scheduler.advanceMaster(29700 * 12);
+        ppu.runTo(scheduler.now());
+        ppu.cpuWrite(0x2000, 0x80);
+    }
+
+    void runUntilLastDot(int scanline, int dot)
+    {
+        const int nextLine = dot == 340 ? (scanline + 1) % 262 : scanline;
+        const int nextDot = dot == 340 ? 0 : dot + 1;
+        for (std::uint64_t i = 0; i < 2 * kDotsPerFrame; ++i) {
+            if (static_cast<int>(ppu.scanline()) == nextLine
+                && static_cast<int>(ppu.dot()) == nextDot) {
+                return;
+            }
+            scheduler.advanceMaster(kDot);
+            ppu.runTo(scheduler.now());
+        }
+        FAIL() << "PPU never reached (" << scanline << ", " << dot << ")";
+    }
+
+    bool vblRead() { return (ppu.cpuRead(0x2002) & 0x80) != 0; }
+};
+
+} // namespace
+
+// Rule 2: "Reading one PPU clock before reads it as clear and never sets the
+// flag or generates NMI for that frame."
+TEST(PpuStatusRead, ReadOneDotBeforeTheSetSuppressesFlagAndNmi)
+{
+    VblHarness h;
+    h.runUntilLastDot(241, 0);
+    EXPECT_FALSE(h.vblRead());
+    h.runUntilLastDot(241, 1);
+    EXPECT_FALSE(h.ppu.nmiLine());
+    h.runUntilLastDot(241, 10);
+    EXPECT_FALSE(h.ppu.nmiLine());
+    EXPECT_FALSE(h.vblRead());
+}
+
+// Rule 4: two or more dots before the set, a read is an ordinary read.
+TEST(PpuStatusRead, ReadTwoDotsBeforeTheSetIsOrdinary)
+{
+    VblHarness h;
+    h.runUntilLastDot(240, 340);
+    EXPECT_FALSE(h.vblRead());
+    h.runUntilLastDot(241, 1);
+    EXPECT_TRUE(h.ppu.nmiLine());
+    EXPECT_TRUE(h.vblRead());
+}
+
+// Rules 1 and 3: a read on the set dot already sees the flag, and clears it
+// along with the NMI line. (Whether the CPU latched the edge first is a CPU
+// sampling question; see CpuNmiSampling in test_cpu.cpp.)
+TEST(PpuStatusRead, ReadOnTheSetDotSeesTheFlagAndDropsTheLine)
+{
+    VblHarness h;
+    h.runUntilLastDot(241, 1);
+    EXPECT_TRUE(h.ppu.nmiLine());
+    EXPECT_TRUE(h.vblRead());
+    EXPECT_FALSE(h.ppu.nmiLine());
+    EXPECT_FALSE(h.vblRead());
+}
+
+TEST(PpuStatusRead, ReadOneDotAfterTheSetSeesTheFlag)
+{
+    VblHarness h;
+    h.runUntilLastDot(241, 2);
+    EXPECT_TRUE(h.vblRead());
+    EXPECT_FALSE(h.ppu.nmiLine());
+}
+
+// Rules 1 and 5: the flag clears at (261, 1), 6820 dots after the set, and a
+// read sees the clear once that dot has run. Same rule as the set.
+TEST(PpuStatusRead, TheClearIsSeenOnceItsDotHasRun)
+{
+    VblHarness before;
+    before.runUntilLastDot(261, 0);
+    EXPECT_TRUE(before.vblRead());
+
+    VblHarness at;
+    at.runUntilLastDot(261, 1);
+    EXPECT_FALSE(at.vblRead());
+    EXPECT_FALSE(at.ppu.nmiLine());
+}
+
+// The suppression lasts one frame: the next frame's flag sets normally.
+TEST(PpuStatusRead, SuppressionLastsOneFrame)
+{
+    VblHarness h;
+    h.runUntilLastDot(241, 0);
+    (void)h.vblRead();
+    h.runUntilLastDot(261, 1);
+    h.runUntilLastDot(241, 1);
+    EXPECT_TRUE(h.ppu.nmiLine());
+    EXPECT_TRUE(h.vblRead());
+}
