@@ -88,6 +88,22 @@ void BatterySaver::poll(const Machine& machine)
     m_wake.notify_all();
 }
 
+void BatterySaver::saveNow(const Machine& machine)
+{
+    if (!m_active || m_held) return;
+    QByteArray now = sramBytes(machine);
+    {
+        std::lock_guard lock(m_mutex);
+        m_known = now;
+        m_pending.clear(); // superseded by this write
+        m_hasPending = false;
+        m_lastWrite = std::chrono::steady_clock::now();
+        ++m_generation;
+    }
+    std::lock_guard writing(m_writeMutex);
+    write(now);
+}
+
 void BatterySaver::close(const Machine& machine)
 {
     if (!m_active) return;
@@ -99,6 +115,7 @@ void BatterySaver::close(const Machine& machine)
         has = m_hasPending;
         last = std::move(m_pending);
         m_hasPending = false;
+        ++m_generation;
     }
     if (has) {
         std::lock_guard lock(m_writeMutex);
@@ -128,10 +145,16 @@ void BatterySaver::run()
         QByteArray bytes = std::move(m_pending);
         m_hasPending = false;
         m_lastWrite = std::chrono::steady_clock::now();
+        const std::uint64_t generation = m_generation;
         lock.unlock();
         {
             std::lock_guard writing(m_writeMutex);
-            write(bytes);
+            bool current = false;
+            {
+                std::lock_guard check(m_mutex);
+                current = generation == m_generation;
+            }
+            if (current) write(bytes);
         }
         lock.lock();
     }

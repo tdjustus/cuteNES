@@ -18,6 +18,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -46,6 +47,9 @@ public:
         Machine& machine);
     // Hands changed battery RAM to the writer.
     void poll(const Machine& machine);
+    // Writes the RAM now, whatever the interval says: for a change the user
+    // made, such as importing a save (#162). Saving then goes on as usual.
+    void saveNow(const Machine& machine);
     // Writes any change now and releases the game.
     void close(const Machine& machine);
     // While held, the RAM is not saved: a movie's playback (#121) runs on
@@ -75,6 +79,10 @@ private:
     bool m_hasPending = false;
     bool m_stopping = false;
     std::chrono::steady_clock::time_point m_lastWrite{};
+    // Bumped by every write the emulation thread makes itself (saveNow,
+    // close). The writer thread drops RAM it took before the bump, so an
+    // older copy never lands after a newer one.
+    std::uint64_t m_generation = 0;
     std::mutex m_writeMutex;
     std::atomic<int> m_writes{0};
     std::thread m_thread;

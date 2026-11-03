@@ -135,6 +135,31 @@ TEST(GuiBattery, ClosingWritesAtOnce)
     EXPECT_FALSE(saver.active());
 }
 
+// An explicit change, such as importing a save (#162), is written at once,
+// not when the interval next allows.
+TEST(GuiBattery, SaveNowWritesAtOnceInsideTheInterval)
+{
+    QTemporaryDir tmp;
+    const Library library(tmp.path());
+    ASSERT_TRUE(library.ensureLayout());
+    Game game;
+    BatterySaver saver(1h);
+    const auto opened = saver.open(library, game.id, QStringLiteral("G"), game.machine);
+    ASSERT_TRUE(opened.active);
+    game.run(60);
+    saver.poll(game.machine); // the first write; the next is an hour away
+    ASSERT_TRUE(waitForFile(opened.path, 2s));
+    for (int i = 0; i < 400 && saver.writes() < 1; ++i) QThread::msleep(5);
+    ASSERT_EQ(saver.writes(), 1);
+
+    const std::uint8_t v = 0x5A;
+    game.machine.writeMemory(0x7000, &v, 1);
+    saver.saveNow(game.machine);
+    EXPECT_EQ(uchar(readAll(opened.path)[0x1000]), 0x5A);
+    EXPECT_EQ(saver.writes(), 2);
+    EXPECT_TRUE(saver.active()) << "saving goes on afterwards";
+}
+
 TEST(GuiBattery, ASaveIsLoadedByIdentity)
 {
     QTemporaryDir tmp;
