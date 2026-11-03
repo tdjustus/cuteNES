@@ -844,3 +844,36 @@ TEST(PpuScroll, TheDefaultPaletteIsTheColoursThePpuOutputs)
         EXPECT_TRUE(all(sink.pixels, colours[i] & 0xFFFFFF)) << "colour " << int(i);
     }
 }
+
+// nesdev "DMA": OAM DMA halts the CPU for 513 cycles, plus one more to align
+// when it starts on a put cycle. Each is a whole CPU cycle of the region:
+// 12 master ticks on NTSC, 16 on PAL (#160). So `STA $4014` (4 cycles) takes
+// 517 or 518 CPU cycles, and the CPU stays on its cycle grid afterwards.
+TEST(Region, OamDmaTakesWholeCpuCyclesOfTheRegion)
+{
+    for (const int pal : {0, 1}) {
+        std::vector<std::uint8_t> rom = makeNes2Rom(static_cast<std::uint8_t>(pal));
+        const std::uint8_t prog[] = {
+            0xA9, 0x02,       // LDA #$02
+            0x8D, 0x14, 0x40, // STA $4014 (OAM DMA from $0200)
+            0xEA,             // NOP
+            0x4C, 0x05, 0xC0, // JMP $C005
+        };
+        std::memcpy(rom.data() + 16, prog, sizeof prog);
+        cutenes::Machine machine;
+        ASSERT_EQ(machine.loadCartridge(rom.data(), rom.size()).error,
+            cutenes::LoadError::Ok);
+        machine.powerOn();
+        const std::uint64_t cycle = pal != 0 ? 16 : 12;
+        machine.stepInstruction(); // LDA
+        const std::uint64_t before = machine.masterCycle();
+        machine.stepInstruction(); // STA $4014 and the DMA
+        const std::uint64_t taken = machine.masterCycle() - before;
+        EXPECT_EQ(taken % cycle, 0u) << (pal ? "PAL" : "NTSC") << ": " << taken << " ticks";
+        EXPECT_TRUE(taken / cycle == 517 || taken / cycle == 518)
+            << (pal ? "PAL" : "NTSC") << ": " << taken / cycle << " cycles of " << cycle;
+        const std::uint64_t nopAt = machine.masterCycle();
+        machine.stepInstruction(); // NOP: 2 cycles
+        EXPECT_EQ(machine.masterCycle() - nopAt, 2 * cycle);
+    }
+}
