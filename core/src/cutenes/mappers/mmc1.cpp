@@ -57,11 +57,12 @@ public:
         // Consecutive-cycle writes: a serial-port write on the cycle right
         // after another contributes no data bit (the 6502 RMW double
         // write). The bit-7 reset always applies (nesdev MMC1,
-        // "Consecutive-cycle writes").
+        // "Consecutive-cycle writes"). One cycle is the region's: 12
+        // master ticks on NTSC, 16 on PAL (#175).
         bool consecutive = false;
         if (m_sched != nullptr) {
             const std::uint64_t now = m_sched->now();
-            consecutive = m_hadWrite && (now - m_lastWriteMaster) <= 12;
+            consecutive = m_hadWrite && (now - m_lastWriteMaster) <= m_sched->cpuCycleToMaster(1);
             m_lastWriteMaster = now;
             m_hadWrite = true;
         }

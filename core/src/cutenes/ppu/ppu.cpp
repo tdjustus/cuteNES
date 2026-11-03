@@ -200,8 +200,10 @@ std::uint8_t Ppu::cpuRead(std::uint16_t addr)
             // on the cycle immediately after another $2007 read latches
             // the SAME value the first read latched — the refill from the
             // first access has not landed in the visible latch yet. The
-            // refill and v increment still occur for both accesses.
-            if (m_sched.now() == m_lastVramReadMaster + 12) {
+            // refill and v increment still occur for both accesses. The
+            // next cycle is the region's: 12 master ticks on NTSC, 16 on
+            // PAL (#175).
+            if (m_sched.now() == m_lastVramReadMaster + m_profile.cpuDivisor) {
                 value = m_lastVramReadValue;
             }
             m_lastVramReadMaster = m_sched.now();

@@ -83,7 +83,8 @@ does differently now.
   *Lesson:* when a fix needs a new magic number, suspect the model.
 - **NTSC numbers leak into PAL.** Sprite DMA used 12 master ticks per CPU
   cycle, NTSC's figure, on PAL too (#160), and so did the PPU's power-on
-  lag (#171). No test caught either, because PAL was checked per frame,
+  lag (#171), MMC1's consecutive-write rule, the `$2007` double read and
+  the trace's cycle count (#175). No test caught either, because PAL was checked per frame,
   not per cycle. *Lesson:* a per-cycle quantity comes from
   the region profile, never from a literal.
 - **Checks that list what to reject miss new cases.** `ci-ok` failed on
