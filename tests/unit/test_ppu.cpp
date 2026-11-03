@@ -64,6 +64,36 @@ constexpr std::uint64_t kDotsPerFrame = 341 * 262;
 
 } // namespace
 
+// The PPU lags the CPU by one CPU cycle from power-on (the reset
+// synchronizer), so runTo(M) runs the dots that end by M minus one CPU
+// cycle of the region: 12 master ticks on NTSC, 16 on PAL (nesdev Cycle
+// reference chart; Mesen2's NesCpu::Reset starts the CPU one cpuDivider
+// ahead in every region). #171: PAL used NTSC's 12.
+void expectOneCpuCycleLag(cutenes::Region region)
+{
+    const cutenes::RegionProfile& profile = cutenes::regionProfile(region);
+    cutenes::Scheduler scheduler{profile};
+    cutenes::Ppu ppu{profile, scheduler};
+    ppu.reset(/*cold=*/true);
+    const std::uint64_t lag = profile.cpuDivisor;
+    const std::uint64_t dot = profile.ppuDivisor;
+
+    ppu.runTo(lag + 10 * dot - 1);
+    EXPECT_EQ(ppu.dotsExecuted(), 9u) << "the tenth dot ends one master tick later";
+    ppu.runTo(lag + 10 * dot);
+    EXPECT_EQ(ppu.dotsExecuted(), 10u);
+}
+
+TEST(Ppu, LagsTheCpuByOneNtscCpuCycle)
+{
+    expectOneCpuCycleLag(cutenes::Region::Ntsc);
+}
+
+TEST(Ppu, LagsTheCpuByOnePalCpuCycle)
+{
+    expectOneCpuCycleLag(cutenes::Region::Pal);
+}
+
 TEST(Ppu, HorizontalMirroringFoldsSecondTable)
 {
     PpuHarness h; // horizontal

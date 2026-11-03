@@ -68,7 +68,8 @@ and at each access the PPU and APU are run up to the current master tick
 
 - The **PPU** is stepped dot by dot. It lags the CPU by one cycle from
   power-on (the hardware's reset synchronizer), so `runTo(M)` runs the dots
-  that end by `M - 12`.
+  that end by `M` minus one CPU cycle of the region (12 ticks on NTSC, 16
+  on PAL).
 - The **APU** is stepped per CPU cycle.
 - The **NMI** line is sampled once per CPU cycle, a set number of ticks
   before the cycle ends (`kNmiSampleLeadTicks`), with the PPU caught up to

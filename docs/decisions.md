@@ -82,8 +82,9 @@ does differently now.
   in [`FIX_ATTEMPTS.md`](../specs/001-emulation-core/analysis/FIX_ATTEMPTS.md).
   *Lesson:* when a fix needs a new magic number, suspect the model.
 - **NTSC numbers leak into PAL.** Sprite DMA used 12 master ticks per CPU
-  cycle, NTSC's figure, on PAL too (#160). The same pattern may remain in
-  the PPU's power-on lag (#171). *Lesson:* a per-cycle quantity comes from
+  cycle, NTSC's figure, on PAL too (#160), and so did the PPU's power-on
+  lag (#171). No test caught either, because PAL was checked per frame,
+  not per cycle. *Lesson:* a per-cycle quantity comes from
   the region profile, never from a literal.
 - **Checks that list what to reject miss new cases.** `ci-ok` failed on
   `failure` and `cancelled` only, so a job whose runner was lost
