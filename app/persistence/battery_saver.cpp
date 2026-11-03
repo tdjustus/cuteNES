@@ -136,9 +136,8 @@ void BatterySaver::run()
         m_wake.wait(lock, [this] { return m_stopping || m_hasPending; });
         if (m_stopping) return;
         // At most one write per interval; newer RAM replaces older meanwhile.
-        const auto due = m_lastWrite + m_interval;
-        if (std::chrono::steady_clock::now() < due) {
-            m_wake.wait_until(lock, due, [this] { return m_stopping; });
+        if (m_lastWrite && std::chrono::steady_clock::now() < *m_lastWrite + m_interval) {
+            m_wake.wait_until(lock, *m_lastWrite + m_interval, [this] { return m_stopping; });
             if (m_stopping) return;
             if (!m_hasPending) continue; // close() took it
         }

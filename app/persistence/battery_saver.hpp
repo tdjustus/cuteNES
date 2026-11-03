@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 namespace cutenes::app {
@@ -78,7 +79,9 @@ private:
     QByteArray m_pending;
     bool m_hasPending = false;
     bool m_stopping = false;
-    std::chrono::steady_clock::time_point m_lastWrite{};
+    // Empty until the first write. (A default time_point is steady_clock's
+    // epoch, about boot time, so "epoch + interval" can still be ahead.)
+    std::optional<std::chrono::steady_clock::time_point> m_lastWrite;
     // Bumped by every write the emulation thread makes itself (saveNow,
     // close). The writer thread drops RAM it took before the bump, so an
     // older copy never lands after a newer one.
