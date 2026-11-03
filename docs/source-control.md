@@ -133,6 +133,16 @@ each has its own users:
   an older one. The self-update still never offers it: it skips any tag with
   a `-` suffix as well as GitHub's prerelease flag (R16), so testers download
   it by hand.
+- **The first beta is 0.9.0** (`v0.9.0-beta.1`, beta 1), decided by the
+  maintainer on 2026-11-03. Betas count across the project like alphas,
+  and they too are published as normal releases marked **Latest**.
+- **Manual tests gate betas and production releases.** An alpha may ship
+  with manual checks still queued, saying so in its notes. A beta, a
+  release candidate or a production release ships only after every manual
+  test has passed: the whole `specs/003-qt-frontend/manual-test-queue.md`
+  and the phase checklists (M3 to M9) in feature 003's `quickstart.md`,
+  reported by the maintainer. A beta tells testers the application is
+  feature-complete and checked; an alpha only that it is worth trying.
 - History: alpha 1 predates this scheme and is tagged
   `core-v0.1.0-alpha.1`. Alpha 2 is `v0.2.0-alpha.2`. It was first tagged
   `v0.2.0-alpha.1`, counted within its version, and corrected. Alpha 3 is
@@ -143,6 +153,8 @@ each has its own users:
 Each step publishes something, so the maintainer asks for the release
 before any of it is done.
 
+0. For a beta, release candidate or production release: confirm that the
+   maintainer has reported every manual test passed (above).
 1. On a `chore/version-<version>` branch, raise the version (above) and
    anything in the docs that names it, run the full suite, and merge the
    pull request as usual.
