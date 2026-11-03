@@ -121,7 +121,7 @@ const char* hex4(std::uint16_t v)
 
 } // namespace
 
-std::string traceLine(const TracePoint& tp, Peek peek)
+std::string traceLine(const TracePoint& tp, Peek peek, std::uint64_t masterPerCpuCycle)
 {
     const std::uint8_t op = peek(tp.cpu.pc);
     const auto& info = Cpu::opcodeInfo(op);
@@ -260,14 +260,14 @@ std::string traceLine(const TracePoint& tp, Peek peek)
             "PPU:%3u,%3u CYC:%llu",
             tp.cpu.pc, bytes, disValue, tp.cpu.a, tp.cpu.x, tp.cpu.y,
             tp.cpu.p, tp.cpu.s, tp.scanline, tp.dot,
-            static_cast<unsigned long long>(tp.cpu.masterCycle / 12 - 1)); // golden-log CYC convention: first fetch = 7
+            static_cast<unsigned long long>(tp.cpu.masterCycle / masterPerCpuCycle - 1)); // golden-log CYC convention: first fetch = 7
     } else {
         std::snprintf(line, sizeof line,
             "%04X  %-10s%-31s A:%02X X:%02X Y:%02X P:%02X SP:%02X "
             "PPU:%3u,%3u CYC:%llu",
             tp.cpu.pc, bytes, disValue, tp.cpu.a, tp.cpu.x, tp.cpu.y,
             tp.cpu.p, tp.cpu.s, tp.scanline, tp.dot,
-            static_cast<unsigned long long>(tp.cpu.masterCycle / 12 - 1)); // golden-log CYC convention: first fetch = 7
+            static_cast<unsigned long long>(tp.cpu.masterCycle / masterPerCpuCycle - 1)); // golden-log CYC convention: first fetch = 7
     }
     return line;
 }

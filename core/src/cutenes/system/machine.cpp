@@ -335,7 +335,7 @@ std::string Machine::disassemble(std::uint16_t pc) const
     state.pc = pc;
     const TracePoint tp{state, impl.ppu->scanline(), impl.ppu->dot()};
     g_peekTarget = this; // single-threaded core; set for the call
-    std::string line = traceLine(tp, &peekThunk);
+    std::string line = traceLine(tp, &peekThunk, impl.profile->cpuDivisor);
     g_peekTarget = nullptr;
     return line;
 }

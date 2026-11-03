@@ -39,11 +39,12 @@ std::vector<std::uint8_t> makeMmc1Rom(std::uint16_t mapper = 1,
 struct Mmc1Harness {
     std::vector<std::uint8_t> rom;
     cutenes::Cartridge cart;
-    cutenes::Scheduler sched{cutenes::regionProfile(cutenes::Region::Ntsc)};
+    cutenes::Scheduler sched;
 
     explicit Mmc1Harness(std::uint16_t mapper = 1, int prgBanks = 8,
-        int ramBanks = 0)
-        : rom(makeMmc1Rom(mapper, prgBanks, ramBanks))
+        int ramBanks = 0, cutenes::Region region = cutenes::Region::Ntsc)
+        : rom(makeMmc1Rom(mapper, prgBanks, ramBanks)),
+          sched(cutenes::regionProfile(region))
     {
         const auto result = cutenes::Cartridge::load(rom.data(), rom.size(), cart);
         EXPECT_EQ(result.error, cutenes::LoadError::Ok);
@@ -244,6 +245,31 @@ TEST(Mmc1, ConsecutiveCycleWriteDataBitIgnoredButResetNever)
     h.serialWrite(0xE000, 4);
     EXPECT_EQ(h.prgAt(0x8000), 4) << "reset applied on a consecutive cycle";
     EXPECT_EQ(h.prgAt(0xC000), 7);
+}
+
+// The consecutive-cycle rule counts CPU cycles of the region: 16 master
+// ticks on PAL (nesdev Cycle reference chart), not NTSC's 12 (#175). Two
+// writes one PAL cycle apart are an RMW double write; two cycles apart
+// (32 ticks) both apply.
+TEST(Mmc1, ConsecutiveCycleRuleUsesThePalCycleLength)
+{
+    Mmc1Harness h(1, 8, 0, cutenes::Region::Pal);
+    h.write(0xE000, 0, 32);
+    h.write(0xE000, 1, 16); // the next PAL cycle: ignored
+    h.write(0xE000, 0, 32);
+    h.write(0xE000, 0, 32);
+    h.write(0xE000, 0, 32);
+    h.write(0xE000, 0, 32); // fifth effective write commits: value 0
+    EXPECT_EQ(h.prgAt(0x8000), 0)
+        << "the ignored 1 would have committed bank 2 one write earlier";
+
+    Mmc1Harness two(1, 8, 0, cutenes::Region::Pal);
+    two.write(0xE000, 1, 32);
+    two.write(0xE000, 1, 32); // two PAL cycles later: applies
+    two.write(0xE000, 0, 32);
+    two.write(0xE000, 0, 32);
+    two.write(0xE000, 0, 32); // 0b00011 = bank 3
+    EXPECT_EQ(two.prgAt(0x8000), 3) << "writes two cycles apart both count";
 }
 
 // --- MMC1 large boards (SUROM 512K PRG, SXROM 32K WRAM) -----------------------

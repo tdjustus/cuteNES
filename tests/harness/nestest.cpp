@@ -5,6 +5,7 @@
 // divergent line is reported with both versions.
 
 #include "cutenes/cpu/trace.hpp"
+#include "cutenes/system/region.hpp"
 
 #include <cutenes/cutenes.hpp>
 
@@ -96,9 +97,10 @@ int cutenes::NestestRunner::run(const char* romPath, const char* logPath,
 
     std::size_t index = 0;
     std::string actual;
+    const std::uint64_t cycle = cutenes::regionProfile(machine.region()).cpuDivisor;
     machine.setInstructionTrace(
         [&](const cutenes::TracePoint& tp) {
-            actual = cutenes::traceLine(tp, &busPeek);
+            actual = cutenes::traceLine(tp, &busPeek, cycle);
         });
 
     while (index < golden.size()) {

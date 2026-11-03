@@ -849,6 +849,30 @@ TEST(PpuScroll, TheDefaultPaletteIsTheColoursThePpuOutputs)
 // when it starts on a put cycle. Each is a whole CPU cycle of the region:
 // 12 master ticks on NTSC, 16 on PAL (#160). So `STA $4014` (4 cycles) takes
 // 517 or 518 CPU cycles, and the CPU stays on its cycle grid afterwards.
+// The trace's CYC column counts CPU cycles, in nestest.log's convention
+// (the first instruction after reset at 7), so a 2-cycle LDA adds 2 in
+// every region, whatever the master ticks per cycle (#175).
+TEST(Region, TheTraceCountsCpuCyclesOfTheRegion)
+{
+    for (const int pal : {0, 1}) {
+        std::vector<std::uint8_t> rom = makeNes2Rom(static_cast<std::uint8_t>(pal));
+        const std::uint8_t prog[] = {
+            0xA9, 0x02,       // LDA #$02
+            0x4C, 0x02, 0xC0, // JMP $C002
+        };
+        std::memcpy(rom.data() + 16, prog, sizeof prog);
+        cutenes::Machine machine;
+        ASSERT_EQ(machine.loadCartridge(rom.data(), rom.size()).error,
+            cutenes::LoadError::Ok);
+        machine.powerOn();
+        const std::string first = machine.disassemble(machine.cpu().pc);
+        EXPECT_NE(first.find("CYC:7"), std::string::npos) << (pal ? "PAL: " : "NTSC: ") << first;
+        machine.stepInstruction(); // LDA: 2 cycles
+        const std::string second = machine.disassemble(machine.cpu().pc);
+        EXPECT_NE(second.find("CYC:9"), std::string::npos) << (pal ? "PAL: " : "NTSC: ") << second;
+    }
+}
+
 TEST(Region, OamDmaTakesWholeCpuCyclesOfTheRegion)
 {
     for (const int pal : {0, 1}) {

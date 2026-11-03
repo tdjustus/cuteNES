@@ -94,6 +94,51 @@ TEST(Ppu, LagsTheCpuByOnePalCpuCycle)
     expectOneCpuCycleLag(cutenes::Region::Pal);
 }
 
+// blargg double_2007_read: a $2007 read on the CPU cycle right after
+// another latches the same value the first did, while v still advances.
+// The next cycle is one CPU cycle of the region later: 12 master ticks on
+// NTSC, 16 on PAL (#175).
+void expectBackToBack2007ReadsRepeat(cutenes::Region region)
+{
+    const cutenes::RegionProfile& profile = cutenes::regionProfile(region);
+    const std::uint64_t cycle = profile.cpuDivisor;
+    cutenes::Scheduler scheduler{profile};
+    cutenes::Cartridge cart;
+    const auto rom = makeNrom(false);
+    (void)cutenes::Cartridge::load(rom.data(), rom.size(), cart);
+    cutenes::Ppu ppu{profile, scheduler};
+    ppu.attachCartridge(&cart);
+    ppu.reset(/*cold=*/true);
+    scheduler.reset();
+    scheduler.advanceMaster(30000 * cycle); // past the post-reset write ignore
+
+    ppu.cpuWrite(0x2006, 0x20);
+    ppu.cpuWrite(0x2006, 0x00);
+    for (const std::uint8_t value : {0x11, 0x22, 0x33, 0x44}) {
+        ppu.cpuWrite(0x2007, value);
+    }
+    ppu.cpuWrite(0x2006, 0x20);
+    ppu.cpuWrite(0x2006, 0x00);
+    scheduler.advanceMaster(4 * cycle);
+    (void)ppu.cpuRead(0x2007);          // fills the buffer with $11
+    scheduler.advanceMaster(4 * cycle);
+    EXPECT_EQ(ppu.cpuRead(0x2007), 0x11);
+    scheduler.advanceMaster(cycle);     // the very next CPU cycle
+    EXPECT_EQ(ppu.cpuRead(0x2007), 0x11) << "back-to-back read repeats the first";
+    scheduler.advanceMaster(4 * cycle);
+    EXPECT_EQ(ppu.cpuRead(0x2007), 0x33) << "v advanced on both reads";
+}
+
+TEST(Ppu, BackToBack2007ReadsRepeatOnNtsc)
+{
+    expectBackToBack2007ReadsRepeat(cutenes::Region::Ntsc);
+}
+
+TEST(Ppu, BackToBack2007ReadsRepeatOnPal)
+{
+    expectBackToBack2007ReadsRepeat(cutenes::Region::Pal);
+}
+
 TEST(Ppu, HorizontalMirroringFoldsSecondTable)
 {
     PpuHarness h; // horizontal
