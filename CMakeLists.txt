@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.21)
 # older macOS. A -D on the command line still wins.
 set(CMAKE_OSX_DEPLOYMENT_TARGET 13.0 CACHE STRING "Oldest macOS to run on")
 
-project(cutenes VERSION 0.3.0 LANGUAGES CXX)
+project(cutenes VERSION 0.3.1 LANGUAGES CXX)
 
 if(APPLE)
     # Objective-C++ for qt/'s RunningActivity (#124). Enabled here, at the
