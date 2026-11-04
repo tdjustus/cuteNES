@@ -106,11 +106,27 @@ The header is:
   battery RAM the movie started from, in base64. It is loaded after the power
   on, before the first frame.
 
+- `checkpoints` (optional, #166): `{"every": 60, "hashes": [...]}`, the
+  frame hash (8 hex digits, as `core.frame_hash`) once each 60th frame has
+  run: `hashes[i]` is the hash after frame `(i + 1) × 60 − 1`, counted
+  from 0. A `null` hash is not known (see below). Playback compares each
+  one and reports the first that differs (`gui.movie_status`'s
+  `differsAt`, an on-screen message and a log line). It plays on, because
+  the replay may still be what the player wants. Taking over after a
+  difference clears the hashes from that frame on, since they were the
+  other replay's, and records new ones.
+
 `cheats` and `battery` are optional, so movies from before them still play,
 with what the player has. The magic stays `CNM1`. An older cuteNES ignores
 the two header fields, so a movie that uses them plays there without them.
 It refuses a movie with a `cheats` event, naming the unknown event, so a
 replay that would differ is not played silently.
+
+`emulation` and `checkpoints` (#166) are optional too, and the magic stays
+`CNM1` for them as well. The #166 plan named a `CNM2` magic for
+checkpoints. It was not used, because the fields only add warnings: an older
+cuteNES that ignores them plays the movie exactly as before, while a new
+magic would make it refuse movies it can play.
 
 The body has `frames` × 2 bytes, so a file whose body is shorter or
 longer is refused as damaged.
