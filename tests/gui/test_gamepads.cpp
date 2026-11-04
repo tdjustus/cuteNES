@@ -462,19 +462,23 @@ TEST(GuiGamepads, RemappedNavigationDrivesTheLibrary)
     tap(PadControl::LeftTrigger);
     EXPECT_TRUE(waitUntil([&] { return QApplication::focusWidget() == view; })) << "previous comes back";
 
-    // Right on the right stick only: the D-pad no longer moves.
-    call(f.w, "gui.set_binding", {{"id", "ui.right"}, {"index", 0}, {"binding", "Pad:RightStickRight"}});
-    call(f.w, "gui.clear_binding", {{"id", "ui.right"}, {"index", 1}});
-    call(f.w, "gui.set_binding", {{"id", "ui.down"}, {"index", 0}, {"binding", "Pad:RightStickDown"}});
-    call(f.w, "gui.clear_binding", {{"id", "ui.down"}, {"index", 1}});
-    // Pad events are handled in order, so once next has moved the focus,
-    // the taps before it have been handled.
+    // Pad events are handled in order, so once next has moved the focus and
+    // previous brought it back, the taps before them have been handled. A
+    // binding change applies on a queued call, which Windows may deliver
+    // after the pad's next poll, so each change settles before the taps.
     const auto settle = [&] {
         tap(PadControl::RightTrigger);
         ASSERT_TRUE(waitUntil([&] { return QApplication::focusWidget() != view; }));
         tap(PadControl::LeftTrigger);
         ASSERT_TRUE(waitUntil([&] { return QApplication::focusWidget() == view; }));
     };
+
+    // Right on the right stick only: the D-pad no longer moves.
+    call(f.w, "gui.set_binding", {{"id", "ui.right"}, {"index", 0}, {"binding", "Pad:RightStickRight"}});
+    call(f.w, "gui.clear_binding", {{"id", "ui.right"}, {"index", 1}});
+    call(f.w, "gui.set_binding", {{"id", "ui.down"}, {"index", 0}, {"binding", "Pad:RightStickDown"}});
+    call(f.w, "gui.clear_binding", {{"id", "ui.down"}, {"index", 1}});
+    settle();
     tap(PadControl::DPadRight);
     tap(PadControl::DPadDown);
     tap(PadControl::LeftStickDown);
@@ -485,6 +489,7 @@ TEST(GuiGamepads, RemappedNavigationDrivesTheLibrary)
     EXPECT_TRUE(waitUntil([&] { return view->currentIndex().row() == 1; })) << "the new bindings move";
 
     call(f.w, "gui.set_binding", {{"id", "ui.accept"}, {"index", 0}, {"binding", "Pad:Start"}});
+    settle();
     tap(PadControl::South);
     settle();
     EXPECT_TRUE(f.w.isShowingLibrary()) << "South is no longer accept";
