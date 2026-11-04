@@ -89,7 +89,7 @@ Implementation
 ## Phase P5: Docs and client verification (branch `docs/mcp-usage`)
 
 - [x] A060 README: headless MCP registration, script API examples, the versioning policy, the security defaults
-- [x] A061 Verify registration with two mainstream MCP clients (stdio) and record the client versions in quickstart.md (SC-001). Claude Code 2.1.308 is verified; the maintainer moved the second client to #79
+- [x] A061 Verify registration with two mainstream MCP clients (stdio) and record the client versions in quickstart.md (SC-001). Claude Code 2.1.308 is verified; the maintainer moved the second client to #79, done with MCP Inspector 2.11.0 on 2026-11-03 (stdio and Streamable HTTP)
 - [x] A062 Mark quickstart Q1-Q12 as passing, and close #31 (`Fixes #31`) only when every FR except the GUI-mode items owned by 003 is met. Record the GUI-mode remainder against #32
 
 ## Dependencies
