@@ -119,6 +119,12 @@ each has its own users:
   depend on it: they load when their format version matches (#166). Until
   that change, states were tied to the exact core version, which is why it
   stayed at 0.1.0 for so long.
+- **The emulation revision is not a version.** `emulationRevision` in
+  `version.hpp` is a plain counter that rises in the pull request that
+  changes the emulation's output (a moved pin, or a fix no pin covers), not
+  at release time. Movies record it so playback can warn
+  ([`development-process.md`](development-process.md), step 4; CI's
+  `emulation-revision` job). A release lists it with the core version.
 - **Which part to raise.** Pre-1.0, a release with new features raises the
   minor version, and a release with fixes only raises the patch version.
   From 1.0 on, an incompatible change raises the major version.

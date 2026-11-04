@@ -231,8 +231,14 @@ exactly the same way. Use **Tools > Movie**:
 - **Stop** ends recording or playback. Closing the game stops it too.
 
 While a movie plays or records, loading states and rewinding are refused,
-because they would break the movie. Cheats and the battery save a game
-starts with are not part of a movie, so either can make a replay differ.
+because they would break the movie. A movie keeps the cheats that were on
+and, from power-on, the battery save the game started with, and plays with
+those; yours come back when it stops.
+
+A movie also records the emulation revision of the cuteNES that made it.
+It rises when an accuracy fix changes how games run. If a movie comes from
+another revision, or from before revisions were recorded, cuteNES warns
+that it may not play back the same, and plays it anyway.
 
 ## Debugging tools
 

@@ -45,6 +45,7 @@ jobs:
               - 'CMakeLists.txt'
               - '.gitmodules'
               - '.github/**'
+              - 'tools/**'
 
   build-test:
     needs: changes
@@ -407,6 +408,22 @@ jobs:
           path: packages/SHA256SUMS
           if-no-files-found: error
 
+  # #166: a pinned golden or playtest hash that changes value means the
+  # emulation's output changed, so the emulation revision that movies record
+  # (core/include/cutenes/version.hpp) must rise in the same pull request.
+  # It runs on every pull request, docs-only ones included: it takes seconds.
+  emulation-revision:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Self-test
+        run: python3 tools/check_emulation_revision.py --self-test
+      - name: Pins against the base branch
+        run: python3 tools/check_emulation_revision.py --base "origin/${{ github.base_ref }}"
+
   # The single required status check for branch protection. It passes when
   # the jobs above passed or were skipped (docs-only PRs), and fails on any
   # other result. It lists the results it accepts rather than the ones it
@@ -414,7 +431,7 @@ jobs:
   # check for "failure" or "cancelled" let through (PR #165's macOS leg).
   ci-ok:
     if: always()
-    needs: [changes, build-test, sanitize]
+    needs: [changes, build-test, sanitize, emulation-revision]
     runs-on: ubuntu-latest
     steps:
       - name: Check results

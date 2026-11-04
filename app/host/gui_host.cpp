@@ -563,6 +563,7 @@ Result GuiHost::recordMovie(CallContext& ctx, const QString& path, bool fromPowe
     Movie movie;
     movie.identity = m_identity.sha1;
     movie.core = QString::fromLatin1(coreVersionString());
+    movie.emulation = emulationRevision;
     movie.region = machine.region() == Region::Pal ? QStringLiteral("pal") : QStringLiteral("ntsc");
     if (fromPowerOn) {
         movie.start = Movie::Start::PowerOn;
@@ -640,10 +641,16 @@ Result GuiHost::playMovie(CallContext& ctx, const QString& path)
     updatePlayback();
     publishMovie(true);
     Json v = movieJson();
-    if (m_movie.core != QLatin1String(coreVersionString())) {
-        // Another core may run the same input differently.
-        v["warning"] = "recorded with core " + str(m_movie.core) + "; it may not play back the same";
-        m_window.showMessage(QObject::tr("Movie from core %1: it may not play back the same").arg(m_movie.core));
+    // Another emulation revision may run the same input differently (#166);
+    // the core version alone also changes for new features, so it is no
+    // reason. A movie from before the revision was recorded names its core.
+    if (m_movie.emulation != qint64{emulationRevision}) {
+        const QString recorded = m_movie.emulation
+            ? QObject::tr("emulation revision %1").arg(*m_movie.emulation)
+            : QObject::tr("core %1, before emulation revisions").arg(m_movie.core);
+        v["warning"] = str(QObject::tr("recorded with %1, and this is revision %2; it may not play back the same")
+                               .arg(recorded).arg(emulationRevision));
+        m_window.showMessage(QObject::tr("Movie from %1: it may not play back the same").arg(recorded));
     } else {
         m_window.showMessage(QObject::tr("Playing movie"));
     }

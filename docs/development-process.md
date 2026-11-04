@@ -66,6 +66,15 @@ When a fix moves a pinned frame hash, find out why before re-pinning:
 compare against the previous build and say in the commit what moved and
 why the new value is right ([`test-corpus.md`](test-corpus.md)).
 
+A moved pin means the emulation's output changed, so the same pull request
+raises `emulationRevision` in `core/include/cutenes/version.hpp`. Movies
+record that number and warn when it differs, because an older movie may
+now replay differently (#166). CI's `emulation-revision` job refuses a pull
+request in which a golden or playtest hash changed value and the revision
+did not rise (`tools/check_emulation_revision.py`; run it locally with
+`--base origin/main`). Raise it too for a fix that changes behavior no pin
+covers, such as PAL-only timing; the check cannot see those.
+
 ## 5. Check it in the real program
 
 Automated tests run offscreen. A change to the desktop application is also

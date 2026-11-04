@@ -85,6 +85,12 @@ CNM1\n                         magic + version
 The header is:
 - `identity`: the full SHA-1;
 - `core`: the core version string;
+- `emulation` (optional, #166): the core's emulation revision
+  (`cutenes::emulationRevision`), the number that rises whenever the same
+  input can give different output. Playback warns when it differs from the
+  running core's, or is missing (movies from before it), because the
+  replay may then differ; the core version alone is no reason to warn,
+  since it also rises for new features;
 - `region`;
 - `start`: `"power_on"`, or `"state"` with `state` holding a base64 core
   state;
