@@ -103,8 +103,8 @@ SettingsDialog::SettingsDialog(QWidget* parent)
                 [this] { m_unhide->setEnabled(!m_hiddenGames->selectedItems().isEmpty()); });
             connect(m_unhide, &QPushButton::clicked, this, [this] {
                 QStringList identities;
-                for (const QListWidgetItem* item : m_hiddenGames->selectedItems()) {
-                    identities << item->data(Qt::UserRole).toString();
+                for (const QListWidgetItem* selected : m_hiddenGames->selectedItems()) {
+                    identities << selected->data(Qt::UserRole).toString();
                 }
                 if (!identities.isEmpty()) emit unhideRequested(identities);
             });
