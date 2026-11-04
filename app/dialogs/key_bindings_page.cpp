@@ -17,6 +17,7 @@ namespace {
 
 constexpr int kIdRole = Qt::UserRole;
 constexpr int kControlRole = Qt::UserRole + 1;
+constexpr int kNavigationRole = Qt::UserRole + 2;
 
 bool isModifierKey(int key)
 {
@@ -25,10 +26,11 @@ bool isModifierKey(int key)
 }
 
 // "File > Save State > Slot 3": the group (File) and the row (Save State >
-// Slot 3). Game buttons group by player.
+// Slot 3). Game buttons group by player; the UI navigation buttons are
+// labelled like menu actions ("UI Navigation > Up").
 std::pair<QString, QString> split(const KeyBindings::Definition& d)
 {
-    if (d.control) {
+    if (d.control && !d.navigation) {
         const QString player = d.id.startsWith(QLatin1String("p1.")) ? QObject::tr("Player 1") : QObject::tr("Player 2");
         return {QObject::tr("Game Controls: %1").arg(player), d.label.section(QLatin1Char(' '), 2)}; // "Player 1 A"
     }
@@ -162,6 +164,7 @@ void KeyBindingsPage::setEntries(const QVector<KeyBindings::Entry>& entries)
         auto* item = new QTreeWidgetItem(parent, {name});
         item->setData(0, kIdRole, e.definition.id);
         item->setData(0, kControlRole, e.definition.control);
+        item->setData(0, kNavigationRole, e.definition.navigation);
         item->setToolTip(0, e.definition.label);
         setBindingTexts(item, e);
         if (e.definition.id == current) select = item;
@@ -234,7 +237,8 @@ void KeyBindingsPage::startCapture(QTreeWidgetItem* item, int column)
     m_capture = item;
     m_captureColumn = column;
     m_tree->setCurrentItem(item, column);
-    item->setText(column, tr("Press a key or button… (Esc cancels)"));
+    item->setText(column, item->data(0, kNavigationRole).toBool() ? tr("Press a gamepad button… (Esc cancels)")
+                                                                  : tr("Press a key or button… (Esc cancels)"));
     m_padCapture.clear();
     m_tree->setFocus();
 }

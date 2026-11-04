@@ -86,6 +86,12 @@ holding a few public-domain test ROMs:
    renamed or moved. Settings > Library lists the hidden games, and
    **Unhide** brings them back with their saves, states and cheats as they
    were. No ROM file is changed, moved or deleted.
+8. **Given** a gamepad and no keyboard or mouse (amendment 2026-11-03,
+   #181), **Then** the pad drives the whole main UI outside a game: it moves
+   the selection, starts a game, goes back, opens the selected game's menu,
+   and moves to the next or previous control (the library's toolbar). In a
+   game, a pad combination returns to the library. These UI navigation
+   buttons are bindings on the Key Bindings page, in their own group.
 
 ---
 
@@ -558,6 +564,8 @@ the same arguments. Launch with a ROM argument: no prompt.
   input. Hotkeys and game controls are viewed and remapped on one Key
   Bindings page in the main window (#108), reached from the library
   browser, Help > Keyboard Shortcuts, and Settings > Input and Hotkeys.
+  The page also holds the gamepad's UI navigation buttons (US1-8), which
+  take pad controls only.
 - **FR-023**: Each action MUST give visible feedback: an on-screen message
   for quick actions (state saved, speed changed) and a dialog for errors.
   On-screen messages MUST be switchable off.

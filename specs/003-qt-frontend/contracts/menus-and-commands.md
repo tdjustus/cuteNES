@@ -470,8 +470,9 @@ game controls), from Settings > Hotkeys… (`gui.show_settings` with `page`
 the screen it came from.
 
 **Entries.** One per menu action with a fixed command and arguments,
-including the ones with no default, and one per game button of players 1
-and 2, Turbo A and Turbo B included. Each has up to two bindings: two
+including the ones with no default, one per game button of players 1
+and 2, Turbo A and Turbo B included, and one per UI navigation button
+(#181, "Gamepads and Settings > Input" below). Each has up to two bindings: two
 keys, a key and a gamepad control, or two gamepad controls. An entry's
 `id`:
 - a menu action: its command, then each argument's value, joined by `.`,
@@ -479,7 +480,10 @@ keys, a key and a gamepad control, or two gamepad controls. An entry's
   `gui.save_state.3`, `gui.set_speed.faster`, `gui.show_settings.video`;
 - a game button: `p1.a`, `p1.b`, `p1.select`, `p1.start`, `p1.up`,
   `p1.down`, `p1.left`, `p1.right`, `p1.turbo_a`, `p1.turbo_b`, and the
-  same with `p2`.
+  same with `p2`;
+- a UI navigation button: `ui.up`, `ui.down`, `ui.left`, `ui.right`,
+  `ui.accept`, `ui.back`, `ui.menu`, `ui.next`, `ui.previous`. The page
+  shows them as their own group, UI Navigation.
 
 **Bindings** are Qt's portable key text: `Ctrl+Shift+R`, `F1`, `Backspace`
 (`Ctrl` is `Cmd` on macOS). A game button takes one key without modifiers;
@@ -495,7 +499,10 @@ A **gamepad binding** is `Pad:` and SDL's standard control names, joined by
 (so player 1 and player 2 may both have `Pad:South`). A hotkey takes one or
 two, from either pad: `Pad:Back+LeftShoulder` acts when the second is
 pressed while the first is held, and those controls leave the game until
-let go.
+let go. A UI navigation button takes one control, from either pad, and no
+key (the keyboard keeps its own arrows, Enter, Esc and Tab). It acts only
+outside a game, so it may share a control with a game button, but not with
+a hotkey or another navigation button.
 
 **On the page** the user can:
 - **rebind**: click a binding (or select it and press Enter) and press a key
@@ -521,7 +528,7 @@ current binding, never the default (US3-3).
 
 | Command | Purpose |
 |---|---|
-| `gui.list_bindings` | Every entry: `id`, `label` (the menu path, or "Player 1 A"), `kind` (`hotkey` or `control`), and `bindings` and `defaults`, each a pair (`""` for none) |
+| `gui.list_bindings` | Every entry: `id`, `label` (the menu path, "Player 1 A", or "UI Navigation > Up"), `kind` (`hotkey`, `control` or `navigation`), and `bindings` and `defaults`, each a pair (`""` for none) |
 | `gui.set_binding` | `id`, `binding`, optional `index` (0 or 1, default 0) and `force`. A conflict fails with `InvalidArguments` (`data.path` `/binding`, `data.conflicts` the other entries' `id` and `label`, or `system`) unless `force` is true, which takes the binding from them. Returns the entry |
 | `gui.clear_binding` | `id`, optional `index`; without it, both bindings. Returns the entry |
 | `gui.reset_bindings` | Optional `id`; without it, every entry. Returns `reset`, the entries that changed |
@@ -562,16 +569,26 @@ The first gamepad plugged in drives player 1 and the second player 2. A
 pad's GUID keeps its player while it is away, and across runs, so a pad
 plugged back in gets its player back. Unplugging a pad during play shows
 "Player N's controller was disconnected" and, with
-`input.pauseOnGamepadDisconnect` (on by default), pauses. Outside the game
-(the library, the Key Bindings page, dialogs) the D-pad and left stick move
-like the arrow keys, South confirms like Enter and East goes back like Esc.
-An open menu takes them first, as it takes the keyboard's (#181). In the
-library, North opens the selected game's menu, as the Menu key does. In a
-game, File > Game Library's default pad binding is LeftShoulder +
+`input.pauseOnGamepadDisconnect` (on by default), pauses.
+
+Outside the game (the library, the Key Bindings page, dialogs), either
+pad's **UI navigation buttons** stand for the keyboard's keys (#181). An
+open menu takes them first, as it takes the keyboard's. They are bindings
+on the Key Bindings page, in their own group; these are the defaults:
+
+| Entry | Acts as | Default |
+|---|---|---|
+| `ui.up`, `ui.down`, `ui.left`, `ui.right` | the arrow keys | the D-pad, and the left stick |
+| `ui.accept` | Enter | South |
+| `ui.back` | Esc | East |
+| `ui.menu` | in the library, the selected game's menu (as the Menu key) | North |
+| `ui.next`, `ui.previous` | Tab, Shift+Tab: the next or previous control, such as the library's toolbar | RightTrigger, LeftTrigger |
+
+In a game, File > Game Library's default pad binding is LeftShoulder +
 RightShoulder, which no game button uses by default, so a pad alone gets
-from a game to the library and (with East) back. These navigation
-controls are fixed; only the Game Library combination is a binding, on the
-Key Bindings page.
+from a game to the library and (with East) back. A user who clears a
+navigation button can still use the keyboard, and Reset All restores the
+defaults.
 
 Settings > Input holds `input.turboRate` (2-30 presses a second, 15),
 `input.allowOppositeDirections` (off: the last pressed of Left/Right and of

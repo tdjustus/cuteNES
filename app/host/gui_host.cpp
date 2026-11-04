@@ -155,14 +155,14 @@ Json pairJson(const KeyBindings::Pair& pair)
 Json bindingJson(const KeyBindings::Entry& e)
 {
     return {{"id", str(e.definition.id)}, {"label", str(e.definition.label)},
-        {"kind", e.definition.control ? "control" : "hotkey"}, {"bindings", pairJson(e.bindings)},
+        {"kind", e.definition.navigation ? "navigation" : e.definition.control ? "control" : "hotkey"}, {"bindings", pairJson(e.bindings)},
         {"defaults", pairJson(e.definition.defaults)}};
 }
 
 Json bindingSchema()
 {
     const Json pair = s::array(s::string("Qt's portable key text (Ctrl+S), a gamepad control (Pad:South, Pad:Back+LeftShoulder), or \"\" for none"), 2);
-    return s::object({{"id", s::string()}, {"label", s::string()}, {"kind", s::stringEnum({"hotkey", "control"})},
+    return s::object({{"id", s::string()}, {"label", s::string()}, {"kind", s::stringEnum({"hotkey", "control", "navigation"})},
                          {"bindings", pair}, {"defaults", pair}},
         {"id", "label", "kind", "bindings", "defaults"});
 }

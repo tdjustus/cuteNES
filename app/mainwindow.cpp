@@ -181,6 +181,26 @@ const QStringList kNeedMovie = {QStringLiteral("gui.stop_movie"), QStringLiteral
 // release (contract "Fast Forward (hold)", "Rewind (hold)").
 const QStringList kHeld = {QStringLiteral("gui.set_fast_forward"), QStringLiteral("gui.set_rewind")};
 
+// The pad's UI navigation buttons (#181, contract "UI navigation"): the
+// key each stands for outside a game, and its default controls. Menu opens
+// the selected game's menu in the library; next and previous are Tab and
+// Shift+Tab, on the triggers, which no game button or hotkey uses by default.
+const struct {
+    const char* name;
+    const char* text;
+    int key;
+    const char* pad;
+    const char* stick;
+} kNavigation[] = {{"up", QT_TRANSLATE_NOOP("MainWindow", "Up"), Qt::Key_Up, "DPadUp", "LeftStickUp"},
+    {"down", QT_TRANSLATE_NOOP("MainWindow", "Down"), Qt::Key_Down, "DPadDown", "LeftStickDown"},
+    {"left", QT_TRANSLATE_NOOP("MainWindow", "Left"), Qt::Key_Left, "DPadLeft", "LeftStickLeft"},
+    {"right", QT_TRANSLATE_NOOP("MainWindow", "Right"), Qt::Key_Right, "DPadRight", "LeftStickRight"},
+    {"accept", QT_TRANSLATE_NOOP("MainWindow", "Accept"), Qt::Key_Return, "South", nullptr},
+    {"back", QT_TRANSLATE_NOOP("MainWindow", "Back"), Qt::Key_Escape, "East", nullptr},
+    {"menu", QT_TRANSLATE_NOOP("MainWindow", "Game Menu"), Qt::Key_Menu, "North", nullptr},
+    {"next", QT_TRANSLATE_NOOP("MainWindow", "Next Control"), Qt::Key_Tab, "RightTrigger", nullptr},
+    {"previous", QT_TRANSLATE_NOOP("MainWindow", "Previous Control"), Qt::Key_Backtab, "LeftTrigger", nullptr}};
+
 // Every overlay's design: PAUSED at full size; the speed, the FPS, messages
 // and the automation indicator at half, so they stay out of the way of play.
 QString overlayStyle(int scale)
@@ -726,6 +746,16 @@ void MainWindow::defineBindings()
             definitions.push_back(d);
         }
     }
+    // Then the pad's UI navigation buttons (#181, contract "UI
+    // navigation"): what they do outside a game, as the keyboard's keys.
+    for (const auto& n : kNavigation) {
+        KeyBindings::Definition d{QStringLiteral("ui.") + QLatin1String(n.name),
+            tr("UI Navigation > %1").arg(QCoreApplication::translate("MainWindow", n.text)), true, {}};
+        d.navigation = true;
+        d.defaults = {QStringLiteral("Pad:") + QLatin1String(n.pad),
+            n.stick ? QStringLiteral("Pad:") + QLatin1String(n.stick) : QString()};
+        definitions.push_back(d);
+    }
     for (QAction* top : menuBar()->actions()) {
         if (top->menu()) walk(top->menu(), plain(top->text()));
     }
@@ -736,7 +766,18 @@ void MainWindow::applyBindings()
 {
     m_input.unbindAll();
     m_padHotkeys.clear();
+    m_padNavigation.clear();
     for (const KeyBindings::Entry& e : m_bindings->entries()) {
+        if (e.definition.navigation) {
+            const QString name = e.definition.id.mid(3);
+            for (const auto& n : kNavigation) {
+                if (name != QLatin1String(n.name)) continue;
+                for (const QString& b : e.bindings) {
+                    for (const qt::PadControl c : KeyBindings::padControls(b)) m_padNavigation[c] = n.key;
+                }
+            }
+            continue;
+        }
         if (e.definition.control) {
             const QStringList id = e.definition.id.split(QLatin1Char('.'));
             const Port port = id[0] == QLatin1String("p1") ? Port::One : Port::Two;
@@ -974,34 +1015,23 @@ void MainWindow::padControl(Port port, qt::PadControl control, bool pressed)
         if (m_input.handlePad(port, control, true)) pushInput();
         return;
     }
-    // In the library, North opens the selected game's menu (#181), as a
-    // right-click or the Menu key does.
-    if (free && control == qt::PadControl::North && m_pages->currentWidget() == m_browser) {
-        m_browser->popupGameMenu();
+    // Elsewhere the UI navigation buttons (spec US1-2, #181) act as the
+    // keyboard's keys: the arrows, Return, Esc, Tab and Shift+Tab. Menu, in
+    // the library, opens the selected game's menu, as a right-click does.
+    const auto nav = m_padNavigation.find(control);
+    if (nav == m_padNavigation.end()) return;
+    const int key = nav->second;
+    if (key == Qt::Key_Menu) {
+        if (free && m_pages->currentWidget() == m_browser) m_browser->popupGameMenu();
         return;
-    }
-    // Elsewhere the pad moves the focus like the keyboard (spec US1-2): the
-    // D-pad and the left stick are the arrows, South confirms, East goes back.
-    int key = 0;
-    switch (control) {
-    case qt::PadControl::DPadUp:
-    case qt::PadControl::LeftStickUp: key = Qt::Key_Up; break;
-    case qt::PadControl::DPadDown:
-    case qt::PadControl::LeftStickDown: key = Qt::Key_Down; break;
-    case qt::PadControl::DPadLeft:
-    case qt::PadControl::LeftStickLeft: key = Qt::Key_Left; break;
-    case qt::PadControl::DPadRight:
-    case qt::PadControl::LeftStickRight: key = Qt::Key_Right; break;
-    case qt::PadControl::South: key = Qt::Key_Return; break;
-    case qt::PadControl::East: key = Qt::Key_Escape; break;
-    default: return;
     }
     // An open menu takes them first, as it takes the keyboard's.
     QWidget* target = QApplication::activePopupWidget() ? QApplication::activePopupWidget()
         : QApplication::focusWidget()                   ? QApplication::focusWidget()
                                                         : active;
-    QKeyEvent down(QEvent::KeyPress, key, Qt::NoModifier);
-    QKeyEvent up(QEvent::KeyRelease, key, Qt::NoModifier);
+    const Qt::KeyboardModifiers mods = key == Qt::Key_Backtab ? Qt::ShiftModifier : Qt::NoModifier;
+    QKeyEvent down(QEvent::KeyPress, key, mods);
+    QKeyEvent up(QEvent::KeyRelease, key, mods);
     QPointer<QWidget> guard(target);
     QApplication::sendEvent(target, &down);
     if (guard) QApplication::sendEvent(target, &up);
@@ -1036,7 +1066,7 @@ void MainWindow::requestBinding(const QString& id, int index, const QString& bin
     const auto entry = m_bindings->entry(id);
     if (!entry) return;
     QString why;
-    const auto normalized = KeyBindings::normalize(binding, entry->definition.control, &why);
+    const auto normalized = KeyBindings::normalize(binding, entry->definition, &why);
     if (!normalized) return showOsd(why);
     const QVariantMap args = {{QStringLiteral("id"), id}, {QStringLiteral("index"), index},
         {QStringLiteral("binding"), *normalized}};

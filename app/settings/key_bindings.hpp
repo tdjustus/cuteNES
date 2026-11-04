@@ -30,6 +30,11 @@ public:
         QString label; // "File > Quick Save", "Player 1 A"
         bool control = false;
         Pair defaults;
+        // A UI navigation button (ui.up, ui.accept; #181): a pad control
+        // that moves the focus outside a game, kept with the game buttons
+        // (control is true too) but never a key, since the keyboard keeps
+        // its own navigation keys.
+        bool navigation = false;
     };
     struct Entry {
         Definition definition;
@@ -79,6 +84,8 @@ public:
     // "+" in the enum's order: one for a game button, one or two for a
     // hotkey ("Pad:Back+LeftShoulder").
     static std::optional<QString> normalize(const QString& text, bool control, QString* why = nullptr);
+    // As above, for that entry: a navigation button takes a pad control only.
+    static std::optional<QString> normalize(const QString& text, const Definition& d, QString* why = nullptr);
     static bool isPad(const QString& binding) { return binding.startsWith(QLatin1String("Pad:")); }
     // A normalized pad binding's controls; empty for a key.
     static QVector<qt::PadControl> padControls(const QString& binding);
@@ -91,7 +98,9 @@ public:
 private:
     int indexOf(const QString& id) const; // under m_mutex
     // Whether `binding` on both entries is a conflict: a pad control is
-    // per player, so player 1's and player 2's may share it.
+    // per player, so player 1's and player 2's may share it, and the UI
+    // navigation buttons (player "ui") act only outside a game, so they may
+    // share one with either.
     static bool clashes(const Definition& a, const Definition& b, const QString& binding);
     void store(const Entry& e);           // under m_mutex
 
