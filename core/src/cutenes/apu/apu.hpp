@@ -125,6 +125,10 @@ public:
     }
 
 private:
+    // Master ticks in half a CPU cycle of the region: the unit of the frame
+    // IRQ windows (timing.hpp, #178).
+    std::uint64_t halfCycleTicks() const { return m_profile.cpuDivisor / 2; }
+
     struct Pulse {
         bool enabled = false;
         std::uint16_t timerReload = 0, timer = 0;

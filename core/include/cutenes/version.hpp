@@ -23,7 +23,7 @@ inline constexpr std::uint64_t coreVersion =
 // pinned golden or playtest hash changes (tools/check_emulation_revision.py);
 // raise it too for a fix that changes behavior no pin covers. Movies record
 // it and warn on playback when it differs.
-inline constexpr std::uint32_t emulationRevision = 1;
+inline constexpr std::uint32_t emulationRevision = 2;
 
 // "0.2.0" — null-terminated, stable for the process lifetime.
 const char* coreVersionString();
