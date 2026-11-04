@@ -10,10 +10,15 @@ order, from an idea to a release. The recipes for common changes are in
 
 Every known bug and every planned feature is a GitHub issue in the
 milestone of the next release, currently
-[**1.0**](https://github.com/tdjustus/cuteNES/milestone/1). A bug found
-while working on something else gets its own issue rather than a silent
-fix in an unrelated pull request. An issue is closed only when it is fully
-resolved; otherwise it stays open, or moves to a later milestone.
+[**1.0**](https://github.com/tdjustus/cuteNES/milestone/1). The issue comes
+first, before the work. A bug found while working on something else gets its
+own issue rather than a silent fix in an unrelated pull request. That
+includes one fixed straight away, a CI break, a test race, or a failure
+that could not be reproduced. An issue is closed when the work that
+resolves it merges; until then it stays open, or moves to a later
+milestone. Work that is merged and waits only on hands-on checks is
+closed, and its checks go in the manual test pass (#190). The full rule is
+in [`source-control.md`](source-control.md), "Tracking work".
 
 **General idea:** one list holds everything known to be wrong or missing,
 so "are we done?" has an answer, and nothing known is ever just
@@ -96,8 +101,11 @@ need a person.
 
 - The description says what changed and why, what was verified and how,
   and what was not.
-- `Fixes #N` only when the pull request fully resolves the issue; `Refs #N`
-  otherwise. A closing keyword closes the issue on merge.
+- It names its issues (the pull request template lists them). `Fixes #N`
+  only when the pull request fully resolves the issue; `Refs #N` otherwise.
+  A closing keyword closes the issue on merge.
+- After the merge, each issue it touched is closed if done, or given a
+  status comment if not.
 - CI runs on the pull request. Its single required check, `ci-ok`, passes
   only when every build and test job succeeded or was skipped (docs-only
   changes skip the build).
@@ -126,7 +134,7 @@ test has passed.
 
 Much of cuteNES has been written with Claude Code. The project's
 instructions for it are in `CLAUDE.md`, which points to the same rules as
-this document. It follows the same process as anyone: an issue, a branch,
+this document. It follows the same process as anyone: an issue (filed first, closed on merge), a branch,
 tests first, a pull request, and a merge only on a green `ci-ok`. It checks
 GUI changes through the MCP tools as in step 5, and asks the maintainer for
 decisions that are theirs: scope, policy, and anything that publishes.
