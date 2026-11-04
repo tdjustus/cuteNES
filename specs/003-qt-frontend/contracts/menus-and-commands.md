@@ -401,7 +401,7 @@ still checks it.
 | `gui.add_cheat` / `gui.remove_cheat` / `gui.set_cheat_enabled` / `gui.list_cheats` | Cheat list (data-model "Cheat") |
 | `gui.cheat_search_reset` / `gui.cheat_search_filter` / `gui.cheat_search_results` | `filter`: `equal`/`not_equal`/`greater`/`less`/`changed`/`unchanged`, optional `value`; `size` 1 or 2 bytes (reset). Works while the game runs; each snapshot is taken at a frame boundary |
 | `gui.add_watch` / `gui.remove_watch` / `gui.list_watches` | The per-game watch list (`address`, `size`, `label`) with current values (FR-053). A value is edited with `core.write_memory`, applied at the next frame boundary |
-| `gui.movie_status` | The movie: `mode` (`none`, `recording`, `playing`), `readOnly`, `movieFrame` (frames recorded or played so far; the result's own `frame` is the core's), `frames`, `rerecords`, `path` |
+| `gui.movie_status` | The movie: `mode` (`none`, `recording`, `playing`), `readOnly`, `movieFrame` (frames recorded or played so far; the result's own `frame` is the core's), `frames`, `rerecords`, `path`, and `differsAt` (#166) when a playback differed from the recording: the first checkpoint frame whose hash differed. It stays after the movie ends, until the next movie starts |
 | `gui.debug_*`, `gui.*_breakpoint`, `gui.trace_*` | Debugger, above |
 
 ## Queries

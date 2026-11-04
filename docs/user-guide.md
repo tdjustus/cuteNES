@@ -240,6 +240,11 @@ It rises when an accuracy fix changes how games run. If a movie comes from
 another revision, or from before revisions were recorded, cuteNES warns
 that it may not play back the same, and plays it anyway.
 
+Every 60 frames a movie also records what the screen showed. During
+playback cuteNES compares them. At the first one that differs, it says
+"The movie differs from its recording at frame N": from there the game is
+going another way than when it was recorded.
+
 ## Debugging tools
 
 The **Debug** menu is for looking inside a game. Each tool opens its own

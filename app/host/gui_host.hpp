@@ -249,6 +249,8 @@ private:
     // for the commands that would leave its timeline.
     api::Result movieBusy(bool recording) const;
     bool playMovieFrame(Machine& machine); // false: the movie ended, no frame runs
+    // At each checkpoint frame: record the frame hash, or compare it (#166).
+    void movieCheckpoint();
     void publishMovie(bool changed);
     api::Json movieJson() const;
 
@@ -290,6 +292,9 @@ private:
     Movie m_movie;
     QString m_moviePath;
     qint64 m_movieFrame = 0;
+    // The first checkpoint frame where the playback differed from the
+    // recording; kept after it ends, until the next movie starts.
+    std::optional<qint64> m_movieDiffersAt;
     std::optional<QVector<Cheat>> m_movieCheats; // playing: the movie's cheats, in place of the game's
     std::optional<QByteArray> m_playerBattery;   // playing: the player's battery RAM, back when it stops
     mutable std::mutex m_movieMutex;

@@ -1,6 +1,7 @@
 #include "host/gui_host.hpp"
 
 #include "cheats/cheat_list.hpp"
+#include "log/app_log.hpp"
 #include "media/palettes.hpp"
 #include "settings/app_settings.hpp"
 #include "settings/key_bindings.hpp"
@@ -351,7 +352,33 @@ void GuiHost::endFrame()
 {
     if (m_movieMode != MovieStatus::Mode::None) {
         ++m_movieFrame;
+        movieCheckpoint();
         publishMovie(false);
+    }
+}
+
+void GuiHost::movieCheckpoint()
+{
+    const qint64 every = m_movie.checkpointEvery;
+    if (m_movieFrame % every != 0) return;
+    api::Session* session = m_session.load();
+    if (!session) return;
+    const api::Result r = session->call("core.frame_hash");
+    if (r.isError()) return;
+    const QString hash = QString::fromStdString(r.value["frameHash"].get<std::string>());
+    const qsizetype index = m_movieFrame / every - 1;
+    if (m_movieMode == MovieStatus::Mode::Recording) {
+        while (m_movie.checkpoints.size() < index) m_movie.checkpoints.append(QString()); // not known
+        if (m_movie.checkpoints.size() == index) m_movie.checkpoints.append(hash);
+        return;
+    }
+    if (m_movieDiffersAt || index >= m_movie.checkpoints.size() || m_movie.checkpoints[index].isEmpty()) return;
+    if (m_movie.checkpoints[index] != hash) {
+        // From here on the replay is another game than the recording.
+        m_movieDiffersAt = m_movieFrame;
+        qCWarning(lcApp).noquote() << "Movie" << m_moviePath << "differs from its recording at frame" << m_movieFrame;
+        m_window.showMessage(QObject::tr("The movie differs from its recording at frame %1").arg(m_movieFrame));
+        publishMovie(true);
     }
 }
 
@@ -540,8 +567,10 @@ Json GuiHost::movieJson() const
     const char* mode = m_movieMode == MovieStatus::Mode::Recording ? "recording"
         : m_movieMode == MovieStatus::Mode::Playing                ? "playing"
                                                                    : "none";
-    return {{"mode", mode}, {"readOnly", m_movieMode == MovieStatus::Mode::Playing}, {"movieFrame", m_movieFrame},
+    Json v = {{"mode", mode}, {"readOnly", m_movieMode == MovieStatus::Mode::Playing}, {"movieFrame", m_movieFrame},
         {"frames", m_movie.frames()}, {"rerecords", m_movie.rerecords}, {"path", str(m_moviePath)}};
+    if (m_movieDiffersAt) v["differsAt"] = *m_movieDiffersAt;
+    return v;
 }
 
 Result GuiHost::movieBusy(bool recording) const
@@ -587,6 +616,7 @@ Result GuiHost::recordMovie(CallContext& ctx, const QString& path, bool fromPowe
     m_movie = std::move(movie);
     m_moviePath = path;
     m_movieFrame = 0;
+    m_movieDiffersAt.reset();
     m_movieMode = MovieStatus::Mode::Recording;
     m_rewind.clear(); // the history before the movie is another timeline
     m_rewound.reset();
@@ -634,6 +664,7 @@ Result GuiHost::playMovie(CallContext& ctx, const QString& path)
     m_movie = std::move(*movie);
     m_moviePath = path;
     m_movieFrame = 0;
+    m_movieDiffersAt.reset();
     m_movieMode = MovieStatus::Mode::Playing;
     m_rewind.clear();
     m_rewound.reset();
@@ -684,6 +715,13 @@ Result GuiHost::takeOverMovie()
     // Read-write from here (spec US8-7): the rest of the movie goes, and
     // the player's input records on from this frame.
     m_movie.truncate(m_movieFrame);
+    // Checkpoints from where the replay differed are another game's; the
+    // ones recorded from here on are this one's.
+    if (m_movieDiffersAt) {
+        for (qsizetype i = *m_movieDiffersAt / m_movie.checkpointEvery - 1; i < m_movie.checkpoints.size(); ++i) {
+            m_movie.checkpoints[i].clear();
+        }
+    }
     ++m_movie.rerecords;
     m_movieMode = MovieStatus::Mode::Recording;
     // The player's own cheats from here on, recorded as such. The battery RAM
@@ -1784,7 +1822,9 @@ void GuiHost::registerCommands(api::Registry& registry)
         {{"mode", s::stringEnum({"none", "recording", "playing"})}, {"readOnly", s::boolean("playing: input is the movie's")},
             {"movieFrame", s::u64("frames recorded or played so far (the envelope's frame is the core's)")}, {"frames", s::u64("in the movie")},
             {"rerecords", s::u64()}, {"path", s::string()}, {"dialog", s::boolean("the file dialog was shown instead")},
-            {"warning", s::string("recorded by another core version")}});
+            {"warning", s::string("recorded by another emulation revision, or before revisions were recorded")},
+            {"differsAt", s::u64("the first checkpoint frame where the playback differed from the recording; kept "
+                                 "after it ends, until the next movie")}});
     add(registry, "gui.record_movie",
         "Record a movie (.cnm): each frame's input from power-on (a power cycle first) or from the current state; "
         "without path, show the file dialog",

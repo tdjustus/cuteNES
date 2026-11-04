@@ -20,6 +20,7 @@
 #include <QAction>
 #include <QFile>
 #include <QLabel>
+#include <QRegularExpression>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -521,4 +522,77 @@ TEST(GuiMovies, PlaybackWarnsWhenTheEmulationRevisionDiffers)
     const std::string unknown = warningFor(before);
     EXPECT_NE(unknown.find("0.1.0"), std::string::npos) << "names what it has: " << unknown;
     EXPECT_NE(unknown.find("may not play back the same"), std::string::npos) << unknown;
+}
+
+// #166 step 3, library-layout "Movie file": a movie records the frame hash
+// every 60 frames. Playback compares them, and reports the first one that
+// differs: the replay has gone another way from there.
+TEST(GuiMovies, CheckpointsFindTheFirstFrameThatDiffers)
+{
+    Game game;
+    MainWindow w(game.options);
+    game.open(w);
+    const QString path = game.movie("checkpoints.cnm");
+    call(w, "gui.record_movie", {{"path", path.toStdString()}, {"from", "power_on"}});
+    for (int i = 0; i < 5; ++i) play(w);
+    const int frames = call(w, "gui.stop_movie")["frames"].get<int>();
+    ASSERT_GE(frames, 300);
+
+    const CnmFile recorded = readCnm(path);
+    const QJsonObject checkpoints = recorded.header.value(QStringLiteral("checkpoints")).toObject();
+    EXPECT_EQ(checkpoints.value(QStringLiteral("every")).toInt(), 60);
+    const QJsonArray hashes = checkpoints.value(QStringLiteral("hashes")).toArray();
+    EXPECT_EQ(hashes.size(), frames / 60) << "one after each 60 frames";
+    for (const QJsonValue& h : hashes) {
+        EXPECT_TRUE(QRegularExpression(QStringLiteral("^[0-9a-f]{8}$")).match(h.toString()).hasMatch()) << h.toString().toStdString();
+    }
+    const auto differsAt = [&] {
+        const Json status = call(w, "gui.movie_status");
+        return status.contains("differsAt") ? status["differsAt"].get<int>() : -1;
+    };
+
+    // As recorded: no difference.
+    call(w, "gui.play_movie", {{"path", path.toStdString()}});
+    playToTheEnd(w);
+    EXPECT_EQ(differsAt(), -1);
+
+    // The first that differs, exactly: frame 120's hash is not this replay's.
+    CnmFile wrongHash = recorded;
+    QJsonArray changed = hashes;
+    changed[1] = QStringLiteral("00000000");
+    wrongHash.header.insert(QStringLiteral("checkpoints"),
+        QJsonObject{{QStringLiteral("every"), 60}, {QStringLiteral("hashes"), changed}});
+    writeCnm(path, wrongHash);
+    call(w, "gui.play_movie", {{"path", path.toStdString()}});
+    ASSERT_TRUE(waitUntil([&] { return differsAt() >= 0; }, 8000));
+    EXPECT_EQ(differsAt(), 120);
+
+    // Taking over from here: the checkpoints from 120 on were the other
+    // replay's, so they go, and the new recording's own replace them. With
+    // the wrong hash kept, the re-recorded movie would differ at 120.
+    call(w, "gui.toggle_movie_read_only");
+    play(w);
+    call(w, "gui.stop_movie");
+    const QJsonArray retaken =
+        readCnm(path).header.value(QStringLiteral("checkpoints")).toObject().value(QStringLiteral("hashes")).toArray();
+    ASSERT_GE(retaken.size(), 2);
+    EXPECT_EQ(retaken[0].toString(), hashes[0].toString()) << "before the difference: kept";
+    call(w, "gui.play_movie", {{"path", path.toStdString()}});
+    playToTheEnd(w);
+    EXPECT_EQ(differsAt(), -1) << "the re-recorded movie replays as recorded";
+
+    // A replay that really goes another way. The test ROM's picture is the
+    // sum of every input so far (AND $3F), so flipping Right (the last bit
+    // read, worth 1) at frame 70 changes the sum from there on, and nothing
+    // before it. Which checkpoint shows it first is not fixed: several
+    // palette entries next to each other are all black ($0E/$0F, $1E/$1F,
+    // ...), so a sum one apart can look the same. It is never frame 60.
+    CnmFile otherInput = recorded;
+    otherInput.body[70 * 2] = static_cast<char>(otherInput.body[70 * 2] ^ 0x01);
+    writeCnm(path, otherInput);
+    call(w, "gui.play_movie", {{"path", path.toStdString()}});
+    playToTheEnd(w);
+    const int differs = differsAt();
+    EXPECT_GE(differs, 120) << "found, and after frame 60's checkpoint, which still matched";
+    EXPECT_EQ(differs % 60, 0) << differs;
 }

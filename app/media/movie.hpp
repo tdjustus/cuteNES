@@ -14,7 +14,9 @@
 // the battery RAM (base64) a power-on movie started from (a state's start
 // carries its own). Both are optional: a movie without them plays with
 // whatever cheats and battery RAM the player has, as before. Since #166,
-// "emulation" is the core's emulation revision when it was recorded.
+// "emulation" is the core's emulation revision when it was recorded, and
+// "checkpoints" {"every": 60, "hashes": [...]} the frame hash every 60
+// frames (null where not known).
 // Plain data, used on the emulation thread.
 
 #include "cheats/cheat_list.hpp"
@@ -53,6 +55,13 @@ struct Movie {
     QVector<Event> events;
     std::optional<QVector<Cheat>> cheats; // switched on at the start; nullopt: not recorded
     std::optional<QByteArray> battery;    // power-on: the battery RAM it started from
+    // Checkpoints (#166): checkpoints[i] is the frame hash (8 hex digits)
+    // once frame (i + 1) * checkpointEvery - 1 has run, so playback can say
+    // where a replay first went another way. Empty: not known (a take-over
+    // after the replay differed). None in movies from before them.
+    static constexpr qint64 kCheckpointEvery = 60;
+    qint64 checkpointEvery = kCheckpointEvery;
+    QVector<QString> checkpoints;
 
     qint64 frames() const { return input.size() / 2; }
     // Drops the frames from `frame` on, and their events.

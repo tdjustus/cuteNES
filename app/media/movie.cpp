@@ -53,6 +53,7 @@ bool fail(QString* error, const QString& message)
 void Movie::truncate(qint64 frame)
 {
     input.truncate(std::clamp<qint64>(frame, 0, frames()) * 2);
+    checkpoints.resize(std::min<qsizetype>(checkpoints.size(), std::max<qint64>(frame, 0) / checkpointEvery));
     events.erase(std::remove_if(events.begin(), events.end(), [&](const Event& e) { return e.frame >= frame; }),
         events.end());
 }
@@ -74,6 +75,12 @@ QByteArray Movie::serialize() const
     if (cheats) header.insert(QStringLiteral("cheats"), cheatArray(*cheats));
     if (battery) header.insert(QStringLiteral("battery"), QString::fromLatin1(battery->toBase64()));
     if (emulation) header.insert(QStringLiteral("emulation"), *emulation);
+    if (!checkpoints.isEmpty()) {
+        QJsonArray hashes;
+        for (const QString& h : checkpoints) hashes.append(h.isEmpty() ? QJsonValue() : QJsonValue(h));
+        header.insert(QStringLiteral("checkpoints"),
+            QJsonObject{{QStringLiteral("every"), checkpointEvery}, {QStringLiteral("hashes"), hashes}});
+    }
     return kMagic + QJsonDocument(header).toJson(QJsonDocument::Compact) + '\n' + input;
 }
 
@@ -96,6 +103,13 @@ std::optional<Movie> Movie::parse(const QByteArray& bytes, QString* error)
     m.identity = h.value(QStringLiteral("identity")).toString();
     m.core = h.value(QStringLiteral("core")).toString();
     if (h.contains(QStringLiteral("emulation"))) m.emulation = h.value(QStringLiteral("emulation")).toInteger();
+    // Checkpoints only help: ones this version cannot read are left out,
+    // and the movie plays without them.
+    const QJsonObject checkpoints = h.value(QStringLiteral("checkpoints")).toObject();
+    if (const qint64 every = checkpoints.value(QStringLiteral("every")).toInteger(); every > 0) {
+        m.checkpointEvery = every;
+        for (const QJsonValue& v : checkpoints.value(QStringLiteral("hashes")).toArray()) m.checkpoints.append(v.toString());
+    }
     m.region = h.value(QStringLiteral("region")).toString();
     const QString start = h.value(QStringLiteral("start")).toString();
     if (start == QLatin1String("state")) {
