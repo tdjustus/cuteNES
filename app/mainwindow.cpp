@@ -696,6 +696,12 @@ void MainWindow::defineBindings()
             for (qsizetype i = 0; i < qMin(qsizetype(2), keys.size()); ++i) {
                 d.defaults[std::size_t(i)] = keys[i].toString(QKeySequence::PortableText);
             }
+            // Pad defaults (#181): File > Game Library on both shoulders, so
+            // a pad alone gets from a game to the library; no game button
+            // uses them by default.
+            if (id == QLatin1String("gui.show_library") && d.defaults[1].isEmpty()) {
+                d.defaults[1] = QStringLiteral("Pad:LeftShoulder+RightShoulder");
+            }
             definitions.push_back(d);
         }
     };
@@ -968,6 +974,12 @@ void MainWindow::padControl(Port port, qt::PadControl control, bool pressed)
         if (m_input.handlePad(port, control, true)) pushInput();
         return;
     }
+    // In the library, North opens the selected game's menu (#181), as a
+    // right-click or the Menu key does.
+    if (free && control == qt::PadControl::North && m_pages->currentWidget() == m_browser) {
+        m_browser->popupGameMenu();
+        return;
+    }
     // Elsewhere the pad moves the focus like the keyboard (spec US1-2): the
     // D-pad and the left stick are the arrows, South confirms, East goes back.
     int key = 0;
@@ -984,7 +996,10 @@ void MainWindow::padControl(Port port, qt::PadControl control, bool pressed)
     case qt::PadControl::East: key = Qt::Key_Escape; break;
     default: return;
     }
-    QWidget* target = QApplication::focusWidget() ? QApplication::focusWidget() : active;
+    // An open menu takes them first, as it takes the keyboard's.
+    QWidget* target = QApplication::activePopupWidget() ? QApplication::activePopupWidget()
+        : QApplication::focusWidget()                   ? QApplication::focusWidget()
+                                                        : active;
     QKeyEvent down(QEvent::KeyPress, key, Qt::NoModifier);
     QKeyEvent up(QEvent::KeyRelease, key, Qt::NoModifier);
     QPointer<QWidget> guard(target);

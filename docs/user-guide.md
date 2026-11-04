@@ -107,7 +107,11 @@ pauses (Settings > Input can turn that off).
 
 Turbo buttons press A or B repeatedly while held; set how fast in
 Settings > Input. In the library and dialogs a gamepad moves like the arrow
-keys, South confirms and East goes back.
+keys, South confirms and East goes back. In the library, North opens the
+selected game's menu (Hide), which the pad drives the same way. While
+playing, press **both shoulder buttons** together to go to the library;
+East there takes you back to the game. So a gamepad alone can pick games,
+play, and switch between them.
 
 ### Changing keys
 

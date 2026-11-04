@@ -6,7 +6,8 @@
 // list. Type to filter, sort, show only recent games, and launch with Enter
 // or a double click. A game's menu (right-click, the Menu key, or the ⋯
 // button on the hovered card or row) has Hide (#181). Fully usable from the
-// keyboard; gamepad focus arrives in G4.
+// keyboard, and from a gamepad (MainWindow turns pad presses into keys;
+// North opens the game menu).
 
 #include "library/library_index.hpp"
 
@@ -88,6 +89,8 @@ public:
     // The menu of the game with this path or identity, ready to pop up;
     // null when the browser has no such game.
     QMenu* gameMenu(const QString& pathOrIdentity);
+    // Pops up the selected game's menu at its card or row (the pad's North).
+    void popupGameMenu();
     QLineEdit* filterEdit() const { return m_filter; }
 
 signals:

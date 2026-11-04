@@ -631,6 +631,27 @@ By hand:
 6. Settings > Library: Hidden games lists both. Select one and Unhide: it
    is back in the library with its saves and states.
 
+### A gamepad alone drives the library and gets back to it (#181)
+
+Automated:
+- `GuiGamepads.NorthOpensTheGamesMenuAndThePadDrivesIt`: North opens the
+  selected game's menu, East closes it, and D-pad Down then South choose
+  Hide.
+- `GuiGamepads.BothShouldersReturnToTheLibraryAndEastToTheGame`: the
+  default binding is listed, both shoulders show the library and pause the
+  game, and East resumes it.
+- The offscreen test platform leaves no window active after a menu closes,
+  so that test activates the window again; a desktop does it by itself.
+
+By hand, with a real pad and no keyboard or mouse:
+1. In the library, move with the D-pad and the left stick, press North:
+   the game's menu opens on the selected card. Close it with East: the
+   library takes the pad again at once (no click needed).
+2. Start a game with South, play, press both shoulders: the library shows
+   and the game pauses. East: back in the game, running.
+3. On macOS, check that the shoulders are not taken by the system (Game
+   Center or Launchpad react to the Home button, not the shoulders).
+
 ### Windows and Linux: a hidden game keeps its speed (#151)
 
 Automated:
