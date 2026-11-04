@@ -4,7 +4,7 @@
 // (.cnm)"): the controller input of every frame from a start point, which
 // replays exactly because the core is deterministic.
 //   CNM1\n
-//   {"identity", "core", "region", "start": "power_on"|"state", "state",
+//   {"identity", "core", "emulation", "region", "start": "power_on"|"state", "state",
 //    "frames", "rerecords", "cheats", "battery",
 //    "events": [{"frame", "event": "reset"|"power"|"cheats", "cheats"}]}\n
 //   frames × 2 bytes: port 1's ButtonSet, then port 2's
@@ -13,7 +13,8 @@
 // "cheats" event wherever the set changed while recording, and "battery",
 // the battery RAM (base64) a power-on movie started from (a state's start
 // carries its own). Both are optional: a movie without them plays with
-// whatever cheats and battery RAM the player has, as before.
+// whatever cheats and battery RAM the player has, as before. Since #166,
+// "emulation" is the core's emulation revision when it was recorded.
 // Plain data, used on the emulation thread.
 
 #include "cheats/cheat_list.hpp"
@@ -41,6 +42,9 @@ struct Movie {
 
     QString identity; // the ROM's SHA-1
     QString core;     // the core version that recorded it
+    // The emulation revision that recorded it (#166); nullopt: a movie from
+    // before the field.
+    std::optional<qint64> emulation;
     QString region;   // "ntsc" or "pal"
     Start start = Start::PowerOn;
     QByteArray state; // Start::State: the core state it starts from

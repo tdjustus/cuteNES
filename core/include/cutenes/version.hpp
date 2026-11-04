@@ -17,6 +17,14 @@ inline constexpr std::uint64_t coreVersion =
     (std::uint64_t{coreVersionMinor} << 12) |
     std::uint64_t{coreVersionPatch};
 
+// The emulation revision (#166): raised whenever the same input can give
+// different output (frames, sound, timing), which the core version does not
+// say because it also rises for new features. CI requires it to rise when a
+// pinned golden or playtest hash changes (tools/check_emulation_revision.py);
+// raise it too for a fix that changes behavior no pin covers. Movies record
+// it and warn on playback when it differs.
+inline constexpr std::uint32_t emulationRevision = 1;
+
 // "0.2.0" — null-terminated, stable for the process lifetime.
 const char* coreVersionString();
 

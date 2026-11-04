@@ -15,6 +15,8 @@
 #include "gui_support.hpp"
 #include "mainwindow.hpp"
 
+#include <cutenes/version.hpp>
+
 #include <QAction>
 #include <QFile>
 #include <QLabel>
@@ -465,4 +467,58 @@ TEST(GuiMovies, AMovieKeepsItsCheatsAndBatteryAndLeavesThePlayersAlone)
     // Over: the player's cheats and battery RAM are back.
     EXPECT_EQ(call(w, "gui.list_cheats"), playerCheats);
     EXPECT_EQ(sramFirst(), 0x55);
+}
+
+namespace {
+
+void writeCnm(const QString& path, const CnmFile& cnm)
+{
+    QFile file(path);
+    ASSERT_TRUE(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    file.write("CNM1\n" + QJsonDocument(cnm.header).toJson(QJsonDocument::Compact) + '\n' + cnm.body);
+}
+
+} // namespace
+
+// #166 step 2, library-layout "Movie file": a movie records the emulation
+// revision, the number raised whenever the emulation's output changes.
+// Playback warns when it differs, or is missing (movies from before it),
+// because the replay may then differ. The core version alone is no reason:
+// it also changes for new features.
+TEST(GuiMovies, PlaybackWarnsWhenTheEmulationRevisionDiffers)
+{
+    Game game;
+    MainWindow w(game.options);
+    game.open(w);
+    const QString path = game.movie("revision.cnm");
+    call(w, "gui.record_movie", {{"path", path.toStdString()}, {"from", "power_on"}});
+    play(w);
+    call(w, "gui.stop_movie");
+
+    CnmFile cnm = readCnm(path);
+    EXPECT_EQ(cnm.header.value(QStringLiteral("emulation")).toInteger(), qint64{cutenes::emulationRevision});
+    EXPECT_EQ(cnm.header.value(QStringLiteral("core")).toString(), QLatin1String(cutenes::coreVersionString()));
+    const auto warningFor = [&](const CnmFile& file) {
+        writeCnm(path, file);
+        const Json playing = call(w, "gui.play_movie", {{"path", path.toStdString()}});
+        call(w, "gui.stop_movie");
+        return playing.value("warning", std::string());
+    };
+    EXPECT_EQ(warningFor(cnm), "") << "the same revision";
+
+    CnmFile otherCore = cnm;
+    otherCore.header.insert(QStringLiteral("core"), QStringLiteral("0.1.0"));
+    EXPECT_EQ(warningFor(otherCore), "") << "another core version, the same emulation";
+
+    CnmFile older = cnm;
+    older.header.insert(QStringLiteral("emulation"), qint64{cutenes::emulationRevision} - 1);
+    const std::string differs = warningFor(older);
+    EXPECT_NE(differs.find("revision " + std::to_string(cutenes::emulationRevision - 1)), std::string::npos) << differs;
+
+    CnmFile before = cnm;
+    before.header.remove(QStringLiteral("emulation"));
+    before.header.insert(QStringLiteral("core"), QStringLiteral("0.1.0"));
+    const std::string unknown = warningFor(before);
+    EXPECT_NE(unknown.find("0.1.0"), std::string::npos) << "names what it has: " << unknown;
+    EXPECT_NE(unknown.find("may not play back the same"), std::string::npos) << unknown;
 }

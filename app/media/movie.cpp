@@ -73,6 +73,7 @@ QByteArray Movie::serialize() const
     if (start == Start::State) header.insert(QStringLiteral("state"), QString::fromLatin1(state.toBase64()));
     if (cheats) header.insert(QStringLiteral("cheats"), cheatArray(*cheats));
     if (battery) header.insert(QStringLiteral("battery"), QString::fromLatin1(battery->toBase64()));
+    if (emulation) header.insert(QStringLiteral("emulation"), *emulation);
     return kMagic + QJsonDocument(header).toJson(QJsonDocument::Compact) + '\n' + input;
 }
 
@@ -94,6 +95,7 @@ std::optional<Movie> Movie::parse(const QByteArray& bytes, QString* error)
     Movie m;
     m.identity = h.value(QStringLiteral("identity")).toString();
     m.core = h.value(QStringLiteral("core")).toString();
+    if (h.contains(QStringLiteral("emulation"))) m.emulation = h.value(QStringLiteral("emulation")).toInteger();
     m.region = h.value(QStringLiteral("region")).toString();
     const QString start = h.value(QStringLiteral("start")).toString();
     if (start == QLatin1String("state")) {

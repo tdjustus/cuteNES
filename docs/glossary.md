@@ -49,6 +49,7 @@ each has a fuller page.
 | **Cycle-accurate, dot-accurate** | Timing every bus access to the right CPU cycle, and every PPU effect to the right dot. |
 | **Determinism** | The same ROM, inputs and starting state give byte-identical output, every run, on every platform. |
 | **Dynamic rate control** | Nudging the audio playback rate slightly to keep the sound queue at its target, absorbing the difference between the emulator's clock and the sound card's. |
+| **Emulation revision** | A counter in the core (`cutenes::emulationRevision`) that rises whenever the same input can give different output. Movies record it and warn on playback when it differs. It is separate from the core version, which also rises for new features (#166). |
 | **Golden hash, pinned hash** | A recorded hash of a frame (or audio) a test compares against. It records what the emulator drew, so it carries a verification status. |
 | **Movie** | A recording of the input for every frame, replayed from a start point. cuteNES's format is `.cnm`. |
 | **Rewind** | Stepping a game backward through states captured every frame. |
