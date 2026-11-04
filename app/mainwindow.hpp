@@ -374,6 +374,9 @@ private:
         QString id;
     };
     QVector<PadHotkey> m_padHotkeys;
+    // The UI navigation buttons' controls, each to the key it stands for
+    // (Qt::Key_Menu: the library's game menu).
+    std::map<qt::PadControl, int> m_padNavigation;
     std::array<QVector<qt::PadControl>, 2> m_padHeld;
     std::array<std::set<qt::PadControl>, 2> m_padTaken;
     struct PadHold {

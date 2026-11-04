@@ -93,7 +93,7 @@ for one run without changing the setting, start the application with
 
 ## Versioning
 
-The command surface has a `MAJOR.MINOR` version, currently 0.5. `api.version`
+The command surface has a `MAJOR.MINOR` version, currently 0.6. `api.version`
 and MCP's `serverInfo.version` report it. It is separate from the
 application's version and the core's
 ([`source-control.md`](source-control.md), "Versions and tags").

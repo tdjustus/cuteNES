@@ -89,7 +89,7 @@ void KeyBindings::define(const QVector<Definition>& definitions)
         if (const auto it = stored.find(d.id); it != stored.end()) {
             for (std::size_t i = 0; i < 2; ++i) {
                 const QString text = it.value().value(qsizetype(i));
-                e.bindings[i] = text.isEmpty() ? QString() : normalize(text, d.control).value_or(QString());
+                e.bindings[i] = text.isEmpty() ? QString() : normalize(text, d).value_or(QString());
             }
         }
         m_entries.push_back(e);
@@ -155,7 +155,7 @@ KeyBindings::Change KeyBindings::set(const QString& id, int index, const QString
     if (!target) return failed(Change::Status::UnknownId, QStringLiteral("no binding has this id"));
     if (index < 0 || index > 1) return failed(Change::Status::BadIndex, QStringLiteral("must be 0 or 1"));
     QString why;
-    const auto normalized = normalize(binding, target->definition.control, &why);
+    const auto normalized = normalize(binding, target->definition, &why);
     if (!normalized) return failed(Change::Status::BadBinding, why);
     change.conflicts = conflicts(id, *normalized);
     if (!change.conflicts.isEmpty() && !force) {
@@ -286,6 +286,15 @@ std::optional<QString> KeyBindings::normalize(const QString& text, bool control,
         return fail(QStringLiteral("must end with a key that is not a modifier, such as Ctrl+Shift+S"));
     }
     return sequence.toString(QKeySequence::PortableText);
+}
+
+std::optional<QString> KeyBindings::normalize(const QString& text, const Definition& d, QString* why)
+{
+    if (d.navigation && !isPad(text)) {
+        if (why) *why = QStringLiteral("a UI navigation button takes one gamepad control; the keyboard keeps its own keys");
+        return std::nullopt;
+    }
+    return normalize(text, d.control, why);
 }
 
 QVector<qt::PadControl> KeyBindings::padControls(const QString& binding)

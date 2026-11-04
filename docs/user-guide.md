@@ -107,11 +107,14 @@ pauses (Settings > Input can turn that off).
 
 Turbo buttons press A or B repeatedly while held; set how fast in
 Settings > Input. In the library and dialogs a gamepad moves like the arrow
-keys, South confirms and East goes back. In the library, North opens the
-selected game's menu (Hide), which the pad drives the same way. While
-playing, press **both shoulder buttons** together to go to the library;
-East there takes you back to the game. So a gamepad alone can pick games,
-play, and switch between them.
+keys, South confirms and East goes back. The triggers move to the next or
+previous control, like Tab, so the pad can reach the library's toolbar
+(view, sort, search). In the library, North opens the selected game's menu
+(Hide), which the pad drives the same way. While playing, press **both
+shoulder buttons** together to go to the library; East there takes you
+back to the game. So a gamepad alone can pick games, play, and switch
+between them. These menu buttons are in the **UI Navigation** group of the
+Key Bindings page, where you can change them.
 
 ### Changing keys
 
@@ -124,6 +127,9 @@ Every key and gamepad button can be changed on the **Key Bindings** page:
 - Each entry can have two bindings, for example a key and a gamepad button.
 - A gamepad hotkey can be a pair of buttons, such as Back + Left Shoulder:
   hold the first and press the second.
+- The UI Navigation buttons take one gamepad button each. They only work
+  outside a game, so they can share a button with the game controls. If you
+  clear one, the keyboard still works.
 - If the binding is already used, cuteNES says where and asks before moving
   it. **Reset** puts an entry, or everything, back to the defaults.
 

@@ -381,3 +381,119 @@ TEST(GuiGamepads, BothShouldersReturnToTheLibraryAndEastToTheGame)
     EXPECT_TRUE(waitUntil([&] { return !f.w.isShowingLibrary(); })) << "East goes back to the game";
     EXPECT_TRUE(waitUntil([&] { return runState(f.w) == "Running"; }));
 }
+
+// #181: the pad's UI navigation buttons are a group of their own on the Key
+// Bindings page (contract "UI navigation"): pad controls only, shared freely
+// with the game buttons (they act only outside a game), but not with a
+// hotkey or with each other.
+TEST(GuiGamepads, UiNavigationIsItsOwnGroupOfPadBindings)
+{
+    Fixture f;
+    const auto find = [&](const char* id) {
+        const Json list = call(f.w, "gui.list_bindings")["bindings"];
+        for (const Json& e : list) {
+            if (e["id"] == id) return e;
+        }
+        return Json();
+    };
+    const struct {
+        const char* id;
+        Json defaults;
+    } expected[] = {{"ui.up", Json::array({"Pad:DPadUp", "Pad:LeftStickUp"})},
+        {"ui.down", Json::array({"Pad:DPadDown", "Pad:LeftStickDown"})},
+        {"ui.left", Json::array({"Pad:DPadLeft", "Pad:LeftStickLeft"})},
+        {"ui.right", Json::array({"Pad:DPadRight", "Pad:LeftStickRight"})},
+        {"ui.accept", Json::array({"Pad:South", ""})}, {"ui.back", Json::array({"Pad:East", ""})},
+        {"ui.menu", Json::array({"Pad:North", ""})}, {"ui.next", Json::array({"Pad:RightTrigger", ""})},
+        {"ui.previous", Json::array({"Pad:LeftTrigger", ""})}};
+    for (const auto& e : expected) {
+        const Json entry = find(e.id);
+        ASSERT_TRUE(entry.is_object()) << e.id;
+        EXPECT_EQ(entry["kind"], "navigation") << e.id;
+        EXPECT_EQ(entry["defaults"], e.defaults) << e.id;
+        EXPECT_EQ(entry["bindings"], e.defaults) << e.id;
+        EXPECT_TRUE(entry["label"].get<std::string>().starts_with("UI Navigation > ")) << entry["label"];
+    }
+
+    const Result key = f.w.session().call("gui.set_binding", {{"id", "ui.accept"}, {"index", 1}, {"binding", "Space"}});
+    EXPECT_TRUE(key.isError()) << "the keyboard keeps its own navigation keys";
+    const Result twoControls =
+        f.w.session().call("gui.set_binding", {{"id", "ui.accept"}, {"index", 1}, {"binding", "Pad:South+North"}});
+    EXPECT_TRUE(twoControls.isError()) << "one control a binding";
+
+    // Player 1 B is West: shared without a conflict.
+    call(f.w, "gui.set_binding", {{"id", "ui.accept"}, {"index", 1}, {"binding", "Pad:West"}});
+    EXPECT_EQ(find("ui.accept")["bindings"], Json::array({"Pad:South", "Pad:West"}));
+    EXPECT_EQ(find("p1.b")["bindings"], Json::array({"Z", "Pad:West"}));
+
+    // Another navigation button, or a hotkey, is a conflict.
+    const Result taken = f.w.session().call("gui.set_binding", {{"id", "ui.menu"}, {"index", 0}, {"binding", "Pad:South"}});
+    EXPECT_TRUE(taken.isError()) << "ui.accept holds South";
+    call(f.w, "gui.set_binding", {{"id", "gui.quick_save"}, {"index", 1}, {"binding", "Pad:Start"}, {"force", true}});
+    const Result hotkey = f.w.session().call("gui.set_binding", {{"id", "ui.menu"}, {"index", 1}, {"binding", "Pad:Start"}});
+    EXPECT_TRUE(hotkey.isError()) << "Quick Save holds Start";
+}
+
+// The remapped buttons drive the library, and next and previous move the
+// focus between the games and the toolbar like Tab and Shift+Tab.
+TEST(GuiGamepads, RemappedNavigationDrivesTheLibrary)
+{
+    QString folder;
+    Fixture f(&folder);
+    const QString roms = folder + QStringLiteral("/library/roms");
+    QDir().mkpath(roms);
+    for (const char* name : {"a-first.nes", "b-second.nes"}) {
+        QFile::copy(kRom, roms + QLatin1Char('/') + QLatin1String(name));
+    }
+    ASSERT_TRUE(waitUntil([&] { return call(f.w, "gui.library_list")["entries"].size() == 2; }));
+    ASSERT_TRUE(waitUntil([&] { return f.w.isShowingLibrary(); }));
+    f.pads->plug(1, "guid-one", "Pad One");
+    auto* view = f.w.findChild<cutenes::app::LibraryBrowser*>()->view();
+    view->setFocus();
+    view->setCurrentIndex(view->model()->index(0, 0));
+    const auto tap = [&](PadControl c) {
+        f.pads->press(1, c);
+        f.pads->release(1, c);
+    };
+
+    tap(PadControl::RightTrigger);
+    EXPECT_TRUE(waitUntil([&] { return QApplication::focusWidget() && QApplication::focusWidget() != view; }))
+        << "next leaves the games";
+    tap(PadControl::LeftTrigger);
+    EXPECT_TRUE(waitUntil([&] { return QApplication::focusWidget() == view; })) << "previous comes back";
+
+    // Pad events are handled in order, so once next has moved the focus and
+    // previous brought it back, the taps before them have been handled. A
+    // binding change applies on a queued call, which Windows may deliver
+    // after the pad's next poll, so each change settles before the taps.
+    const auto settle = [&] {
+        tap(PadControl::RightTrigger);
+        ASSERT_TRUE(waitUntil([&] { return QApplication::focusWidget() != view; }));
+        tap(PadControl::LeftTrigger);
+        ASSERT_TRUE(waitUntil([&] { return QApplication::focusWidget() == view; }));
+    };
+
+    // Right on the right stick only: the D-pad no longer moves.
+    call(f.w, "gui.set_binding", {{"id", "ui.right"}, {"index", 0}, {"binding", "Pad:RightStickRight"}});
+    call(f.w, "gui.clear_binding", {{"id", "ui.right"}, {"index", 1}});
+    call(f.w, "gui.set_binding", {{"id", "ui.down"}, {"index", 0}, {"binding", "Pad:RightStickDown"}});
+    call(f.w, "gui.clear_binding", {{"id", "ui.down"}, {"index", 1}});
+    settle();
+    tap(PadControl::DPadRight);
+    tap(PadControl::DPadDown);
+    tap(PadControl::LeftStickDown);
+    settle();
+    EXPECT_EQ(view->currentIndex().row(), 0) << "unbound controls do nothing";
+    tap(PadControl::RightStickDown);
+    tap(PadControl::RightStickRight);
+    EXPECT_TRUE(waitUntil([&] { return view->currentIndex().row() == 1; })) << "the new bindings move";
+
+    call(f.w, "gui.set_binding", {{"id", "ui.accept"}, {"index", 0}, {"binding", "Pad:Start"}});
+    settle();
+    tap(PadControl::South);
+    settle();
+    EXPECT_TRUE(f.w.isShowingLibrary()) << "South is no longer accept";
+    tap(PadControl::Start);
+    EXPECT_TRUE(waitUntil([&] { return f.w.windowTitle().contains(QStringLiteral("b-second.nes")); }))
+        << "Start now starts the game";
+}

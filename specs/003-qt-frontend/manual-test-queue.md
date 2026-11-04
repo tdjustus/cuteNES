@@ -640,6 +640,13 @@ Automated:
 - `GuiGamepads.BothShouldersReturnToTheLibraryAndEastToTheGame`: the
   default binding is listed, both shoulders show the library and pause the
   game, and East resumes it.
+- `GuiGamepads.UiNavigationIsItsOwnGroupOfPadBindings`: the nine `ui.*`
+  entries and their defaults; a key or a two-control binding is refused; a
+  game button's control can be shared, but a hotkey's or another
+  navigation button's cannot.
+- `GuiGamepads.RemappedNavigationDrivesTheLibrary`: the triggers move the
+  focus out of the game list and back; remapped buttons move the selection
+  and start a game, and the old controls stop doing so.
 - The offscreen test platform leaves no window active after a menu closes,
   so that test activates the window again; a desktop does it by itself.
 
@@ -651,6 +658,13 @@ By hand, with a real pad and no keyboard or mouse:
    and the game pauses. East: back in the game, running.
 3. On macOS, check that the shoulders are not taken by the system (Game
    Center or Launchpad react to the Home button, not the shoulders).
+4. In the library, press the right trigger until the search field has the
+   focus, then the left trigger back to the games. Change the view or the
+   sort with the pad alone.
+5. On the Key Bindings page, check the UI Navigation group is there and
+   its rows can be captured with the pad (a key press is refused with a
+   message). Rebind Accept to Start, check Start opens a game, then Reset
+   All.
 
 ### Windows and Linux: a hidden game keeps its speed (#151)
 
