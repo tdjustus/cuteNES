@@ -1,6 +1,7 @@
 #include "host/gui_host.hpp"
 
 #include "cheats/cheat_list.hpp"
+#include "library/hidden_games.hpp"
 #include "log/app_log.hpp"
 #include "media/palettes.hpp"
 #include "settings/app_settings.hpp"
@@ -2068,6 +2069,65 @@ void GuiHost::registerCommands(api::Registry& registry)
             return Result::ok();
         });
 
+    // #181 (library-layout "Hidden games"): hiding is a list in the library,
+    // by identity; no ROM file is touched.
+    const Json hiddenOutput = s::object(
+        {{"hidden", s::array(s::object({{"identity", s::string()}, {"name", s::string()}}, {"identity", "name"}), 100000)}},
+        {"hidden"});
+    const auto hiddenJson = [](const HiddenGames& hidden) {
+        Json list = Json::array();
+        for (const HiddenGame& g : hidden.games()) list.push_back({{"identity", str(g.identity)}, {"name", str(g.name)}});
+        return Json{{"hidden", list}};
+    };
+    const auto isIdentity = [](const std::string& id) {
+        return id.size() == 40 && std::all_of(id.begin(), id.end(), [](char c) {
+            return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+        });
+    };
+    add(registry, "gui.library_hidden", "The games hidden from the library (.hiddenroms)", s::object({}),
+        hiddenOutput, false, false, [this, hiddenJson](CallContext&, const Json&) {
+            std::lock_guard lock(m_hiddenMutex);
+            return Result::ok(hiddenJson(HiddenGames::read(HiddenGames::fileIn(m_window.library().root()))));
+        });
+    add(registry, "gui.library_hide", "Hide a game from the library and Recent, by identity (its files stay)",
+        s::object({{"identity", s::string("the game's SHA-1, 40 lowercase hex digits")}}, {"identity"}), hiddenOutput,
+        true, false, [this, hiddenJson, isIdentity](CallContext&, const Json& args) {
+            const std::string id = args["identity"].get<std::string>();
+            if (!isIdentity(id)) return invalid("/identity", "must be 40 lowercase hex digits");
+            const QString identity = QString::fromStdString(id);
+            QString name;
+            for (const auto& e : m_window.libraryEntries()) {
+                if (e.identity == identity) name = e.name;
+            }
+            std::lock_guard lock(m_hiddenMutex);
+            const QString file = HiddenGames::fileIn(m_window.library().root());
+            HiddenGames hidden = HiddenGames::read(file);
+            if (hidden.hide(identity, name)) {
+                QString error;
+                if (!hidden.write(file, &error)) return Result::fail("WriteError", str(error), {{"path", str(file)}});
+                m_window.hiddenGamesChanged();
+                m_window.showMessage(name.isEmpty() ? QObject::tr("Game hidden") : QObject::tr("%1 hidden").arg(name));
+            }
+            return Result::ok(hiddenJson(hidden));
+        });
+    add(registry, "gui.library_unhide", "Bring hidden games back to the library",
+        s::object({{"identities", s::array(s::string(), 100000)}}, {"identities"}), hiddenOutput, true, false,
+        [this, hiddenJson](CallContext&, const Json& args) {
+            std::lock_guard lock(m_hiddenMutex);
+            const QString file = HiddenGames::fileIn(m_window.library().root());
+            HiddenGames hidden = HiddenGames::read(file);
+            for (const Json& id : args["identities"]) {
+                // All or nothing: one that is not hidden refuses the call.
+                if (!hidden.unhide(QString::fromStdString(id.get<std::string>()))) {
+                    return invalid("/identities", id.get<std::string>() + " is not hidden");
+                }
+            }
+            QString error;
+            if (!hidden.write(file, &error)) return Result::fail("WriteError", str(error), {{"path", str(file)}});
+            m_window.hiddenGamesChanged();
+            return Result::ok(hiddenJson(hidden));
+        });
+
     add(registry, "gui.list_recent", "Recently opened games, newest first", s::object({}),
         s::object({{"recent", s::array(s::object({{"path", s::string()}, {"identity", s::string()},
                                                    {"exists", s::boolean()}}),
@@ -2076,7 +2136,7 @@ void GuiHost::registerCommands(api::Registry& registry)
         false, false, [this](CallContext&, const Json&) {
             Json list = Json::array();
             const auto entries = m_window.libraryEntries();
-            for (const QString& path : m_settings.recent()) {
+            for (const QString& path : m_window.visibleRecent()) {
                 QString identity;
                 for (const auto& e : entries) {
                     if (e.path == path) identity = e.identity;
@@ -2091,7 +2151,7 @@ void GuiHost::registerCommands(api::Registry& registry)
         s::object({{"cartridge", Json{{"type", "object"}}}, {"runState", s::stringEnum({"Running"})},
             {"identity", s::string()}, {"batterySave", s::string()}, {"warning", s::string()}}),
         true, false, [this](CallContext& ctx, const Json& args) {
-            const QStringList recent = m_settings.recent();
+            const QStringList recent = m_window.visibleRecent(); // as File > Open Recent shows it
             const int index = args["index"].get<int>();
             if (index >= recent.size()) return invalid("/index", "there are only " + std::to_string(recent.size()) + " recent games");
             return openRom(ctx, recent[index]);

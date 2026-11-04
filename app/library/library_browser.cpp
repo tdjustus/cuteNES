@@ -1,6 +1,7 @@
 #include "library/library_browser.hpp"
 
 #include <QAction>
+#include <QCursor>
 #include <QActionGroup>
 #include <QButtonGroup>
 #include <QDir>
@@ -479,6 +480,40 @@ LibraryBrowser::LibraryBrowser(QWidget* parent)
     for (QAbstractItemView* view : {static_cast<QAbstractItemView*>(m_grid), static_cast<QAbstractItemView*>(m_list)}) {
         view->installEventFilter(this);
         connect(view, &QAbstractItemView::activated, this, &LibraryBrowser::activate);
+        // The game's menu (#181): a right-click, or the Menu key on the
+        // selected game.
+        view->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(view, &QWidget::customContextMenuRequested, this, [this, view](const QPoint& pos) {
+            QModelIndex index = view->indexAt(pos);
+            QPoint at = pos;
+            if (!index.isValid()) { // the keyboard's: the current game
+                index = view->currentIndex();
+                at = view->visualRect(index).center();
+            }
+            if (!index.isValid()) return;
+            if (QMenu* menu = gameMenu(index.data(LibraryModel::PathRole).toString())) {
+                menu->popup(view->viewport()->mapToGlobal(at));
+            }
+        });
+        // The ⋯ button over the game under the pointer.
+        auto* button = new QToolButton(view->viewport());
+        button->setObjectName(QStringLiteral("gameMenuButton"));
+        button->setText(QStringLiteral("⋯"));
+        button->setToolTip(tr("Game menu"));
+        button->setAutoRaise(true);
+        button->setCursor(Qt::ArrowCursor);
+        button->hide();
+        connect(button, &QToolButton::clicked, this, [this, button] {
+            if (!m_menuButtonIndex.isValid()) return;
+            if (QMenu* menu = gameMenu(m_menuButtonIndex.data(LibraryModel::PathRole).toString())) {
+                menu->popup(button->mapToGlobal(QPoint(0, button->height())));
+            }
+        });
+        (view == m_grid ? m_gridMenuButton : m_listMenuButton) = button;
+        view->viewport()->installEventFilter(this);
+        connect(view, &QAbstractItemView::entered, this, [this, view](const QModelIndex& index) {
+            showMenuButton(view, index);
+        });
     }
 
     // The grid's cards inset by half a gap, so they line up with the
@@ -783,6 +818,9 @@ void LibraryBrowser::changeEvent(QEvent* event)
 void LibraryBrowser::setEntries(QVector<LibraryEntry> entries)
 {
     const QString selected = selectedPath();
+    // The cards move: the ⋯ button comes back with the next hover.
+    showMenuButton(m_grid, {});
+    showMenuButton(m_list, {});
     m_model->setEntries(std::move(entries));
     if (!selected.isEmpty()) select(selected);
     if (!view()->currentIndex().isValid() && m_proxy->rowCount() > 0) {
@@ -799,18 +837,64 @@ void LibraryBrowser::setLibraryRoot(const QString& root)
     m_emptyText->setText(text);
 }
 
-bool LibraryBrowser::select(const QString& pathOrIdentity)
+QModelIndex LibraryBrowser::indexOf(const QString& pathOrIdentity) const
 {
     for (int row = 0; row < m_proxy->rowCount(); ++row) {
         const QModelIndex index = m_proxy->index(row, 0);
         if (index.data(LibraryModel::PathRole).toString() == pathOrIdentity
             || index.data(LibraryModel::IdentityRole).toString() == pathOrIdentity) {
-            view()->setCurrentIndex(index);
-            view()->scrollTo(index);
-            return true;
+            return index;
         }
     }
-    return false;
+    return {};
+}
+
+QMenu* LibraryBrowser::gameMenu(const QString& pathOrIdentity)
+{
+    const QModelIndex index = indexOf(pathOrIdentity);
+    if (!index.isValid()) return nullptr;
+    const QString identity = index.data(LibraryModel::IdentityRole).toString();
+    if (!m_gameMenu) {
+        m_gameMenu = new QMenu(this);
+        m_gameMenu->setObjectName(QStringLiteral("gameMenu"));
+    }
+    m_gameMenu->clear();
+    QAction* hide = m_gameMenu->addAction(tr("Hide"));
+    hide->setObjectName(QStringLiteral("gui.library_hide"));
+    hide->setProperty("command", QStringLiteral("gui.library_hide"));
+    hide->setToolTip(tr("Leave this game out of the library and Recent. Settings > Library can bring it back."));
+    // A file that is not an iNES image has no identity to hide it by.
+    hide->setEnabled(!identity.isEmpty());
+    connect(hide, &QAction::triggered, this, [this, identity] { emit hideRequested(identity); });
+    return m_gameMenu;
+}
+
+void LibraryBrowser::showMenuButton(QAbstractItemView* view, const QModelIndex& index)
+{
+    QToolButton* button = view == m_grid ? m_gridMenuButton : m_listMenuButton;
+    if (!button) return;
+    if (!index.isValid()) {
+        button->hide();
+        m_menuButtonIndex = QPersistentModelIndex();
+        return;
+    }
+    m_menuButtonIndex = index.sibling(index.row(), 0);
+    // A card's top-right corner; in the list, the end of the row.
+    QRect rect = view->visualRect(m_menuButtonIndex);
+    if (view == m_list) rect = QRect(QPoint(0, rect.top()), QSize(view->viewport()->width(), rect.height()));
+    const QSize size = button->sizeHint();
+    button->setGeometry(QRect(QPoint(rect.right() - size.width() - 4, rect.top() + 4), size));
+    button->show();
+    button->raise();
+}
+
+bool LibraryBrowser::select(const QString& pathOrIdentity)
+{
+    const QModelIndex index = indexOf(pathOrIdentity);
+    if (!index.isValid()) return false;
+    view()->setCurrentIndex(index);
+    view()->scrollTo(index);
+    return true;
 }
 
 QString LibraryBrowser::selectedPath() const
@@ -892,6 +976,14 @@ void LibraryBrowser::showEvent(QShowEvent* event)
 
 bool LibraryBrowser::eventFilter(QObject* watched, QEvent* event)
 {
+    // The ⋯ button goes when the pointer leaves the games, but not when it
+    // moves onto the button, which the viewport also counts as leaving.
+    if (event->type() == QEvent::Leave && (watched == m_grid->viewport() || watched == m_list->viewport())) {
+        auto* viewport = static_cast<QWidget*>(watched);
+        QToolButton* button = watched == m_grid->viewport() ? m_gridMenuButton : m_listMenuButton;
+        if (button && !button->geometry().contains(viewport->mapFromGlobal(QCursor::pos()))) button->hide();
+        return QWidget::eventFilter(watched, event);
+    }
     if (event->type() != QEvent::KeyPress) return QWidget::eventFilter(watched, event);
     auto* key = static_cast<QKeyEvent*>(event);
     if (key->key() == Qt::Key_Escape) {

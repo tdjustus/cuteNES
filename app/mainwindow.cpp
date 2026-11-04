@@ -13,6 +13,7 @@
 #include "update/update_prompt.hpp"
 #include "dialogs/key_bindings_page.hpp"
 #include "dialogs/settings_dialog.hpp"
+#include "library/hidden_games.hpp"
 #include "library/library_browser.hpp"
 #include "library/library_index.hpp"
 #include "media/palettes.hpp"
@@ -308,10 +309,18 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_index = new LibraryIndex(options.indexCacheFile.isEmpty() ? LibraryIndex::defaultCacheFile()
                                                                  : options.indexCacheFile,
         m_settings, this);
-    connect(m_index, &LibraryIndex::entriesChanged, this, [this] { m_browser->setEntries(m_index->entries()); });
+    connect(m_index, &LibraryIndex::entriesChanged, this, [this] {
+        m_browser->setEntries(m_index->entries());
+        // Which games are hidden is known now. The index publishes its
+        // cache before the menus exist; they build Recent themselves.
+        if (m_recentMenu) rebuildRecentMenu();
+    });
     m_index->setLibrary(m_library);
 
     connect(m_browser, &LibraryBrowser::openRequested, this, [this](const QString& path) { openRom(path); });
+    connect(m_browser, &LibraryBrowser::hideRequested, this, [this](const QString& identity) {
+        runCommand(QStringLiteral("gui.library_hide"), {{QStringLiteral("identity"), identity}});
+    });
     connect(m_browser, &LibraryBrowser::openFileRequested, this,
         [this] { runCommand(QStringLiteral("gui.open_rom")); });
     connect(m_browser, &LibraryBrowser::addFolderRequested, this, &MainWindow::addRomFolder);
@@ -1044,7 +1053,7 @@ void MainWindow::rebuildRecentMenu()
     // File > Open Recent: the newest first, each opening by its place in
     // the list (gui.open_recent), then Clear List.
     m_recentMenu->clear();
-    const QStringList recent = m_settings.recent();
+    const QStringList recent = visibleRecent();
     for (int i = 0; i < recent.size(); ++i) {
         const QString text = i < 9 ? QStringLiteral("&%1 %2").arg(i + 1).arg(QFileInfo(recent[i]).fileName())
                                    : QFileInfo(recent[i]).fileName();
@@ -1156,6 +1165,9 @@ void MainWindow::showSettings(const QString& page)
             connect(m_settingsDialog, &SettingsDialog::removeRomFolderRequested, this, [this](const QString& path) {
                 runCommand(QStringLiteral("gui.remove_rom_folder"), {{QStringLiteral("path"), path}});
             });
+            connect(m_settingsDialog, &SettingsDialog::unhideRequested, this, [this](const QStringList& identities) {
+                runCommand(QStringLiteral("gui.library_unhide"), {{QStringLiteral("identities"), identities}});
+            });
             connect(m_settingsDialog, &SettingsDialog::keyBindingsRequested, this, [this] {
                 runCommand(QStringLiteral("gui.show_shortcuts"), {{QStringLiteral("section"), QStringLiteral("controls")}});
             });
@@ -1202,6 +1214,21 @@ void MainWindow::exit()
 QVector<LibraryEntry> MainWindow::libraryEntries() const
 {
     return m_index->entries();
+}
+
+QStringList MainWindow::visibleRecent() const
+{
+    QStringList recent = m_settings.recent();
+    recent.removeIf([this](const QString& path) { return m_index->isHidden(path); });
+    return recent;
+}
+
+void MainWindow::hiddenGamesChanged()
+{
+    QMetaObject::invokeMethod(this, [this] {
+        m_index->refreshAnnotations(); // its entriesChanged rebuilds Recent
+        updateSettingsDialog();
+    }, Qt::QueuedConnection);
 }
 
 void MainWindow::gameOpened(const QString& path, const GameIdentity&, const BatterySaver::Opened&)
@@ -1311,6 +1338,7 @@ void MainWindow::updateSettingsDialog()
     const Library current = library();
     m_settingsDialog->setLibraryRoot(current.root());
     m_settingsDialog->setRomFolders(current.folder(Library::Folder::Roms), m_settings.romFolders());
+    m_settingsDialog->setHiddenGames(HiddenGames::read(HiddenGames::fileIn(current.root())).games());
     const AppSettings::ServerSettings saved = m_settings.servers();
     const auto shown = [](bool enabled, int port, const Servers::Listener& running) {
         return SettingsDialog::Server{enabled, port, running.on, running.url, running.token, running.tokenFile};

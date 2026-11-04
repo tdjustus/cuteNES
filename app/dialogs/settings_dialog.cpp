@@ -92,6 +92,26 @@ SettingsDialog::SettingsDialog(QWidget* parent)
             folderButtons->addWidget(m_removeFolder);
             folderButtons->addStretch();
 
+            m_hiddenGames = new QListWidget(page);
+            m_hiddenGames->setObjectName(QStringLiteral("hiddenGames"));
+            m_hiddenGames->setSelectionMode(QAbstractItemView::ExtendedSelection);
+            m_hiddenGames->setMinimumHeight(80);
+            m_unhide = new QPushButton(tr("Unhide"), page);
+            m_unhide->setObjectName(QStringLiteral("unhideGames"));
+            m_unhide->setEnabled(false);
+            connect(m_hiddenGames, &QListWidget::itemSelectionChanged, this,
+                [this] { m_unhide->setEnabled(!m_hiddenGames->selectedItems().isEmpty()); });
+            connect(m_unhide, &QPushButton::clicked, this, [this] {
+                QStringList identities;
+                for (const QListWidgetItem* item : m_hiddenGames->selectedItems()) {
+                    identities << item->data(Qt::UserRole).toString();
+                }
+                if (!identities.isEmpty()) emit unhideRequested(identities);
+            });
+            auto* hiddenButtons = new QHBoxLayout;
+            hiddenButtons->addWidget(m_unhide);
+            hiddenButtons->addStretch();
+
             auto* locationNote = new QLabel(tr("Holds your battery saves, save states, screenshots, movies, "
                                                "recordings, cheats and debug output, in visible subfolders. "
                                                "Settings are kept separately, so the library can be backed up "
@@ -100,7 +120,10 @@ SettingsDialog::SettingsDialog(QWidget* parent)
             auto* foldersNote = new QLabel(tr("The library lists the ROMs in these folders and their subfolders. "
                                               "Added folders are only read: cuteNES never writes into them."),
                 page);
-            for (QLabel* note : {locationNote, foldersNote}) {
+            auto* hiddenNote = new QLabel(tr("Games you hid from the library. Their ROMs and saves are "
+                                             "untouched; unhiding brings them back as they were."),
+                page);
+            for (QLabel* note : {locationNote, foldersNote, hiddenNote}) {
                 note->setWordWrap(true);
                 note->setForegroundRole(QPalette::PlaceholderText);
             }
@@ -117,6 +140,11 @@ SettingsDialog::SettingsDialog(QWidget* parent)
             layout->addWidget(foldersNote);
             layout->addWidget(m_romFolders, 1);
             layout->addLayout(folderButtons);
+            layout->addSpacing(16);
+            layout->addWidget(heading(tr("Hidden games")));
+            layout->addWidget(hiddenNote);
+            layout->addWidget(m_hiddenGames, 1);
+            layout->addLayout(hiddenButtons);
         } else if (QLatin1String(key) == QLatin1String("servers")) {
             page = buildServersPage(m_stack);
         } else if (QLatin1String(key) == QLatin1String("video")) {
@@ -182,6 +210,18 @@ void SettingsDialog::setRomFolders(const QString& roms, const QStringList& added
         item->setData(Qt::UserRole, folder);
     }
     m_removeFolder->setEnabled(false);
+}
+
+void SettingsDialog::setHiddenGames(const QVector<HiddenGame>& games)
+{
+    m_hiddenGames->clear();
+    for (const HiddenGame& game : games) {
+        // A line without a name shows its identity.
+        auto* item = new QListWidgetItem(game.name.isEmpty() ? game.identity : game.name, m_hiddenGames);
+        item->setData(Qt::UserRole, game.identity);
+        item->setToolTip(game.identity);
+    }
+    m_unhide->setEnabled(false);
 }
 
 QWidget* SettingsDialog::buildServersPage(QWidget* parent)
