@@ -251,7 +251,7 @@ Split like G7, one branch after another: the debugger (G081 and its
 tests), the memory viewer (G082), the PPU viewers (G083), then the trace
 logger and memory dump (G084).
 
-- [ ] G080 [US9] Tests first (A13):
+- [x] G080 [US9] Tests first (A13):
   - [x] a breakpoint stops nestest where its log has it, with the log's
     registers (nestest's reset vector is `$C004`; the test enters at the
     log's `$C000` with a PC edit, as the log does);

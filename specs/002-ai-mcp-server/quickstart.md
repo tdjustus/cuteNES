@@ -27,10 +27,23 @@ In Claude Code: `claude mcp add cuteNES -- /path/to/cutenes-server --library /pa
 | Client | Version | Date | Transport | Result |
 |---|---|---|---|---|
 | Claude Code | 2.1.308 | 2026-10-30 | stdio | Pass. Listed all 54 headless tools (2 `api.*`, 40 `core.*`, 12 `session.*`, no `gui.*`). Loaded `instr_test-v5/rom_singles/01-basics.nes` (mapper 0), ran 600 frames, and read `$6000` = `$00` with the `DE B0 61` signature and the text "01-basics … Passed" through `core.peek`. Received a 256x240 PNG image block from `core.screen` |
-| Second client | | | | Open: #79 |
+| MCP Inspector (`@modelcontextprotocol/inspector`, CLI mode) | 2.11.0 | 2026-11-03 | stdio and Streamable HTTP | Pass (#79). Over stdio, `tools/list` returned all 59 headless tools (2 `api.*`, 45 `core.*`, 12 `session.*`), the same names as `tests/api/catalog.golden.json`. Over Streamable HTTP (`cutenes-server --mcp-port 8799`, the token as `Authorization: Bearer`) it loaded `01-basics.nes` (mapper 0), ran 600 frames, and read `$6000` = `$00` with the `DE B0 61` signature and the text "01-basics … Passed" through `core.peek`. `core.screen` returned a 256x240 PNG image block |
 
-Run with a temporary config, so the user's own config was not changed:
+Claude Code ran with a temporary config, so the user's own config was not changed:
 `claude -p --strict-mcp-config --mcp-config mcp.json --allowedTools mcp__cutenes "<the steps above>"`.
+
+The Inspector ran from an empty scratch folder, pinned to a release at least two weeks old, against a scratch library holding only the test ROM. Its CLI starts a new stdio server for each call, so the steps that need one machine across calls ran over HTTP against one server:
+
+```bash
+npx -y @modelcontextprotocol/inspector@2.11.0 --cli cutenes-server --library LIB --method tools/list
+cutenes-server --library LIB --mcp-port 8799 --mcp-token-file mcp.token &
+TOKEN=$(jq -r .token mcp.token)
+I="npx -y @modelcontextprotocol/inspector@2.11.0 --cli http://127.0.0.1:8799/mcp --transport http"
+$I --header "Authorization: Bearer $TOKEN" --method tools/call --tool-name core.load_rom --tool-arg path=01-basics.nes
+$I --header "Authorization: Bearer $TOKEN" --method tools/call --tool-name core.run_frames --tool-arg frames=600
+$I --header "Authorization: Bearer $TOKEN" --method tools/call --tool-name core.peek --tool-arg addr=24576 --tool-arg length=48
+$I --header "Authorization: Bearer $TOKEN" --method tools/call --tool-name core.screen
+```
 
 ## Headless API for scripts
 
