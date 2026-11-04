@@ -144,6 +144,14 @@ single value that makes all of its tests pass together.
   write + 3-cycle restart skew, IRQ from the write grid-quantized, wrap as its own
   period-end event, 5-step period 37281.5 CPU cycles. No known-failing ROMs remain.
 
+- **PAL frame IRQ windows (#178, 2026-11-03):** the assert window, the read-race
+  re-assert and the 5-step period's extra half cycle were master ticks fixed at
+  NTSC's half-cycle (30, 6 and 6). The frame counter is clocked by the CPU, and the
+  nesdev wiki and Mesen2 give the same CPU-cycle window on the RP2A07, so they are
+  now CPU half-cycles of the region (5, 1 and 1: 8 ticks each on PAL). NTSC is
+  unchanged; `ApuPal.AReadReassertsTheFrameIrqOnAsManyCpuCyclesAsOnNtsc` pins it.
+  The unused `kFrameIrqPollTicks` is gone.
+
 - **MMC3 IRQ resolved (T069):** revision B counter rule; the A12 delivery model
   (sprite-fetch rise at dot 262, BG fetch phases) was already correct — only the
   reload-clock assertion was missing. `4.Scanline_timing` and `6.MMC3_rev_B` gated.

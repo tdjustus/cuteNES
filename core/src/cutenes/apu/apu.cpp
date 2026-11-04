@@ -469,7 +469,7 @@ std::uint8_t Apu::statusRead()
     // (6-irq_flag_timing test 4). Reads while not visible change nothing.
     if (frameVisible) {
         if (m_sched.now() < m_frameIrqAssertUntil) {
-            m_frameIrqAt = m_sched.now() + timing::kFrameIrqReassertTicks;
+            m_frameIrqAt = m_sched.now() + timing::kFrameIrqReassertHalfCycles * halfCycleTicks();
         } else {
             m_frameIrqAt = 0;
         }
@@ -1014,7 +1014,7 @@ std::uint64_t Apu::nextSequenceEvent() const
         best = m_seqClockBase + e.cpu * m_profile.cpuDivisor;
     }
     const std::uint64_t period = periodCycles(m_profile, m_frameMode5)
-        * m_profile.cpuDivisor + (m_frameMode5 ? 6u : 0u);
+        * m_profile.cpuDivisor + (m_frameMode5 ? timing::kFrameSeq5ExtraHalfCycles * halfCycleTicks() : 0u);
     if (!m_frameMode5 && !m_irqFiredThisPeriod) {
         const std::uint64_t irq =
             m_seqBaseMaster + irqCycles(m_profile) * m_profile.cpuDivisor;
@@ -1048,12 +1048,12 @@ void Apu::fireSequenceEvent(std::uint64_t eventMaster)
             m_frameIrqAt =
                 (eventMaster + timing::kFrameIrqVisibleTicks + apuPeriod - 1)
                 / apuPeriod * apuPeriod;
-            m_frameIrqAssertUntil = m_frameIrqAt + timing::kFrameIrqAssertTicks;
+            m_frameIrqAssertUntil = m_frameIrqAt + timing::kFrameIrqAssertHalfCycles * halfCycleTicks();
         }
         return;
     }
     const std::uint64_t period = periodCycles(m_profile, m_frameMode5)
-        * m_profile.cpuDivisor + (m_frameMode5 ? 6u : 0u);
+        * m_profile.cpuDivisor + (m_frameMode5 ? timing::kFrameSeq5ExtraHalfCycles * halfCycleTicks() : 0u);
     if (eventMaster == m_seqBaseMaster + period) {
         // Period wrap: an event of its own, after the IRQ.
         m_seqBaseMaster += period;

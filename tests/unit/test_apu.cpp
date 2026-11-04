@@ -344,3 +344,53 @@ TEST(ApuPal, HalfFrameLengthClockIsAtCycle16627)
     h.advanceCpuCycles(700);
     EXPECT_EQ(h.apu.registerRead(0x4015) & 1, 0);
 }
+
+namespace {
+
+// For one region: on how many CPU cycles, counted from the first one the
+// frame IRQ flag is visible, a $4015 read is followed by the flag being set
+// again on the next cycle.
+int frameIrqReassertCycles(cutenes::Region region)
+{
+    const cutenes::RegionProfile profile = cutenes::regionProfile(region);
+    const auto run = [&](std::uint64_t readAt) {
+        cutenes::Scheduler scheduler{profile};
+        cutenes::Bus bus;
+        cutenes::Apu apu{profile, scheduler, bus};
+        apu.reset(/*cold=*/true);
+        scheduler.reset();
+        apu.registerWrite(0x4017, 0x00);
+        std::uint64_t cycle = 0;
+        std::uint64_t firstVisible = 0;
+        while (true) {
+            scheduler.advanceMaster(profile.cpuDivisor);
+            apu.runTo(scheduler.now());
+            ++cycle;
+            if (firstVisible == 0 && apu.frameIrqPending()) firstVisible = cycle;
+            if (firstVisible != 0 && cycle == firstVisible + readAt) break;
+        }
+        (void)apu.registerRead(0x4015);
+        scheduler.advanceMaster(profile.cpuDivisor);
+        apu.runTo(scheduler.now());
+        return apu.frameIrqPending();
+    };
+    int count = 0;
+    for (std::uint64_t k = 0; k < 8; ++k) count += run(k) ? 1 : 0;
+    return count;
+}
+
+} // namespace
+
+// The frame counter is clocked by the CPU, so its flag-setting window is a
+// number of CPU cycles on both regions: three cycles (one APU cycle and a
+// half) on NTSC and on the PAL RP2A07 alike (nesdev wiki "APU Frame
+// Counter": 14914 GET, 14914 PUT, 0 GET; on PAL 16626 GET, 16626 PUT, 0 GET;
+// Mesen2's ApuFrameCounter: cycles 29828-29830 NTSC, 33252-33254 PAL). A
+// read inside it sets the flag again on the same cycles on PAL as on NTSC
+// (#178), which master ticks fixed at NTSC's would not.
+TEST(ApuPal, AReadReassertsTheFrameIrqOnAsManyCpuCyclesAsOnNtsc)
+{
+    const int ntsc = frameIrqReassertCycles(cutenes::Region::Ntsc);
+    EXPECT_GT(ntsc, 0) << "a read inside the window sets the flag again";
+    EXPECT_EQ(frameIrqReassertCycles(cutenes::Region::Pal), ntsc);
+}

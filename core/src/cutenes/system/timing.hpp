@@ -42,10 +42,13 @@ inline constexpr int kOddFrameSkipDecisionDot = 338;
 inline constexpr std::uint64_t kFrameSeq4[4] = {7457, 14913, 22371, 29830};
 inline constexpr std::uint64_t kFrameSeq5[5] = {7457, 14913, 22371, 29829, 37281};
 
-// Frame IRQ flag timing, in master clock ticks (item 7-10).
-inline constexpr std::uint64_t kFrameIrqVisibleTicks = 0;    // flag set at the APU boundary at/after the event (4-jitter 4/5)
-inline constexpr std::uint64_t kFrameIrqAssertTicks = 30;    // IRQ line held after set
-inline constexpr std::uint64_t kFrameIrqPollTicks = 24;      // CPU IRQ poll lookahead
-inline constexpr std::uint64_t kFrameIrqReassertTicks = 6;   // read-race re-assert
+// Frame IRQ flag timing (items 7-10). The frame counter is clocked by the
+// CPU, so these are CPU half-cycles of the region (6 master ticks on NTSC,
+// 8 on PAL; #178): the flag-setting window is the same number of CPU cycles
+// on both (nesdev wiki "APU Frame Counter", Mesen2's ApuFrameCounter).
+inline constexpr std::uint64_t kFrameIrqVisibleTicks = 0;        // flag set at the APU boundary at/after the event (4-jitter 4/5)
+inline constexpr std::uint64_t kFrameIrqAssertHalfCycles = 5;    // IRQ condition held after set
+inline constexpr std::uint64_t kFrameIrqReassertHalfCycles = 1;  // read-race re-assert
+inline constexpr std::uint64_t kFrameSeq5ExtraHalfCycles = 1;    // the 5-step period's half cycle past its last checkpoint
 
 } // namespace cutenes::timing
