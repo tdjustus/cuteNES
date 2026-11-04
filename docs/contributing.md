@@ -127,4 +127,6 @@ Every user-facing action in the desktop application is a menu item, a
 - Every new constant or behavior cites its source.
 - The documents above are current, including the test counts in
   [`building-and-testing.md`](building-and-testing.md) if they changed.
-- A bug you found and did not fix has an issue.
+- The change has an issue, and so does everything else you found or fixed
+  along the way: a bug fixed here gets `Fixes #N`; one found and not fixed
+  stays open, with cause and reproduction.

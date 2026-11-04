@@ -21,13 +21,24 @@ strategy; the rules below are the ones that must never be missed.
 - No `development` branch exists until v1.0. Do not create it, tag a
   release, or change branch protection without the maintainer's approval.
 - **Known bugs and features live in the GitHub milestone `1.0`.** At the
-  start of a session, list its open issues. File an issue for any bug you
-  find but do not fix in the current PR. Put `Fixes #N` in a PR only when it fully
-  resolves the issue; use `Refs #N` otherwise, in commit messages too (any closing keyword closes
-  the issue on merge). Never close an issue that is not fully resolved:
-  postpone it instead (label or later milestone). When the
+  start of a session, list its open issues. When the
   milestone is empty, tell the maintainer and propose the release steps in
   `docs/source-control.md`.
+- **Every change has an issue, opened before the work and closed when it
+  merges** (`docs/source-control.md`, "Tracking work"). That includes every
+  new bug or feature, even one fixed in the same session, a CI or toolchain
+  break, a test race, an unexplained or flaky failure, and a small addition
+  that comes up inside another PR. File it with `gh issue create
+  --milestone 1.0` when you find it, then reference it in commits and PRs.
+- Put `Fixes #N` in a PR only when it fully resolves the issue; use `Refs #N`
+  otherwise, in commit messages too (any closing keyword closes the issue on
+  merge). Never close an issue that is not fully resolved: postpone it
+  instead (label or later milestone). Exception: an issue whose work is
+  merged and which waits only on hands-on checks is closed, and those checks
+  go in the manual test queue and #190.
+- **After every merge**, check each issue the PR touched: closed if done,
+  a status comment if not. Before ending a session, make sure nothing found
+  or done in it is missing an issue.
 
 ## Build and test
 

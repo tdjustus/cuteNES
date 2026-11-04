@@ -30,7 +30,10 @@ is resolved**, meaning the GitHub milestone `1.0` has no open issues (see
 3. **One logical change per branch.** Keep it small enough to review.
 4. **Tests first for core behavior** (constitution, Principle III): write
    the test, watch it fail, then fix.
-5. **Open a PR into `main`.** If the PR resolves tracked issues, put
+5. **Open a PR into `main`.** Every PR has at least one issue: the one it
+   was started for, plus one for anything else it fixes or adds along the
+   way (see [Tracking work](#tracking-work-the-10-milestone)). If the PR
+   resolves tracked issues, put
    `Fixes #N` in its description so they close on merge, but only when the
    PR fully resolves the issue. Otherwise use `Refs #N`, in every commit
    message too (a closing keyword anywhere in the history closes it). Never
@@ -93,12 +96,29 @@ The GitHub milestone **1.0** is the source of truth for "known bugs and
 roadmapped features". Labels: `bug`, `feature`, `test`, `ci`,
 `documentation`.
 
-- Every known bug that is not fixed in the current PR gets an issue in the
-  milestone immediately, with cause and reproduction. Do not leave bugs only
-  in a PR description or a commit message.
-- Every roadmapped feature, and any deferred test or documentation work,
-  gets an issue in the milestone.
-- Check the open milestone issues at the start of a work session.
+- **Issue first.** Every bug and every feature gets an issue in the
+  milestone when it is found or decided, before the work starts, with cause
+  and reproduction for a bug. That includes:
+  - a bug fixed in the same session or the same PR (file it, then fix it
+    with `Fixes #N`);
+  - a CI or toolchain break, such as a runner image or compiler update;
+  - a test race, and any unexplained or flaky failure, even one that cannot
+    be reproduced (say what was tried and what to capture next time);
+  - a small addition or fix that comes up inside another PR;
+  - deferred test or documentation work.
+
+  Do not leave anything only in a PR description, a commit message or a
+  conversation.
+- **Closed when merged.** An issue closes when the work that resolves it
+  merges: `Fixes #N` in the PR, or, for an issue filed after the fact, a
+  close with a comment naming the PR and commit. An issue whose work is
+  merged and which waits only on hands-on checks is closed too. Its checks
+  go in `specs/003-qt-frontend/manual-test-queue.md` and the manual test pass
+  issue (#190), which must be done before a beta or production release.
+- **After every merge**, look at each issue the PR touched: close what is
+  done and comment the status on the rest.
+- Check the open milestone issues at the start of a work session, and
+  before ending one, check that nothing found or done in it lacks an issue.
 - Scope is set by the maintainer: a suggested feature is not a milestone
   item until the maintainer agrees to it.
 
