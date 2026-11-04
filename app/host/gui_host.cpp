@@ -1550,10 +1550,13 @@ void GuiHost::registerCommands(api::Registry& registry)
             Machine& machine = ctx.session.machine();
             for (qsizetype i = 0; i < m_cheats.watches.size(); ++i) {
                 const Watch& w = m_cheats.watches[i];
+                // A watch is 1 or 2 bytes (gui.add_watch checks); the clamp
+                // also tells GCC 15, whose -Wstringop-overflow cannot see it.
+                const int size = std::clamp(w.size, 1, 2);
                 std::uint8_t bytes[2] = {};
-                for (int b = 0; b < w.size; ++b) bytes[b] = machine.peek(static_cast<std::uint16_t>(w.address + b));
+                for (int b = 0; b < size; ++b) bytes[b] = machine.peek(static_cast<std::uint16_t>(w.address + b));
                 list.push_back({{"index", i}, {"label", str(w.label)}, {"address", w.address}, {"size", w.size},
-                    {"value", bytes[0] | (w.size == 2 ? bytes[1] << 8 : 0)}});
+                    {"value", bytes[0] | (size == 2 ? bytes[1] << 8 : 0)}});
             }
             return Result::ok({{"watches", list}});
         });
