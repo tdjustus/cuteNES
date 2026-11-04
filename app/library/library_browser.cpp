@@ -869,6 +869,16 @@ QMenu* LibraryBrowser::gameMenu(const QString& pathOrIdentity)
     return m_gameMenu;
 }
 
+void LibraryBrowser::popupGameMenu()
+{
+    QAbstractItemView* games = view();
+    const QModelIndex index = games->currentIndex();
+    if (!index.isValid()) return;
+    if (QMenu* menu = gameMenu(index.data(LibraryModel::PathRole).toString())) {
+        menu->popup(games->viewport()->mapToGlobal(games->visualRect(index).center()));
+    }
+}
+
 void LibraryBrowser::showMenuButton(QAbstractItemView* view, const QModelIndex& index)
 {
     QToolButton* button = view == m_grid ? m_gridMenuButton : m_listMenuButton;

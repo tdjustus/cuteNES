@@ -565,6 +565,13 @@ plugged back in gets its player back. Unplugging a pad during play shows
 `input.pauseOnGamepadDisconnect` (on by default), pauses. Outside the game
 (the library, the Key Bindings page, dialogs) the D-pad and left stick move
 like the arrow keys, South confirms like Enter and East goes back like Esc.
+An open menu takes them first, as it takes the keyboard's (#181). In the
+library, North opens the selected game's menu, as the Menu key does. In a
+game, File > Game Library's default pad binding is LeftShoulder +
+RightShoulder, which no game button uses by default, so a pad alone gets
+from a game to the library and (with East) back. These navigation
+controls are fixed; only the Game Library combination is a binding, on the
+Key Bindings page.
 
 Settings > Input holds `input.turboRate` (2-30 presses a second, 15),
 `input.allowOppositeDirections` (off: the last pressed of Left/Right and of

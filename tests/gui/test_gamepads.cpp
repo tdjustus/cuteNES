@@ -26,6 +26,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QKeyEvent>
+#include <QMenu>
 #include <QSpinBox>
 #include <QTreeWidget>
 
@@ -307,4 +308,76 @@ TEST(GuiGamepads, SettingsInputHoldsTheOptionsAndListsThePads)
     EXPECT_TRUE(waitUntil([&] {
         return call(f.w, "gui.get_settings", {{"group", "input"}})["values"]["input"]["pauseOnGamepadDisconnect"] == false;
     }));
+}
+
+// #181 part 2: in the library, North opens the selected game's menu (the
+// one a right-click or the ⋯ button opens), and the pad drives that menu as
+// it drives the library: the D-pad moves, South chooses, East closes.
+TEST(GuiGamepads, NorthOpensTheGamesMenuAndThePadDrivesIt)
+{
+    QString folder;
+    Fixture f(&folder);
+    const QString roms = folder + QStringLiteral("/library/roms");
+    QDir().mkpath(roms);
+    QFile::copy(kRom, roms + QStringLiteral("/a-first.nes"));
+    ASSERT_TRUE(waitUntil([&] { return call(f.w, "gui.library_list")["entries"].size() == 1; }));
+    ASSERT_TRUE(waitUntil([&] { return f.w.isShowingLibrary(); }));
+    f.pads->plug(1, "guid-one", "Pad One");
+    auto* browser = f.w.findChild<cutenes::app::LibraryBrowser*>();
+    browser->view()->setFocus();
+    browser->view()->setCurrentIndex(browser->view()->model()->index(0, 0));
+
+    const auto menu = [&] { return browser->findChild<QMenu*>(QStringLiteral("gameMenu")); };
+    f.pads->press(1, PadControl::North);
+    f.pads->release(1, PadControl::North);
+    ASSERT_TRUE(waitUntil([&] { return menu() && menu()->isVisible(); })) << "North opens the game's menu";
+    f.pads->press(1, PadControl::East);
+    f.pads->release(1, PadControl::East);
+    EXPECT_TRUE(waitUntil([&] { return !menu()->isVisible(); })) << "East closes it";
+    EXPECT_TRUE(f.w.isShowingLibrary()) << "and only the menu";
+    // A desktop gives the window back its focus when a menu closes; the
+    // offscreen platform leaves no window active, and the pad (rightly)
+    // does nothing while cuteNES is not the active application.
+    f.w.activateWindow();
+    ASSERT_TRUE(waitUntil([&] { return QApplication::activeWindow() == &f.w; }));
+
+    f.pads->press(1, PadControl::North);
+    f.pads->release(1, PadControl::North);
+    ASSERT_TRUE(waitUntil([&] { return menu()->isVisible(); }));
+    f.pads->press(1, PadControl::DPadDown); // onto Hide, its only item
+    f.pads->release(1, PadControl::DPadDown);
+    f.pads->press(1, PadControl::South);
+    f.pads->release(1, PadControl::South);
+    EXPECT_TRUE(waitUntil([&] { return call(f.w, "gui.library_hidden")["hidden"].size() == 1; }))
+        << "South chose Hide";
+    EXPECT_TRUE(waitUntil([&] { return call(f.w, "gui.library_list")["entries"].empty(); }));
+}
+
+// #181 part 2: a pad alone gets from a game back to the library and back:
+// both shoulders together are File > Game Library (no game button uses
+// them by default), and East returns to the game.
+TEST(GuiGamepads, BothShouldersReturnToTheLibraryAndEastToTheGame)
+{
+    Fixture f;
+    f.pads->plug(1, "guid-one", "Pad One");
+    f.openGame();
+    ASSERT_FALSE(f.w.isShowingLibrary());
+    const Json bindings = call(f.w, "gui.list_bindings")["bindings"];
+    bool listed = false;
+    for (const Json& b : bindings) {
+        if (b["id"] == "gui.show_library") listed = b["bindings"].dump().find("Pad:LeftShoulder+RightShoulder") != std::string::npos;
+    }
+    EXPECT_TRUE(listed) << "the default, shown on the Key Bindings page";
+
+    f.pads->press(1, PadControl::LeftShoulder);
+    f.pads->press(1, PadControl::RightShoulder);
+    f.pads->release(1, PadControl::RightShoulder);
+    f.pads->release(1, PadControl::LeftShoulder);
+    ASSERT_TRUE(waitUntil([&] { return f.w.isShowingLibrary(); }));
+    EXPECT_TRUE(waitUntil([&] { return runState(f.w) == "Paused"; })) << "the game waits";
+
+    f.pads->press(1, PadControl::East);
+    f.pads->release(1, PadControl::East);
+    EXPECT_TRUE(waitUntil([&] { return !f.w.isShowingLibrary(); })) << "East goes back to the game";
+    EXPECT_TRUE(waitUntil([&] { return runState(f.w) == "Running"; }));
 }
