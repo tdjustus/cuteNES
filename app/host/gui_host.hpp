@@ -142,6 +142,11 @@ public:
         virtual void exit() = 0;
         virtual Library library() const = 0;
         virtual QVector<LibraryEntry> libraryEntries() const = 0;
+        // File > Open Recent's games: the recent ones, hidden games left
+        // out (#181).
+        virtual QStringList visibleRecent() const = 0;
+        // .hiddenroms changed: the library, Recent and Settings follow.
+        virtual void hiddenGamesChanged() = 0;
         virtual void gameOpened(const QString& path, const GameIdentity& id, const BatterySaver::Opened& battery) = 0;
         virtual void gameClosed() = 0;
         virtual void recentChanged() = 0;
@@ -298,6 +303,9 @@ private:
     std::optional<QVector<Cheat>> m_movieCheats; // playing: the movie's cheats, in place of the game's
     std::optional<QByteArray> m_playerBattery;   // playing: the player's battery RAM, back when it stops
     mutable std::mutex m_movieMutex;
+    // .hiddenroms is read, changed and written under it: commands run on
+    // two threads.
+    std::mutex m_hiddenMutex;
     MovieStatus m_movieStatus; // under m_movieMutex
 
     // Emulation thread: rewind (R6) and speed (FR-035).

@@ -4,8 +4,9 @@
 // and recent games, with name, mapper, region, support, save and state
 // flags and last played. Games show as cards in a grid, or as rows in a
 // list. Type to filter, sort, show only recent games, and launch with Enter
-// or a double click. Fully usable from the keyboard; gamepad focus arrives
-// in G4.
+// or a double click. A game's menu (right-click, the Menu key, or the ⋯
+// button on the hovered card or row) has Hide (#181). Fully usable from the
+// keyboard; gamepad focus arrives in G4.
 
 #include "library/library_index.hpp"
 
@@ -16,6 +17,7 @@
 class QAbstractItemView;
 class QLabel;
 class QLineEdit;
+class QMenu;
 class QListView;
 class QStackedWidget;
 class QToolButton;
@@ -83,6 +85,9 @@ public:
 
     // The view showing the games (the grid or the list).
     QAbstractItemView* view() const;
+    // The menu of the game with this path or identity, ready to pop up;
+    // null when the browser has no such game.
+    QMenu* gameMenu(const QString& pathOrIdentity);
     QLineEdit* filterEdit() const { return m_filter; }
 
 signals:
@@ -94,6 +99,8 @@ signals:
     void keyBindingsRequested();
     // Escape while a game is loaded.
     void backRequested();
+    // The game menu's Hide (#181).
+    void hideRequested(const QString& identity);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -107,6 +114,9 @@ private:
     void sortBy(int column, Qt::SortOrder order);
     void updateState();
     void updateStyle();
+    QModelIndex indexOf(const QString& pathOrIdentity) const;
+    // The ⋯ button over `index` of `view` (an invalid index hides it).
+    void showMenuButton(QAbstractItemView* view, const QModelIndex& index);
 
     LibraryModel* m_model;
     LibraryFilter* m_proxy;
@@ -128,6 +138,10 @@ private:
     QStackedWidget* m_pages = nullptr;
     QLabel* m_emptyText = nullptr;
     QLabel* m_noMatch = nullptr;
+    QMenu* m_gameMenu = nullptr;
+    QToolButton* m_gridMenuButton = nullptr;
+    QToolButton* m_listMenuButton = nullptr;
+    QPersistentModelIndex m_menuButtonIndex; // the game the ⋯ button is for
 };
 
 } // namespace cutenes::app

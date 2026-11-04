@@ -5,6 +5,8 @@
 // and G5 the Video, Audio and Emulation pages; the others arrive with their phases. Hotkeys are on the Key
 // Bindings page, which Input links to.
 
+#include "library/hidden_games.hpp"
+
 #include <QDialog>
 
 class QCheckBox;
@@ -31,6 +33,8 @@ public:
     // The folders the library scans: its own roms folder (always first, not
     // removable) and the added ones.
     void setRomFolders(const QString& roms, const QStringList& added);
+    // The games hidden from the library (#181), in .hiddenroms' order.
+    void setHiddenGames(const QVector<HiddenGame>& games);
 
     // Settings > Servers: what is saved, and what is running.
     struct Server {
@@ -98,6 +102,8 @@ signals:
     void openLibraryFolderRequested();
     void addRomFolderRequested();
     void removeRomFolderRequested(const QString& path);
+    // Unhide: gui.library_unhide with these identities.
+    void unhideRequested(const QStringList& identities);
     // A Servers or Input control changed: gui.set_setting with this key
     // and value.
     void settingRequested(const QString& key, const QVariant& value);
@@ -109,6 +115,8 @@ private:
     QLabel* m_libraryRoot;
     QListWidget* m_romFolders = nullptr;
     QPushButton* m_removeFolder = nullptr;
+    QListWidget* m_hiddenGames = nullptr;
+    QPushButton* m_unhide = nullptr;
     struct ServerControls {
         QCheckBox* enabled = nullptr;
         QSpinBox* port = nullptr;

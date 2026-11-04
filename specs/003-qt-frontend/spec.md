@@ -79,6 +79,13 @@ holding a few public-domain test ROMs:
    battery save is written and the new game starts.
 6. **Given** a running game, **When** File > Close Game is chosen, **Then**
    the battery save is written and the library browser returns.
+7. **Given** the library browser (amendment 2026-11-03, #181), **When** the
+   user right-clicks a game, or clicks the ⋯ button a card shows while
+   hovered, and chooses **Hide**, **Then** the game leaves the library and
+   File > Open Recent. It stays hidden after a rescan and after its ROM is
+   renamed or moved. Settings > Library lists the hidden games, and
+   **Unhide** brings them back with their saves, states and cheats as they
+   were. No ROM file is changed, moved or deleted.
 
 ---
 
@@ -490,6 +497,13 @@ the same arguments. Launch with a ROM argument: no prompt.
 - **FR-006**: A ROM the core rejects MUST be listed as unsupported with the
   core's reason. Opening it MUST show that reason and leave any running game
   unaffected.
+- **FR-007** (amendment 2026-11-03, #181): The user MUST be able to hide a
+  game from the library (a context menu on the game, and a ⋯ button on a
+  hovered card) and unhide it from Settings > Library. Hidden games are
+  recorded by identity in the library's `.hiddenroms` file
+  (contracts/library-layout.md) and left out of the browser, File > Open
+  Recent, `gui.library_list` and `gui.list_recent`. Hiding MUST NOT touch the
+  ROM or the game's other files.
 
 **Library folder**
 

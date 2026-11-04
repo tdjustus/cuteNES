@@ -326,6 +326,14 @@ Every setting can be read and changed without the dialog:
   under it (`video.scale`, or `hotkeys` itself).
 - `gui.set_setting` (`key`, `value`) validates and applies a value.
 
+**Hiding games (#181, spec FR-007).** In the library browser, a right-click
+on a game (card or list row) opens its menu, and so does the **⋯** button a
+card shows in its top-right corner while the pointer is over it (in the
+list, at the end of the row). The menu has **Hide**, which runs
+`gui.library_hide`. **Settings > Library** has a **Hidden games** list, from
+`.hiddenroms`, with each game's name; **Unhide** runs `gui.library_unhide`
+for the selected ones. Neither touches the ROM files.
+
 Update checks (US10, #105) are the setting `updates.check` (off until the
 user says yes). No command installs an update. See "Updates" below.
 
@@ -397,6 +405,8 @@ still checks it.
 | `gui.close_window` | `window`: `about`, `settings`, `cheats`, `cheat_search`, `debugger`, `memory_viewer`, `ppu_viewer`, `trace_logger`, `user_guide`, or `all`. Returns `closed`, the windows it closes; one not open is refused (`InvalidArguments`). The windows close on the GUI thread, so `gui.list_windows` drops them a moment later |
 | `gui.list_windows` | `windows`: the windows above that are shown now, in name order. A window a `gui.show_*` just opened is listed a moment later: the window opens on the GUI thread after the command returns (R11). The library and Key Bindings are pages of the main window, not windows (`gui.state` `page`) |
 | `gui.library_select` | `path` or `identity`: select a game in the browser |
+| `gui.library_hide` | `identity`: hide that game from the library (#181, library-layout "Hidden games"). Returns `hidden`, the list as `gui.library_hidden`. Hiding a hidden game changes nothing |
+| `gui.library_unhide` | `identities`: unhide those games. Returns `hidden`. An identity that is not hidden is refused (`InvalidArguments`), and nothing changes |
 | `gui.add_rom_folder` / `gui.remove_rom_folder` | `path`: scan another folder of ROMs in place, or stop scanning it (FR-002). Overlapping folders and the library's own `roms/` are refused. Returns `romFolders` |
 | `gui.add_cheat` / `gui.remove_cheat` / `gui.set_cheat_enabled` / `gui.list_cheats` | Cheat list (data-model "Cheat") |
 | `gui.cheat_search_reset` / `gui.cheat_search_filter` / `gui.cheat_search_results` | `filter`: `equal`/`not_equal`/`greater`/`less`/`changed`/`unchanged`, optional `value`; `size` 1 or 2 bytes (reset). Works while the game runs; each snapshot is taken at a frame boundary |
@@ -411,7 +421,8 @@ still checks it.
 | `gui.state` | `page` (`library`, `game` or `key_bindings`), `game` (one is open), `fullscreen`, `scale`, `speed` (percent; 0 is Unlimited), `fastForward`, `rewinding`, `movie` (as `gui.movie_status`), `selectedSlot`, `windows` (as `gui.list_windows`) |
 | `gui.list_slots` | For each slot 1-10: `empty`, or `name`, `savedAt` (ISO 8601, UTC), `size`, and the `state` and `thumbnail` file paths; and the game's `selectedSlot` |
 | `gui.list_recent` | Recent games with path, identity and whether the file exists |
-| `gui.library_list` | The browser's entries (data-model "LibraryEntry"). In GUI mode `session.library_list` returns the same (FR-074) |
+| `gui.library_list` | The browser's entries (data-model "LibraryEntry"), hidden games left out. In GUI mode `session.library_list` returns the same (FR-074) |
+| `gui.library_hidden` | `hidden`: the hidden games (`identity`, `name`) in the file's order (#181) |
 
 ## Status bar and indicator (FR-073)
 

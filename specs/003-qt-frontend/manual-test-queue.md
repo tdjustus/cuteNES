@@ -603,6 +603,34 @@ By hand:
 2. A state saved by cuteNES 0.2.0 (alpha 2), to a slot or a file, still
    loads into its own game.
 
+### Hiding games from the library (#181)
+
+Automated:
+- `GuiHiddenGames.*`: the `.hiddenroms` format (comments, a bad line skipped,
+  upper-case hex, a duplicate ignored), the atomic write that keeps comment
+  lines and removes an empty file, hiding through `gui.library_hide` (the
+  ROM untouched, still hidden after a rename and a move), unhiding (one
+  that is not hidden refused), Recent and `gui.open_recent` counting only
+  the games shown, the game menu's Hide, and Settings > Library's list and
+  Unhide.
+- Checked live through the MCP: see the PR.
+
+By hand:
+1. Point at a card in the library: a ⋯ button shows in its top-right
+   corner, and goes when the pointer leaves the card (not when it moves
+   onto the button). Click it: the menu has Hide.
+2. Right-click a card, and a row in the list view: the same menu. In the
+   list, the ⋯ button sits at the end of the row.
+3. With a game selected, press the keyboard's Menu key (or Shift+F10): the
+   menu opens on that game.
+4. Hide a game: it leaves the library and File > Open Recent at once.
+   Restart cuteNES: it is still hidden.
+5. Open `.hiddenroms` in the library folder in a text editor: it lists the
+   game by SHA-1 and name. Add a `#` comment line, then hide another game:
+   the comment is still there.
+6. Settings > Library: Hidden games lists both. Select one and Unhide: it
+   is back in the library with its saves and states.
+
 ### Windows and Linux: a hidden game keeps its speed (#151)
 
 Automated:

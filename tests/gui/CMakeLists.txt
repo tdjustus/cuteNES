@@ -11,6 +11,7 @@ add_executable(cutenes-gui-tests
     test_library.cpp
     test_library_index.cpp
     test_library_window.cpp
+    test_hidden_games.cpp
     test_menu_bar.cpp
     test_play.cpp
     test_qt_parts.cpp

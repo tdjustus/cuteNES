@@ -25,6 +25,15 @@ cuteNES application menu on macOS rather than the menu named here.
 To go back to the library while playing, use **File > Game Library**
 (Ctrl+Shift+O). The game pauses while you browse.
 
+**Hiding a game.** Right-click a game in the library, or click the **⋯**
+button that appears on it when you point at it, and choose **Hide**. The
+game leaves the library and File > Open Recent, and stays hidden even if
+you rename or move its file. Nothing is deleted: the ROM, its saves and
+its states stay where they are. To bring a game back, open **Settings >
+Library**, select it under **Hidden games** and click **Unhide**. The list
+is kept in a file named `.hiddenroms` in the library folder, so a backup
+or a synced library keeps the same games hidden.
+
 Only play games you own. cuteNES does not come with any games.
 
 ## Playing

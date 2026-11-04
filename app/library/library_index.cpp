@@ -1,5 +1,7 @@
 #include "library/library_index.hpp"
 
+#include "library/hidden_games.hpp"
+#include "log/app_log.hpp"
 #include "settings/app_settings.hpp"
 
 #include <cutenes/machine.hpp>
@@ -271,6 +273,12 @@ QVector<LibraryEntry> LibraryIndex::entries() const
     return m_entries;
 }
 
+bool LibraryIndex::isHidden(const QString& path) const
+{
+    std::lock_guard lock(m_mutex);
+    return m_hiddenPaths.contains(QFileInfo(path).absoluteFilePath());
+}
+
 void LibraryIndex::rescan()
 {
     if (!m_library) return;
@@ -279,7 +287,10 @@ void LibraryIndex::rescan()
         return;
     }
     QHash<QString, LibraryEntry> previous;
-    for (const auto& e : entries()) previous.insert(e.path, e);
+    {
+        std::lock_guard lock(m_mutex);
+        for (const auto& e : m_all) previous.insert(e.path, e);
+    }
     m_scan.setFuture(QtConcurrent::run(scanRoms, m_library->folder(Library::Folder::Roms),
         m_settings.romFolders(), m_settings.recent(), previous));
 }
@@ -298,7 +309,12 @@ void LibraryIndex::onScanFinished()
 
 void LibraryIndex::refreshAnnotations()
 {
-    publish(entries());
+    QVector<LibraryEntry> all;
+    {
+        std::lock_guard lock(m_mutex);
+        all = m_all;
+    }
+    publish(std::move(all));
 }
 
 void LibraryIndex::publish(QVector<LibraryEntry> list)
@@ -307,9 +323,31 @@ void LibraryIndex::publish(QVector<LibraryEntry> list)
     std::sort(list.begin(), list.end(), [](const LibraryEntry& a, const LibraryEntry& b) {
         return QString::compare(a.name, b.name, Qt::CaseInsensitive) < 0;
     });
+    // Hidden games (#181) stay in m_all, so a rescan need not read them
+    // again, and leave the list that is shown.
+    HiddenGames hidden;
+    if (m_library) {
+        QStringList skipped;
+        hidden = HiddenGames::read(HiddenGames::fileIn(m_library->root()), &skipped);
+        if (skipped != m_loggedSkips) { // once, not at every refresh
+            for (const QString& line : skipped) qCWarning(lcApp).noquote() << ".hiddenroms: skipped" << line;
+            m_loggedSkips = skipped;
+        }
+    }
+    QVector<LibraryEntry> shown;
+    QSet<QString> hiddenPaths;
+    for (const LibraryEntry& e : list) {
+        if (!e.identity.isEmpty() && hidden.contains(e.identity)) {
+            hiddenPaths.insert(e.path);
+        } else {
+            shown.push_back(e);
+        }
+    }
     {
         std::lock_guard lock(m_mutex);
-        m_entries = std::move(list);
+        m_all = std::move(list);
+        m_entries = std::move(shown);
+        m_hiddenPaths = std::move(hiddenPaths);
     }
     emit entriesChanged();
 }

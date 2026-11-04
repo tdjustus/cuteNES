@@ -23,7 +23,8 @@ cuteNES/
 ├── movies/          <game>/<name>.cnm
 ├── recordings/      <game>/<YYYYMMDD-HHMMSS>.wav   (FR-044)
 ├── cheats/          <game>.json
-└── debug/           <YYYYMMDDHHMMSS>.dmp (core dump), trace-<YYYYMMDD-HHMMSS>.log
+├── debug/           <YYYYMMDDHHMMSS>.dmp (core dump), trace-<YYYYMMDD-HHMMSS>.log
+└── .hiddenroms      games hidden from the library (#181; only while one is)
 ```
 
 At first launch the application creates the folder and its subfolders, and
@@ -32,6 +33,34 @@ puts a short `README.txt` in `roms/`.
 The user can also add ROM folders anywhere (setting `library.romFolders`).
 They are scanned recursively like `roms/`, but only read: per-game files
 for their games still go in this library.
+
+## Hidden games (`.hiddenroms`)
+
+Amendment 2026-11-03 (#181, spec FR-007). The games the user hid from the
+library. cuteNES never changes, moves or deletes a ROM, so hiding is a list,
+not an action on the file.
+
+- **Where:** `.hiddenroms` in the library folder, beside `roms/`. It goes
+  with the library: a backup or a synced folder keeps the same games hidden.
+  It is a dot file so that it stays out of the way in a file manager.
+- **Format:** UTF-8 text, one game per line, `<sha1>  <display name>`: the
+  40 lowercase hex digits of the game identity (R7), two spaces, and the
+  name the game had when it was hidden. The identity decides; the name is
+  for people reading the file and for the Settings list. Because the
+  identity is the ROM's data, a renamed or moved ROM stays hidden.
+- **Reading:** blank lines and lines starting with `#` are ignored. A line
+  that does not start with 40 hex digits is skipped and logged, never fatal.
+  Upper-case hex is read as lower-case. A second line for the same identity
+  is ignored.
+- **Writing:** the whole file is rewritten atomically (a temporary file,
+  then a rename), with the user's comment lines kept at the top. When no
+  game is hidden any more, the file is removed.
+- **Effect:** a hidden game is left out of the library browser, File > Open
+  Recent, `gui.library_list` and `gui.list_recent` (its Recent entry stays
+  in the settings and comes back when it is unhidden). Its saves, states,
+  screenshots, movies and cheats stay where they are. Opening its ROM with
+  File > Open ROM, the command line or a drop still plays it; hiding is
+  about the library, not a lock.
 
 ## Game names
 

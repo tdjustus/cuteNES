@@ -23,6 +23,7 @@ add_library(cutenes-app-lib STATIC
     library/library.cpp
     library/library_browser.cpp
     library/library_index.cpp
+    library/hidden_games.cpp
     media/wav_writer.cpp
     media/palettes.cpp
     media/movie.cpp

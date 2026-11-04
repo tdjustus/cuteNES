@@ -239,6 +239,8 @@ private:
     QString openLogFolder() override;
     void exit() override;
     QVector<LibraryEntry> libraryEntries() const override;
+    QStringList visibleRecent() const override;
+    void hiddenGamesChanged() override;
     void gameOpened(const QString& path, const GameIdentity& id, const BatterySaver::Opened& battery) override;
     void gameClosed() override;
     void recentChanged() override;

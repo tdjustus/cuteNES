@@ -13,6 +13,7 @@
 #include <QFileSystemWatcher>
 #include <QFutureWatcher>
 #include <QHash>
+#include <QSet>
 #include <QObject>
 #include <QStringList>
 #include <QTimer>
@@ -76,14 +77,19 @@ public:
     // Shows the cache for `library` (when it was for the same root), then
     // rescans in the background unless `scan` is false.
     void setLibrary(const Library& library, bool scan = true);
-    // A copy of the current entries; safe from any thread.
+    // A copy of the current entries, hidden games left out (#181); safe
+    // from any thread.
     QVector<LibraryEntry> entries() const;
+    // Whether the ROM at `path` is a game hidden from the library (its
+    // identity is in .hiddenroms); safe from any thread.
+    bool isHidden(const QString& path) const;
     bool scanning() const { return m_scan.isRunning(); }
 
 public slots:
     // Rescans now, or once the running scan finishes.
     void rescan();
-    // Re-reads only the saves, states, last played and recent flags.
+    // Re-reads only the saves, states, last played and recent flags, and
+    // which games are hidden.
     void refreshAnnotations();
 
 signals:
@@ -98,7 +104,10 @@ private:
     const AppSettings& m_settings;
     std::optional<Library> m_library;
     mutable std::mutex m_mutex;
-    QVector<LibraryEntry> m_entries;
+    QVector<LibraryEntry> m_all;     // every ROM found, hidden ones too
+    QVector<LibraryEntry> m_entries; // the ones shown
+    QSet<QString> m_hiddenPaths;
+    QStringList m_loggedSkips; // .hiddenroms lines already logged as bad
     QFutureWatcher<QVector<LibraryEntry>> m_scan;
     bool m_rescanPending = false;
     QFileSystemWatcher m_watcher;
