@@ -21,7 +21,9 @@ strategy; the rules below are the ones that must never be missed.
 - No `development` branch exists until v1.0. Do not create it, tag a
   release, or change branch protection without the maintainer's approval.
 - **Known bugs and features live in the GitHub milestone `1.0`.** At the
-  start of a session, list its open issues. When the
+  start of a session, list its open issues. Features planned for later
+  releases are in milestones `2.0` and `3.0`, laid out in
+  `docs/roadmap.md`. Keep that page in step when one is added or moved. When the
   milestone is empty, tell the maintainer and propose the release steps in
   `docs/source-control.md`.
 - **Every change has an issue, opened before the work and closed when it

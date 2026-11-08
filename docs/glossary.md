@@ -76,7 +76,7 @@ each has a fuller page.
 | **`Machine`** | The core's public object: one emulated NES. |
 | **MCP** | Model Context Protocol: how AI agents discover and call tools. |
 | **Milestone** | The GitHub milestone holding every known bug and planned feature for the next release. |
-| **Plugin** | An optional feature that registers its own commands in the cuteNES API. A plugin from the project is a dynamic library that cuteNES downloads when the user turns it on in Settings, locked to the app's version (#201, from 2.0); video export and Lua scripting are planned as plugins. From 3.0, users can also write plugins in Lua, with version requirements and dependencies (#224). |
+| **Plugin, plugin manager** | An optional feature, planned from 2.0 (#201), that registers its own commands in the cuteNES API and declares the cuteNES versions and other plugins it needs. The plugin manager downloads and updates the project's own plugins. Plugins from anyone else, in C++ or (from 3.0, #224) Lua, are installed by hand in the plugin manager. |
 | **Real-time play** | The session running frames on the host's clock, for the desktop application. |
 | **`rom_harness`** | The command-line tool that runs ROMs for tests: verdicts, frames, determinism, save states, speed. |
 | **`roms-local/`** | The gitignored folder for a developer's own commercial ROMs. |

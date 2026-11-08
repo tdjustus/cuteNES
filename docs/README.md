@@ -57,6 +57,8 @@ principles every feature follows are in the constitution,
 
 ## Reference
 
+- [Roadmap](roadmap.md): what is planned for 2.0 and 3.0, in the order it
+  can be built, and how the pieces depend on each other.
 - [Decision records](decisions.md): the significant decisions, what was
   rejected and why, with links to the full records, and lessons learned.
 - [Glossary](glossary.md): NES, emulation and project terms.
