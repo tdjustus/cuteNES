@@ -76,6 +76,7 @@ each has a fuller page.
 | **`Machine`** | The core's public object: one emulated NES. |
 | **MCP** | Model Context Protocol: how AI agents discover and call tools. |
 | **Milestone** | The GitHub milestone holding every known bug and planned feature for the next release. |
+| **`.nesx`, nesx mode** | The planned NES Expansion format for 3.0 (#102): a package of scripts, patches and assets applied over a ROM the user owns, run in nesx mode on its own core (#143). It comes with the opt-in nesx plugin (#198). |
 | **Real-time play** | The session running frames on the host's clock, for the desktop application. |
 | **`rom_harness`** | The command-line tool that runs ROMs for tests: verdicts, frames, determinism, save states, speed. |
 | **`roms-local/`** | The gitignored folder for a developer's own commercial ROMs. |
