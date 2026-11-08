@@ -72,14 +72,14 @@ a research file.
   plugin is video export (#177), which keeps a video encoder out of the
   base download. Lua scripting (#220), netplay (#212) and achievements
   (#213) are planned as plugins too.
-- **Existing formats over a new one.** A `.nesx` format of cuteNES's own
-  (#102, #103, #143, #198) was planned for 3.0: scripted, expanded and
-  patched ROMs in one package. It is postponed, because a format only
-  cuteNES can run is unlikely to be adopted while ROM hackers already use
-  IPS/BPS patches, Mesen HD packs and Lua scripts in other emulators, and
-  it was the most expensive item on the roadmap. Its useful parts are
-  planned on those formats instead: patching on load (#219), Lua scripting
-  (#220) and HD packs (#221).
+- **Community standards over formats of its own.** Where the NES
+  community already has a format, cuteNES adopts it and does not invent
+  its own: IPS, BPS and UPS for ROM hacks (#219), Lua for scripting
+  (#220), and Mesen's HD packs for replacement graphics and audio (#221).
+  A format only one emulator can run is unlikely to be adopted, and it
+  costs far more to design and maintain than supporting the formats people
+  already make things in. The exceptions are save states and `.cnm`
+  movies, which record cuteNES's own internal state and timing.
 - **Pre-1.0 releases are normal GitHub releases marked Latest**, not
   prereleases: every pre-1.0 build is a test build, and GitHub never shows
   a prerelease as Latest.
