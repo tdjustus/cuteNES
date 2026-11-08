@@ -64,6 +64,13 @@ a research file.
   states once loaded only into their exact core version, which kept the
   core at 0.1.0 through releases that changed it. Since #166 they load
   when their format version matches, and the core is at 0.2.0.
+- **nesx is optional, in a build of its own (#198).** The planned `.nesx`
+  format (#102), its tools (#103) and its core (#143) are compiled only
+  into a second build, **cuteNES+**, behind a build option that is off by
+  default. The plain **cuteNES** build has no nesx code at all. A player
+  who never opens a package never installs a script engine that runs code
+  from the internet, and nesx work cannot change how plain cuteNES
+  behaves.
 - **Pre-1.0 releases are normal GitHub releases marked Latest**, not
   prereleases: every pre-1.0 build is a test build, and GitHub never shows
   a prerelease as Latest.
