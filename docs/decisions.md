@@ -67,16 +67,19 @@ a research file.
 - **Optional features are opt-in plugins (#201, from 2.0).** A plugin is
   a dynamic library that cuteNES downloads only when the user turns the
   feature on in Settings. It is version-locked to the app and checked like
-  an update. cuteNES itself has none of a plugin's code or dependencies. A
-  player who never turns a feature on never installs it. The first plugin
-  is video export (#177), which keeps a video encoder out of the base
-  download. nesx (#198: the `.nesx` format #102, its tools #103 and its
-  core #143) follows in 3.0, so a script engine that runs code from the
-  internet is never installed unasked, and nesx work cannot change how
-  plain cuteNES behaves. Netplay (#212) and achievements (#213) are
-  planned as plugins too. Rejected: two builds for nesx (cuteNES and a
-  "cuteNES+"). That would mean two downloads and two update lines, and
-  users would have to choose before knowing whether they want nesx.
+  an update. cuteNES itself has none of a plugin's code or dependencies, so
+  a player who never turns a feature on never installs it. The first
+  plugin is video export (#177), which keeps a video encoder out of the
+  base download. Lua scripting (#220), netplay (#212) and achievements
+  (#213) are planned as plugins too.
+- **Existing formats over a new one.** A `.nesx` format of cuteNES's own
+  (#102, #103, #143, #198) was planned for 3.0: scripted, expanded and
+  patched ROMs in one package. It is postponed, because a format only
+  cuteNES can run is unlikely to be adopted while ROM hackers already use
+  IPS/BPS patches, Mesen HD packs and Lua scripts in other emulators, and
+  it was the most expensive item on the roadmap. Its useful parts are
+  planned on those formats instead: patching on load (#219), Lua scripting
+  (#220) and HD packs (#221).
 - **Pre-1.0 releases are normal GitHub releases marked Latest**, not
   prereleases: every pre-1.0 build is a test build, and GitHub never shows
   a prerelease as Latest.

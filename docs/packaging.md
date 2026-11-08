@@ -41,8 +41,8 @@ see "Linux AppRun" below) and the license texts that About shows: cuteNES's
 own, Qt's LGPL-3.0 and GPL-3.0, SDL3's, nlohmann/json's and cpp-httplib's.
 
 From 2.0 each release will also publish its **plugins** for every OS
-(#201). The first is the video plugin (#177), and the nesx plugin (#198)
-follows in 3.0. A plugin is a dynamic library built from the same tag,
+(#201). The first is the video plugin (#177), and the Lua scripting plugin
+(#220) follows in 3.0. A plugin is a dynamic library built from the same tag,
 and it loads only into the matching app version. cuteNES downloads one
 only when the user turns its feature on in Settings, and verifies it
 against the checksum published with the release, as it does for updates.
