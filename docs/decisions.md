@@ -64,15 +64,19 @@ a research file.
   states once loaded only into their exact core version, which kept the
   core at 0.1.0 through releases that changed it. Since #166 they load
   when their format version matches, and the core is at 0.2.0.
-- **nesx is an opt-in plugin (#198).** The planned `.nesx` format
-  (#102), its tools (#103) and its core (#143) ship as a plugin, a
-  dynamic library that cuteNES downloads only when the user turns nesx on
-  in Settings. It is version-locked to the app and checked like an update.
-  cuteNES itself has no nesx code. A player who never turns it on never
-  installs a script engine that runs code from the internet, and nesx work
-  cannot change how plain cuteNES behaves. Rejected: two builds (cuteNES
-  and a "cuteNES+"). That would mean two downloads and two update lines,
-  and users would have to choose before knowing whether they want nesx.
+- **Optional features are opt-in plugins (#201, from 2.0).** A plugin is
+  a dynamic library that cuteNES downloads only when the user turns the
+  feature on in Settings. It is version-locked to the app and checked like
+  an update. cuteNES itself has none of a plugin's code or dependencies. A
+  player who never turns a feature on never installs it. The first plugin
+  is video export (#177), which keeps a video encoder out of the base
+  download. nesx (#198: the `.nesx` format #102, its tools #103 and its
+  core #143) follows in 3.0, so a script engine that runs code from the
+  internet is never installed unasked, and nesx work cannot change how
+  plain cuteNES behaves. Netplay (#212) and achievements (#213) are
+  planned as plugins too. Rejected: two builds for nesx (cuteNES and a
+  "cuteNES+"). That would mean two downloads and two update lines, and
+  users would have to choose before knowing whether they want nesx.
 - **Pre-1.0 releases are normal GitHub releases marked Latest**, not
   prereleases: every pre-1.0 build is a test build, and GitHub never shows
   a prerelease as Latest.
