@@ -10,8 +10,9 @@ order, from an idea to a release. The recipes for common changes are in
 
 Every known bug and every planned feature is a GitHub issue in the
 milestone of the next release, currently
-[**1.0**](https://github.com/tdjustus/cuteNES/milestone/1). The issue comes
-first, before the work. A bug found while working on something else gets its
+[**1.0**](https://github.com/tdjustus/cuteNES/milestone/1). Features
+planned for later releases are in their own milestones, laid out in
+[`roadmap.md`](roadmap.md). The issue comes first, before the work. A bug found while working on something else gets its
 own issue rather than a silent fix in an unrelated pull request. That
 includes one fixed straight away, a CI break, a test race, or a failure
 that could not be reproduced. An issue is closed when the work that

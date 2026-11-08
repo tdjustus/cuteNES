@@ -40,16 +40,6 @@ Every package carries `cutenes-server` (for MCP clients,
 see "Linux AppRun" below) and the license texts that About shows: cuteNES's
 own, Qt's LGPL-3.0 and GPL-3.0, SDL3's, nlohmann/json's and cpp-httplib's.
 
-From 2.0 each release will also publish its **plugins** for every OS
-(#201). The first is the video plugin (#177), and the Lua scripting plugin
-(#220) follows in 3.0. A plugin is a dynamic library built from the same tag,
-and it loads only into the matching app version. cuteNES downloads one
-only when the user turns its feature on in Settings, and verifies it
-against the checksum published with the release, as it does for updates.
-The packages above never include plugins. Plugins are built and
-smoke-tested in the same package jobs, before tagging. Their asset names
-are still open.
-
 Qt Network (the update check, research R16) needs a TLS backend at run
 time. macdeployqt and windeployqt copy Qt's TLS plugins (Secure Transport
 or Schannel, from the system) because the app links Qt Network; on Linux
@@ -129,6 +119,20 @@ requests: packaging takes as long as a build and changes rarely, and the
 weekly run catches drift in the runner images or tools. The packages are
 workflow artifacts. Attaching them to a GitHub release is part of the
 release steps (`docs/source-control.md`), which the maintainer approves.
+
+## Plugins (planned for 2.0)
+
+From 2.0 each release will also publish the project's **plugins** for
+every OS (#201). The first is the video plugin (#177). A plugin is a
+dynamic library built from the same tag, and it loads only into the
+matching app version. cuteNES downloads one only when the user turns it
+on in the plugin manager, and verifies it against the release's signed
+checksums (#138), as it does for updates. The packages above never
+include plugins. They are built and smoke-tested in the same package
+jobs, before tagging. Each release will also publish the plugin SDK, the
+headers that plugins from other authors are built against. Those plugins
+are installed by hand and are never published by the project. Asset names
+are still open.
 
 ## Building a package locally
 

@@ -10,6 +10,7 @@ over MCP and play or inspect a game too.
 cuteNES is in testing: the current releases are alphas. Everything in the
 menus works, and what is known not to is listed with each release and in
 the [1.0 milestone](https://github.com/tdjustus/cuteNES/milestone/1).
+What comes after 1.0 is in the [roadmap](docs/roadmap.md).
 
 ## Download
 
@@ -95,6 +96,7 @@ the core is checked against the community's hardware test ROMs.
 - [Automation: MCP and the API](docs/automation.md)
 - [Using the core in your own program](docs/using-the-core.md)
 - [Source control and releases](docs/source-control.md)
+- [Roadmap](docs/roadmap.md)
 - [Design philosophy](docs/design-philosophy.md) and [architecture](docs/architecture.md)
 
 ## Legal use

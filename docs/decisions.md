@@ -47,6 +47,43 @@ Feature 001 is the core
 | Movies | `.cnm`: a JSON header and two bytes of input per frame | FM2 (FCEUX) as the native format: its features exceed the core's scope; import may come later | 003 R14 |
 | Self-update | Opt-in; one HTTPS request to the GitHub release list per launch; the download checked against the release's `SHA256SUMS`; the old version kept until the new one is in place | `/releases/latest` only: the newest release may lack this platform's build | 003 R16 |
 
+## After 1.0
+
+Decisions about the planned releases, recorded in their GitHub issues until
+each feature has its own specification. How the planned features fit
+together is in [`roadmap.md`](roadmap.md).
+
+- **Optional features are opt-in plugins (#201, from 2.0).** cuteNES
+  itself has none of a plugin's code or dependencies, so a player who
+  never turns a feature on never installs it. The first plugin is video
+  export (#177), which keeps a video encoder out of the base download.
+  Lua scripting (#220), netplay (#212) and achievements (#213) are
+  planned as plugins too. Plugins come from two sources:
+  - **the project's own plugins**, dynamic libraries built from the same
+    tag as the app. The plugin manager downloads one when the user turns
+    it on, checks it like an update, and updates it with the app;
+  - **plugins installed by hand**, from anyone, as C++ dynamic libraries
+    built against a published plugin SDK, or (from 3.0) as Lua plugins
+    (#224). cuteNES never downloads or updates these by itself. A Lua
+    plugin is sandboxed. A C++ plugin can't be, and the plugin manager
+    says so before it is installed.
+
+  Every plugin declares the cuteNES versions and other plugins it needs,
+  and is refused with a reason when they are missing. A plugin's commands
+  join the same command registry, so MCP clients, Lua scripts and other
+  plugins call them alike. Rejected: two separate builds of cuteNES, one
+  with an optional feature and one without. That would mean two downloads
+  and two update lines, and users would have to choose before they knew
+  whether they wanted the feature.
+- **Community standards over formats of its own.** Where the NES
+  community already has a format, cuteNES adopts it and does not invent
+  its own: IPS, BPS and UPS for ROM hacks (#219), Lua for scripting
+  (#220), and Mesen's HD packs for replacement graphics and audio (#221).
+  A format only one emulator can run is unlikely to be adopted, and it
+  costs far more to design and maintain than supporting the formats people
+  already make things in. The exceptions are save states and `.cnm`
+  movies, which record cuteNES's own internal state and timing.
+
 ## Project decisions
 
 These are recorded in [`source-control.md`](source-control.md) rather than
@@ -64,24 +101,6 @@ a research file.
   states once loaded only into their exact core version, which kept the
   core at 0.1.0 through releases that changed it. Since #166 they load
   when their format version matches, and the core is at 0.2.0.
-- **Optional features are opt-in plugins (#201, from 2.0).** A plugin is
-  a dynamic library that cuteNES downloads only when the user turns the
-  feature on in Settings. It is version-locked to the app and checked like
-  an update. cuteNES itself has none of a plugin's code or dependencies, so
-  a player who never turns a feature on never installs it. The first
-  plugin is video export (#177), which keeps a video encoder out of the
-  base download. Lua scripting (#220), netplay (#212) and achievements
-  (#213) are planned as plugins too, and from 3.0 users can write plugins
-  of their own in Lua (#224). A plugin's commands join the same command
-  registry, so Lua scripts and MCP clients call them alike.
-- **Community standards over formats of its own.** Where the NES
-  community already has a format, cuteNES adopts it and does not invent
-  its own: IPS, BPS and UPS for ROM hacks (#219), Lua for scripting
-  (#220), and Mesen's HD packs for replacement graphics and audio (#221).
-  A format only one emulator can run is unlikely to be adopted, and it
-  costs far more to design and maintain than supporting the formats people
-  already make things in. The exceptions are save states and `.cnm`
-  movies, which record cuteNES's own internal state and timing.
 - **Pre-1.0 releases are normal GitHub releases marked Latest**, not
   prereleases: every pre-1.0 build is a test build, and GitHub never shows
   a prerelease as Latest.

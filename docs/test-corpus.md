@@ -57,7 +57,68 @@ verdict: `nestest`, `mmc1_a12`, `mmc5_test_v2`, `mmc5_exram`, `a53_streemerz`,
 `mmc5_test`, `mmc5_firefly`) or **WRONG** (a pinned frame known to be incorrect;
 none at present: `full_palette` was one until #49).
 
-## `vbl_nmi_timing/7.nmi_timing` (#42, fixed)
+## Performance gate
+
+The constitution forbids regressing real-time speed. `rom_harness bench --rom R
+[--seconds N] [--min-x X]` runs a ROM flat out and exits 1 below X times real
+time (default 2.0, the spec's 2x headroom; a typical development machine reaches
+about 7x). The `build` workflow runs it on the Linux Release job on every
+code-changing PR, on tags and weekly, with a floor of 1.0x because shared
+runners vary; the measured speed is written to the job summary so a slow drift
+is visible. A drop below 1.0x on CI is a real regression. Check the 2x target
+locally before releases.
+
+## Already covered before the triage
+
+`instr_test-v5`, `instr_timing`, `ppu_vbl_nmi`, `apu_test`, `apu_reset`,
+`cpu_interrupts_v2`, `cpu_reset`, `oam_read`, `oam_stress`, `sprdma_and_dmc_dma`,
+`ppu_open_bus`, `cpu_exec_space`, `ppu_read_buffer`, `mmc3_test_2` (tier 1);
+`mmc3_irq_tests`, `blargg_ppu_tests`, `sprite_hit_tests`, `sprite_overflow_tests`,
+`dmc_dma_during_read4`, `cpu_dummy_reads`, `cpu_timing_test6`, `read_joy3`,
+`mmc3_test`, `mmc5test*`, `exram` (playtests); Holy Mapperel (all 22, in
+`playtest/mapperel.txt`); and the golden-hash set.
+
+## Folders added by the corpus triage
+
+| Folder | ROMs | Disposition |
+|---|---|---|
+| `blargg_apu_2005.07.30` | 11 | All 11 pass (`$01` = passed, per `tests.txt`): `corpus.txt` (10 and 11 since the half-frame write-simultaneity fix) |
+| `branch_timing_tests` | 3 | All 3 pass: `corpus.txt` (3 since a taken branch stopped delaying NMI) |
+| `vbl_nmi_timing` | 7 | All 7 pass: `corpus.txt` (7 since the `$2002` status-read redesign, #42; see "Case notes") |
+| `pal_apu_tests` | 10 | Run as PAL (`region pal`, through the core's region override). All 10 pass: `corpus.txt` (PAL frame-counter steps, noise and DMC tables) |
+| `cpu_dummy_writes` | 2 | Tier 1 |
+| `instr_misc` | 5 | The four `rom_singles` are tier 1. `instr_misc.nes` is the same four tests combined; not registered |
+
+## Superseded older versions (pass, deliberately not registered)
+
+`instr_test-v3` (17 ROMs), `nes_instr_test` (11) and `blargg_nes_cpu_test5` (2)
+are older revisions of the instruction tests that `instr_test-v5`
+(`official_only`, `all_instrs`, tier 1) already covers. They pass today; they
+are skipped only to save CI time, mostly under the sanitizer job.
+
+## Not pass/fail tests (no automated verdict)
+
+| Folder | Why |
+|---|---|
+| `apu_mixer` (4) | Audible-only: each beeps, plays a tone cancelled by an inverse DMC waveform, and beeps again. Their protocol exit code is not a mixer verdict. A numerical check ("near silence between the beeps") is possible but not built |
+| `240pee` (2) | A video test suite (menus). The BNROM build is pinned as golden `bnrom_240pee` (verified by eye); the NROM build is the same program |
+| `dpcmletterbox`, `nes15-1.0.0`, `nmi_sync`, `ny2011`, `scrolltest`, `spritecans-2011`, `stomper`, `tutor`, `tvpassfail`, `window5` | Demos and visual tests with no documented pass/fail screen in this repository |
+| `PaddleTest3`, `vaus-test` | Need a paddle controller, which the core does not model (#204 asks whether to add it) |
+| `volume_tests`, `dmc_tests` (4) | Audible or timing-by-ear tests with no on-screen verdict |
+| `scanline-a1` | A mid-scanline PPU write test whose expected picture is not documented here; needs research before it can be asserted |
+| `nrom368` | Tests a 368K NROM image; the expected result is not documented here; needs research |
+
+## Folders with no ROM files
+
+`apu_mixer_recordings`, `fdsirqtests`, `soundtest` and `stars_se` contain only
+sources, recordings or documents and no `.nes` file, so there is nothing to run.
+`fdsirqtests` is for the Famicom Disk System, which is planned for 3.0 (#214).
+
+## Case notes
+
+Two ROMs needed more than a disposition. The notes record what was wrong and how it was settled.
+
+### `vbl_nmi_timing/7.nmi_timing` (#42, fixed)
 
 This 2005 ROM checks NMI delivery to one PPU clock at three CPU/PPU
 alignments, against `$2002`-polling sync routines. It failed for a long time
@@ -86,29 +147,7 @@ each was viewed and is explained where it is pinned (`golden/roms.txt`,
 `playtest.txt`, `corpus.txt`). The sweep that chose the parameters is in
 `FIX_ATTEMPTS.md` (2026-11-03). All seven ROMs of the set are in `corpus.txt`.
 
-## Performance gate
-
-The constitution forbids regressing real-time speed. `rom_harness bench --rom R
-[--seconds N] [--min-x X]` runs a ROM flat out and exits 1 below X times real
-time (default 2.0, the spec's 2x headroom; a typical development machine reaches
-about 7x). The `build` workflow runs it on the Linux Release job on every
-code-changing PR, on tags and weekly, with a floor of 1.0x because shared
-runners vary; the measured speed is written to the job summary so a slow drift
-is visible. A drop below 1.0x on CI is a real regression. Check the 2x target
-locally before releases.
-
-## Folders added by the corpus triage
-
-| Folder | ROMs | Disposition |
-|---|---|---|
-| `blargg_apu_2005.07.30` | 11 | All 11 pass (`$01` = passed, per `tests.txt`): `corpus.txt` (10 and 11 since the half-frame write-simultaneity fix) |
-| `branch_timing_tests` | 3 | All 3 pass: `corpus.txt` (3 since a taken branch stopped delaying NMI) |
-| `vbl_nmi_timing` | 7 | All 7 pass: `corpus.txt` (7 since the `$2002` status-read redesign, #42; see above) |
-| `pal_apu_tests` | 10 | Run as PAL (`region pal`, through the core's region override). All 10 pass: `corpus.txt` (PAL frame-counter steps, noise and DMC tables) |
-| `cpu_dummy_writes` | 2 | Tier 1 |
-| `instr_misc` | 5 | The four `rom_singles` are tier 1. `instr_misc.nes` is the same four tests combined; not registered |
-
-## Action 53: `test28` (#38)
+### Action 53: `test28` (#38)
 
 The submodule's `other/test28.nes` is a 2012 build older than 0.01. Its
 bus-conflict check reads `$BFF8` (the bank at `$8000`) after writing outer
@@ -118,37 +157,3 @@ That build is **not registered**. The current release, 0.04, is vendored in
 `third_party/test28/` (provenance in `third_party/NOTICE.md`). Its playtest
 `action53-test28-v004` presses Start to run the automated tests and Reset for
 the final test, then pins the "PASS! RESET LEAVES BANK UNCHANGED." screen.
-
-## Superseded older versions (pass, deliberately not registered)
-
-`instr_test-v3` (17 ROMs), `nes_instr_test` (11) and `blargg_nes_cpu_test5` (2)
-are older revisions of the instruction tests that `instr_test-v5`
-(`official_only`, `all_instrs`, tier 1) already covers. They pass today; they
-are skipped only to save CI time, mostly under the sanitizer job.
-
-## Not pass/fail tests (no automated verdict)
-
-| Folder | Why |
-|---|---|
-| `apu_mixer` (4) | Audible-only: each beeps, plays a tone cancelled by an inverse DMC waveform, and beeps again. Their protocol exit code is not a mixer verdict. A numerical check ("near silence between the beeps") is possible but not built |
-| `240pee` (2) | A video test suite (menus). The BNROM build is pinned as golden `bnrom_240pee` (verified by eye); the NROM build is the same program |
-| `dpcmletterbox`, `nes15-1.0.0`, `nmi_sync`, `ny2011`, `scrolltest`, `spritecans-2011`, `stomper`, `tutor`, `tvpassfail`, `window5` | Demos and visual tests with no documented pass/fail screen in this repository |
-| `PaddleTest3`, `vaus-test` | Need a paddle controller, which the core does not model |
-| `volume_tests`, `dmc_tests` (4) | Audible or timing-by-ear tests with no on-screen verdict |
-| `scanline-a1` | A mid-scanline PPU write test whose expected picture is not documented here; needs research before it can be asserted |
-| `nrom368` | Tests a 368K NROM image; the expected result is not documented here; needs research |
-
-## Folders with no ROM files
-
-`apu_mixer_recordings`, `fdsirqtests`, `soundtest` and `stars_se` contain only
-sources, recordings or documents and no `.nes` file, so there is nothing to run.
-
-## Already covered before the triage
-
-`instr_test-v5`, `instr_timing`, `ppu_vbl_nmi`, `apu_test`, `apu_reset`,
-`cpu_interrupts_v2`, `cpu_reset`, `oam_read`, `oam_stress`, `sprdma_and_dmc_dma`,
-`ppu_open_bus`, `cpu_exec_space`, `ppu_read_buffer`, `mmc3_test_2` (tier 1);
-`mmc3_irq_tests`, `blargg_ppu_tests`, `sprite_hit_tests`, `sprite_overflow_tests`,
-`dmc_dma_during_read4`, `cpu_dummy_reads`, `cpu_timing_test6`, `read_joy3`,
-`mmc3_test`, `mmc5test*`, `exram` (playtests); Holy Mapperel (all 22, in
-`playtest/mapperel.txt`); and the golden-hash set.
