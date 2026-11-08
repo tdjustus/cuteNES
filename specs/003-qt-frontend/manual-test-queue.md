@@ -549,7 +549,7 @@ Automated:
 - Mutation-checked: checksum not compared, no undo, no write check, and arguments dropped are each caught. Leaving the download behind on cancel is also covered by the download's destructor.
 - The CI package job now builds each package with its `CUTENES_PACKAGE` and fails if Qt's TLS plugin is missing.
 
-This needs a real release above the installed version, so it waits for a 1.0 release candidate. On each OS:
+This needs a real release above the installed version, but the updater ignores tags with a suffix, so a beta or release candidate is never offered. How this test runs is open in #232. On each OS:
 1. Install the previous release's package (unzip, or `chmod +x` the
    AppImage), start it with an argument you can see (e.g. `--fullscreen`),
    say Yes to update checks.
