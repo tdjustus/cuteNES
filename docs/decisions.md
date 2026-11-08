@@ -64,13 +64,15 @@ a research file.
   states once loaded only into their exact core version, which kept the
   core at 0.1.0 through releases that changed it. Since #166 they load
   when their format version matches, and the core is at 0.2.0.
-- **nesx is optional, in a build of its own (#198).** The planned `.nesx`
-  format (#102), its tools (#103) and its core (#143) are compiled only
-  into a second build, **cuteNES+**, behind a build option that is off by
-  default. The plain **cuteNES** build has no nesx code at all. A player
-  who never opens a package never installs a script engine that runs code
-  from the internet, and nesx work cannot change how plain cuteNES
-  behaves.
+- **nesx is an opt-in plugin (#198).** The planned `.nesx` format
+  (#102), its tools (#103) and its core (#143) ship as a plugin, a
+  dynamic library that cuteNES downloads only when the user turns nesx on
+  in Settings. It is version-locked to the app and checked like an update.
+  cuteNES itself has no nesx code. A player who never turns it on never
+  installs a script engine that runs code from the internet, and nesx work
+  cannot change how plain cuteNES behaves. Rejected: two builds (cuteNES
+  and a "cuteNES+"). That would mean two downloads and two update lines,
+  and users would have to choose before knowing whether they want nesx.
 - **Pre-1.0 releases are normal GitHub releases marked Latest**, not
   prereleases: every pre-1.0 build is a test build, and GitHub never shows
   a prerelease as Latest.

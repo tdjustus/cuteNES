@@ -40,13 +40,14 @@ Every package carries `cutenes-server` (for MCP clients,
 see "Linux AppRun" below) and the license texts that About shows: cuteNES's
 own, Qt's LGPL-3.0 and GPL-3.0, SDL3's, nlohmann/json's and cpp-httplib's.
 
-From 3.0 there will be two builds of each release: **cuteNES**, the
-packages above, and **cuteNES+**, which adds the `.nesx` format and its
-tools (#102, #103, #143). Both are built from the same source tree, and
-cuteNES+ is selected with a build option. Both are packaged for every OS
-and checked before tagging. The asset names and executable names are open
-(#198). A `+` in a URL is encoded as `%2B`, so the assets may be spelled
-`cuteNES-plus-...`. Until then, every package is cuteNES.
+From 3.0 each release will also publish the **nesx plugin** for every
+OS (#198). It holds the `.nesx` format and its tools (#102, #103, #143).
+It is a dynamic library built from the same tag, and it loads only into
+the matching app version. cuteNES downloads it only when the user turns
+nesx on in Settings, and verifies it against the checksum published with
+the release, as it does for updates. The packages above never include
+it. The plugin is built and smoke-tested in the same package jobs, before
+tagging. Its asset names are still open.
 
 Qt Network (the update check, research R16) needs a TLS backend at run
 time. macdeployqt and windeployqt copy Qt's TLS plugins (Secure Transport

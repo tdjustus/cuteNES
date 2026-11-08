@@ -67,7 +67,6 @@ each has a fuller page.
 | **Constitution** | `.specify/memory/constitution.md`: the project's binding principles. |
 | **`ci-ok`** | The single required CI check: it passes only when every build and test job succeeded or was skipped. |
 | **Corpus** | The set of test ROMs and scripted runs in `tests/`. |
-| **cuteNES, cuteNES+** | The two planned builds from 3.0: cuteNES is the NES emulator alone, and cuteNES+ adds the optional `.nesx` format and its tools (#198). |
 | **Emulation thread** | The one thread that touches the `Machine`; every command runs on it. |
 | **FR, SC, US** | A spec's functional requirement, success criterion and user story, numbered (FR-070, SC-003, US5). |
 | **G0xx, T0xx, A0xx** | Task numbers in feature 003, 001 and 002's `tasks.md`. |
@@ -77,7 +76,7 @@ each has a fuller page.
 | **`Machine`** | The core's public object: one emulated NES. |
 | **MCP** | Model Context Protocol: how AI agents discover and call tools. |
 | **Milestone** | The GitHub milestone holding every known bug and planned feature for the next release. |
-| **`.nesx`, nesx mode** | The planned NES Expansion format for 3.0 (#102): a package of scripts, patches and assets applied over a ROM the user owns, run in nesx mode on its own core (#143). cuteNES+ only. |
+| **`.nesx`, nesx mode** | The planned NES Expansion format for 3.0 (#102): a package of scripts, patches and assets applied over a ROM the user owns, run in nesx mode on its own core (#143). It comes with the opt-in nesx plugin (#198). |
 | **Real-time play** | The session running frames on the host's clock, for the desktop application. |
 | **`rom_harness`** | The command-line tool that runs ROMs for tests: verdicts, frames, determinism, save states, speed. |
 | **`roms-local/`** | The gitignored folder for a developer's own commercial ROMs. |
