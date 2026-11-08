@@ -70,7 +70,7 @@ Flatpak (#209), and portable mode (#210).
 | Issue | What | Depends on |
 |---|---|---|
 | #220 | Lua scripting as a plugin, with a live console and editor, and the whole cuteNES API from Lua | #201, #205 |
-| #224 | Plugins written in Lua, installed in the plugin manager | #201, #220 |
+| #224 | Plugins written in Lua, installed in the plugin manager, with an input display as the minimal sample for authors | #201, #220 |
 | #90 | Opt-in game art for the library: the project's first Lua plugin, and the example for other authors | #224 |
 | #221 | Mesen HD packs: replacement graphics and audio | |
 | #211 | TAS tools: an input editor for movies | |
