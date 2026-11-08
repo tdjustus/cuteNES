@@ -71,7 +71,9 @@ a research file.
   a player who never turns a feature on never installs it. The first
   plugin is video export (#177), which keeps a video encoder out of the
   base download. Lua scripting (#220), netplay (#212) and achievements
-  (#213) are planned as plugins too.
+  (#213) are planned as plugins too, and from 3.0 users can write plugins
+  of their own in Lua (#224). A plugin's commands join the same command
+  registry, so Lua scripts and MCP clients call them alike.
 - **Community standards over formats of its own.** Where the NES
   community already has a format, cuteNES adopts it and does not invent
   its own: IPS, BPS and UPS for ROM hacks (#219), Lua for scripting
