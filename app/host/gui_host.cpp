@@ -574,6 +574,12 @@ Json GuiHost::movieJson() const
     return v;
 }
 
+GuiHost::PauseMenu GuiHost::pauseMenu() const
+{
+    if (!m_paused) return PauseMenu::None; // Paused means a game is open
+    return m_pausedByPlayer ? PauseMenu::Full : PauseMenu::Resume;
+}
+
 Result GuiHost::movieBusy(bool recording) const
 {
     if (m_movieMode == MovieStatus::Mode::Playing) {
@@ -892,6 +898,11 @@ void GuiHost::onSessionEvent(const api::Event& event)
     if (api::Session* session = m_session.load(); event.type == "frame" && session) {
         m_battery.poll(session->machine());
     }
+    if (event.type == "run_state_changed") {
+        const bool paused = event.data.value("runState", "") == "Paused";
+        if (!paused) m_pausedByPlayer = false;
+        m_paused = paused;
+    }
     m_window.sessionEvent(event);
 }
 
@@ -1003,6 +1014,7 @@ Result GuiHost::openRom(CallContext& ctx, const QString& path, std::optional<boo
         battery = m_battery.open(library, id, QFileInfo(path).completeBaseName(), ctx.session.machine());
     }
     m_gameOpen = true;
+    m_hasBattery = ctx.session.machine().sram().size > 0;
     m_identity = id;
     m_gameName = QFileInfo(path).completeBaseName();
     m_undoState.reset();
@@ -1066,6 +1078,7 @@ Result GuiHost::closeGame(CallContext& ctx)
     // FR-012: the battery save is written before the cartridge goes.
     m_battery.close(ctx.session.machine());
     m_gameOpen = false;
+    m_hasBattery = false;
     m_identity = {};
     m_cheats = CheatList();
     m_cheatsPath.clear();
@@ -1295,8 +1308,13 @@ void GuiHost::registerCommands(api::Registry& registry)
         s::object({}), true, true, [this](CallContext& ctx, const Json&) { return closeGame(ctx); });
 
     add(registry, "gui.toggle_pause", "Pause or resume the game", s::object({}), runStateOutput(),
-        true, true, [](CallContext& ctx, const Json&) {
-            return runStateResult(call(ctx, isRunning(ctx) ? "core.pause" : "core.resume"));
+        true, true, [this](CallContext& ctx, const Json&) {
+            // The player's own pause shows the full pause menu (FR-038).
+            const bool pausing = isRunning(ctx);
+            m_pausedByPlayer = pausing;
+            Result r = call(ctx, pausing ? "core.pause" : "core.resume");
+            if (r.isError()) m_pausedByPlayer = false;
+            return runStateResult(r);
         });
 
     add(registry, "gui.reset", "Press the console's reset button", s::object({}), s::object({}),
@@ -1618,6 +1636,21 @@ void GuiHost::registerCommands(api::Registry& registry)
             return Result::ok({{"path", str(path)}});
         });
 
+    add(registry, "gui.write_battery_save", "Write the battery save to the library now (the pause menu's Battery Save)",
+        s::object({}), s::object({{"path", s::string("the battery save file")}}, {"path"}), true, true,
+        [this](CallContext& ctx, const Json&) {
+            Machine& machine = ctx.session.machine();
+            if (machine.sram().size == 0) return Result::fail("NoBattery", "the cartridge has no battery-backed RAM");
+            if (Result busy = movieBusy(false); busy.isError()) return busy; // the RAM is the movie's (#121)
+            if (!m_battery.active()) {
+                return Result::fail("Busy", "this cuteNES is not saving the game's battery: another cuteNES has the game open, "
+                                            "or the library can't be written");
+            }
+            m_battery.saveNow(machine);
+            m_window.showMessage(QObject::tr("Battery save written"));
+            return Result::ok({{"path", str(m_battery.path())}});
+        });
+
     add(registry, "gui.import_battery_save",
         "Replace the battery save with a raw .sav file (padded or trimmed) and reset the game; without path, show the file dialog",
         s::object({{"path", s::string("a file path")}}), s::object({{"dialog", s::boolean()}, {"path", s::string()}}),
@@ -1756,6 +1789,8 @@ void GuiHost::registerCommands(api::Registry& registry)
 
     add(registry, "gui.frame_advance", "Pause and run exactly one frame", s::object({}), s::object({}), true, true,
         [this](CallContext& ctx, const Json&) {
+            // Only Resume shows, leaving the picture clear to study (FR-038).
+            if (m_pausedByPlayer.exchange(false)) m_window.pauseMenuChanged();
             if (isRunning(ctx)) {
                 Result r = call(ctx, "core.pause");
                 if (r.isError()) return r;
@@ -2037,22 +2072,26 @@ void GuiHost::registerCommands(api::Registry& registry)
             return Result::ok({{"closed", list}});
         });
     add(registry, "gui.state",
-        "The window's state: the page shown, whether a game is open, fullscreen, scale, speed, fast-forward, "
+        "The window's state: the page shown, whether a game is open, the pause menu, fullscreen, scale, speed, fast-forward, "
         "rewind, the movie, the selected slot and the open windows",
         none,
         s::object({{"page", s::stringEnum({"library", "game", "key_bindings"})}, {"game", s::boolean("a game is open")},
+                      {"pauseMenu", s::stringEnum({"full", "resume", "none"})},
                       {"fullscreen", s::boolean()}, {"scale", s::integer(1, 6)},
                       {"speed", s::integer(0, 400, "percent; 0 is Unlimited")}, {"fastForward", s::boolean()},
                       {"rewinding", s::boolean()}, {"movie", Json{{"type", "object"}}},
                       {"selectedSlot", s::integer(1, 10)}, {"windows", windowList}},
-            {"page", "game", "fullscreen", "scale", "speed", "fastForward", "rewinding", "movie", "selectedSlot",
+            {"page", "game", "pauseMenu", "fullscreen", "scale", "speed", "fastForward", "rewinding", "movie", "selectedSlot",
                 "windows"}),
         false, false, [this](CallContext&, const Json&) {
             Json windows = Json::array();
             for (const QString& name : m_window.openWindows()) windows.push_back(str(name));
             const auto video = m_settings.video();
             Json movie = movieJson();
-            return Result::ok({{"page", str(m_window.currentPage())}, {"game", m_gameOpen}, {"fullscreen", video.fullscreen},
+            const PauseMenu menu = pauseMenu();
+            const char* pause = menu == PauseMenu::Full ? "full" : menu == PauseMenu::Resume ? "resume" : "none";
+            return Result::ok({{"page", str(m_window.currentPage())}, {"game", m_gameOpen}, {"pauseMenu", pause},
+                {"fullscreen", video.fullscreen},
                 {"scale", video.scale}, {"speed", m_speed}, {"fastForward", m_fastForward}, {"rewinding", m_rewinding},
                 {"movie", movie}, {"selectedSlot", m_selectedSlot.load()}, {"windows", windows}});
         });

@@ -153,6 +153,9 @@ public:
         virtual void libraryChanged(const Library& library) = 0;
         virtual void romFoldersChanged() = 0;
         virtual void sessionEvent(const api::Event& event) = 0;
+        // Which pause menu shows changed without the run state changing
+        // (Frame Advance after Pause); pauseMenu() has it.
+        virtual void pauseMenuChanged() = 0;
     };
 
     GuiHost(Window& window, AppSettings& settings, BatterySaver& battery);
@@ -179,6 +182,14 @@ public:
         QString path;
     };
     MovieStatus movieStatus() const;
+
+    // The pause menu a paused game shows (any thread; FR-038): Full after a
+    // pause the player chose with Pause, Resume after any other, and None
+    // while the game runs or none is open.
+    enum class PauseMenu { None, Resume, Full };
+    PauseMenu pauseMenu() const;
+    // The open game has battery-backed RAM (any thread).
+    bool gameHasBattery() const { return m_hasBattery.load(); }
 
     // The session's sound passes through here (emulation thread), so Record
     // Audio hears exactly what plays; it goes on to `output`.
@@ -272,6 +283,11 @@ private:
     mutable std::mutex m_slotsMutex;
     StateSlots m_slots; // under m_slotsMutex
     std::atomic<int> m_selectedSlot{1};
+    // Set as gui.toggle_pause pauses; any other run state, and Frame
+    // Advance, clear it.
+    std::atomic<bool> m_pausedByPlayer{false};
+    std::atomic<bool> m_paused{false}; // the run state is Paused, so a game is open
+    std::atomic<bool> m_hasBattery{false};
     std::optional<QByteArray> m_undoState; // emulation thread; one level (data-model "StateSlot")
 
     // Emulation thread: the debugger's breakpoints (FR-060). A breakpoint

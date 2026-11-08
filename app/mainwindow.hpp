@@ -56,6 +56,7 @@ class FrameClock;
 namespace cutenes::app {
 
 class CheatSearchWindow;
+class PauseMenu;
 class DebuggerWindow;
 class MemoryViewerWindow;
 class PpuViewerWindow;
@@ -247,6 +248,7 @@ private:
     void libraryChanged(const Library& library) override;
     void romFoldersChanged() override;
     void sessionEvent(const api::Event& event) override;
+    void pauseMenuChanged() override;
 
     void createMenus();
     void defineBindings(); // after createMenus: every action and game button
@@ -258,7 +260,8 @@ private:
     void updateSlotMenus(); // GUI thread: each slot's time and thumbnail
     void showOsd(const QString& text); // GUI thread
     void placeOsd();
-    void updateOverlays(); // GUI thread: PAUSED, the speed indicator and the FPS
+    void updateOverlays(); // GUI thread: the pause menu, the speed indicator and the FPS
+    void askQuit();        // the pause menu's Quit: asks, then closes the game
     void updateFps();      // GUI thread, each second: frames shown in the last one
     void applyServers();   // GUI thread: start or stop the listeners to match the settings
     void updateAutomation(); // GUI thread: the automation indicator
@@ -318,7 +321,7 @@ private:
     QMenu* m_recentMenu = nullptr;
     QAction* m_pauseAction = nullptr;
     QLabel* m_osd = nullptr; // on-screen messages, over the page
-    QLabel* m_paused = nullptr; // "PAUSED", in the middle of the game
+    PauseMenu* m_pauseMenu = nullptr; // "PAUSED" and its buttons, in the middle of the game (FR-038)
     QLabel* m_speed = nullptr;  // "◀◀ REWIND", "SPEED 50%"..., top right, in PAUSED's style
     QSet<int> m_keysDown; // keys held now, for the hold actions
     mutable std::mutex m_playbackMutex;

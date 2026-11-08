@@ -444,8 +444,9 @@ TEST(GuiStates, APausedGameShowsPaused)
     call(w, "gui.toggle_pause");
     ASSERT_TRUE(waitUntil([&] { return paused->isVisible(); }));
     EXPECT_EQ(paused->text(), QStringLiteral("PAUSED"));
-    EXPECT_EQ(paused->parentWidget(), w.view()) << "over the picture, so it goes with the game page";
-    EXPECT_EQ(paused->geometry().center(), w.view()->rect().center());
+    EXPECT_TRUE(w.view()->isAncestorOf(paused)) << "over the picture, so it goes with the game page";
+    // In the middle of the picture, with the pause menu's buttons under it.
+    EXPECT_EQ(paused->mapTo(w.view(), paused->rect().center()), w.view()->rect().center());
     call(w, "gui.toggle_pause");
     EXPECT_TRUE(waitUntil([&] { return !paused->isVisible(); }));
 }

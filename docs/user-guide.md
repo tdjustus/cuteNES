@@ -38,7 +38,18 @@ Only play games you own. cuteNES does not come with any games.
 
 ## Playing
 
-- **Pause / Resume** with P or Pause. "PAUSED" shows over the picture.
+- **Pause / Resume** with P or Pause. "PAUSED" shows over the picture,
+  with a pause menu under it:
+  - **Resume** plays on.
+  - **Save** saves a state, as Quick Save (Ctrl+S) does.
+  - **Battery Save**, for games with a save battery, writes the battery
+    save now instead of within a few seconds.
+  - **Quit** closes the game, after asking, and shows the library.
+
+  The arrow keys or a gamepad's D-pad move between the buttons, Enter or
+  the gamepad's confirm button presses one, and Esc or its back button
+  resumes. When the game pauses any other way (a state loaded during play, Frame
+  Advance, a gamepad unplugged, or automation), only Resume shows.
   When another application has the focus the game pauses too, and resumes
   when you come back (you can turn this off in Settings > Emulation).
 - **Reset** (Ctrl+R) presses the console's reset button. **Power Cycle**

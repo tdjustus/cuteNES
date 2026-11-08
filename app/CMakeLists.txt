@@ -38,6 +38,7 @@ add_library(cutenes-app-lib STATIC
     update/update_check.cpp
     update/update_prompt.cpp
     update/update_install.cpp
+    widgets/pause_menu.cpp
     update/update_download.cpp)
 target_include_directories(cutenes-app-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(cutenes-app-lib PUBLIC cutenes-qt cutenes-mcp Qt6::Widgets Qt6::Concurrent Qt6::Network)

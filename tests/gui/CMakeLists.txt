@@ -33,6 +33,7 @@ add_executable(cutenes-gui-tests
     test_window_commands.cpp
     test_coexistence.cpp
     test_pacing.cpp
+    test_pause_menu.cpp
     test_user_guide.cpp
     test_app_log.cpp
     test_update_feed.cpp
