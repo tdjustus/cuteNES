@@ -121,8 +121,9 @@ roadmapped features". Labels: `bug`, `feature`, `test`, `ci`,
   before ending one, check that nothing found or done in it lacks an issue.
 - Scope is set by the maintainer: a suggested feature is not a milestone
   item until the maintainer agrees to it.
-- **Later releases have their own milestones** (2.0, 3.0). A feature
-  planned for one is filed there, and added to
+- **Later releases have their own milestones** (2.0, 3.0, and Later for
+  accepted features with no release yet). A feature planned for one is
+  filed there, and added to
   [`roadmap.md`](roadmap.md), which shows how the planned features depend
   on each other. Bugs in the current code always go in 1.0.
 

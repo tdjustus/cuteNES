@@ -3,7 +3,8 @@
 What is planned after the current release, in the order it can be built.
 The GitHub milestones ([1.0](https://github.com/tdjustus/cuteNES/milestone/1),
 [2.0](https://github.com/tdjustus/cuteNES/milestone/3),
-[3.0](https://github.com/tdjustus/cuteNES/milestone/4)) are the source of
+[3.0](https://github.com/tdjustus/cuteNES/milestone/4),
+[Later](https://github.com/tdjustus/cuteNES/milestone/2)) are the source of
 truth for what is in each release and whether it is done. This page
 explains how the pieces fit together. Each feature gets its own
 specification before work on it starts
@@ -82,6 +83,14 @@ player (#215, with #207's per-channel audio), and the Dendy region (#216).
 
 **Elsewhere.** cuteNES's core as a libretro core for RetroArch (#217), and
 a startup splash screen, on by default and switchable off (#200).
+
+## After 3.0
+
+Accepted, but not yet given a release:
+
+| Issue | What | Depends on |
+|---|---|---|
+| #229 | A speedrun auto-splitter as a Lua plugin: splits from game memory, sent to LiveSplit through its server | #220, #224 |
 
 ## How the pieces depend on each other
 
