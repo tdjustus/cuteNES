@@ -28,10 +28,18 @@ Two decisions shape everything after 1.0 (both are in
 
 ## 1.0: finishing
 
-Every 1.0 feature is merged. What remains is the hands-on test pass before
-the first beta (#190), the README screenshot (#116), a test that failed
-once and is being watched (#193), and the release itself (#33). The betas
-are `v0.9.0-beta.N`. 1.0 ships when the milestone is empty.
+One 1.0 feature is still to build: a pause menu (#235), with Resume, Save,
+Battery Save (for games with a save battery) and Quit (with a
+confirmation) buttons. After it, what remains is:
+
+- the hands-on test pass before the first beta (#190);
+- deciding how the updater's install test can run, since the updater
+  doesn't offer beta or release-candidate tags (#232);
+- the README screenshot (#116);
+- a test that failed once and is being watched (#193);
+- the release itself (#33).
+
+The betas are `v0.9.0-beta.N`. 1.0 ships when the milestone is empty.
 
 ## 2.0: plugins, and more of the NES
 
