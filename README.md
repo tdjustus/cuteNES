@@ -111,7 +111,7 @@ condone piracy and is designed not to enable it:
   art (#90) uses only sources that allow it, and the planned `.nesx` format
   (#102) can never contain a ROM. It names its target by hash, and you
   supply your own copy. `.nesx` will be optional and opt-in: a plugin that
-  cuteNES downloads only when you turn it on in Settings (#198).
+  cuteNES downloads only when you turn it on in Settings (#198, #201).
 
 ## License
 
