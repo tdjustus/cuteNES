@@ -282,6 +282,15 @@ FR-009, FR-020, FR-021(b)), which #32 tracks.
    inconsistent machine state (002 SC-006).
 7. **Given** the save-state slots, **Then** the slots that automation sees
    are the same slots the menus show.
+8. **Given** a client is connected, **When** the user presses Stop on the
+   automation indicator, **Then** both servers turn off at once: calls in
+   progress fail with `ShuttingDown`, the streams close, the token files go,
+   the buttons the client held are let go, and the game keeps running
+   (#233).
+9. **Given** the servers were on, **When** cuteNES closes and starts again,
+   **Then** they are off, unless the user turned on "Start the servers when
+   cuteNES starts" in Settings and confirmed what it allows. Automation can
+   turn that setting off, but never on (#233).
 
 ---
 
@@ -667,12 +676,18 @@ the same arguments. Launch with a ROM argument: no prompt.
 - **FR-071**: Settings > Servers MUST hold two toggles, "API" and "MCP
   server", both off by default, each with a port. MCP requires the API.
   Turning MCP on MUST write the MCP token file that `cutenes-server
-  --attach` reads. The token MUST be viewable and copyable.
+  --attach` reads. The token MUST be viewable and copyable. The servers
+  MUST last one run: they are off at the next launch, unless "Start the
+  servers when cuteNES starts" is on. That switch is off by default, MUST
+  be turned on only on the Settings page after a confirmation that says
+  what it allows, and MUST NOT be turned on through automation (#233).
 - **FR-072**: Turning the API off MUST end client calls with `ShuttingDown`
   and close streams, while emulation continues.
 - **FR-073**: The status bar MUST show when automation clients are
   connected and when automation has paused the game. The user MUST always
-  be able to resume or turn the servers off.
+  be able to resume or turn the servers off. The indicator MUST offer Stop,
+  which turns both servers off at once and cuts every client off, as
+  FR-072 describes, and lets go of the buttons automation held (#233).
 - **FR-074**: In GUI mode, the save-state slots that the API's `session.*`
   slot commands reach MUST be the same persistent slots that the menus show,
   and `session.library_list` MUST list the library browser's ROMs.

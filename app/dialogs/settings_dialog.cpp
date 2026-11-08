@@ -13,6 +13,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QSlider>
 #include <QPushButton>
 #include <QStackedWidget>
@@ -261,11 +262,50 @@ QWidget* SettingsDialog::buildServersPage(QWidget* parent)
     addListener(m_api, QStringLiteral("api"), tr("API"), "servers.apiEnabled", "servers.apiPort");
     addListener(m_mcp, QStringLiteral("mcp"), tr("MCP server"), "servers.mcpEnabled", "servers.mcpPort");
 
+    m_startWithApp = new QCheckBox(tr("Start the servers when cuteNES starts"), page);
+    m_startWithApp->setObjectName(QStringLiteral("serversStartWithApp"));
+    connect(m_startWithApp, &QCheckBox::toggled, this, [this](bool on) {
+        if (!on) {
+            emit serversStartWithAppRequested(false);
+            return;
+        }
+        // Shown unchecked until the user confirms (#233).
+        {
+            const QSignalBlocker block(m_startWithApp);
+            m_startWithApp->setChecked(false);
+        }
+        auto* box = new QMessageBox(QMessageBox::Warning, tr("Start the Servers with cuteNES?"),
+            tr("Every time cuteNES starts, the API and the MCP server will start as you last left them on "
+               "this page, without asking."),
+            QMessageBox::Cancel, this);
+        box->setObjectName(QStringLiteral("serversStartupConfirmation"));
+        box->setAttribute(Qt::WA_DeleteOnClose);
+        box->setInformativeText(
+            tr("While they run, any program on this computer that runs under your account and can read the "
+               "token file can control cuteNES: load and play games, press buttons, read and change memory, "
+               "save and load states, write files in your library, and change settings.\n\n"
+               "Only programs on this computer can connect. AUTOMATION shows at the bottom right of the "
+               "window while one is connected, and its Stop button disconnects it at any time.\n\n"
+               "This stays on until you turn it off here."));
+        QPushButton* turnOn = box->addButton(tr("Turn On"), QMessageBox::AcceptRole);
+        box->setDefaultButton(QMessageBox::Cancel);
+        connect(box, &QMessageBox::buttonClicked, this, [this, turnOn](QAbstractButton* clicked) {
+            if (clicked != turnOn) return;
+            {
+                const QSignalBlocker block(m_startWithApp);
+                m_startWithApp->setChecked(true);
+            }
+            emit serversStartWithAppRequested(true);
+        });
+        box->open(); // never blocks: automation keeps running
+    });
+
     m_mcpTokenFile = new QLabel(page);
     m_mcpTokenFile->setObjectName(QStringLiteral("mcpTokenFile"));
     m_mcpTokenFile->setWordWrap(true);
     m_mcpTokenFile->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    auto* note = new QLabel(tr("Both are off until you turn them on, and listen on this computer only. The MCP "
+    auto* note = new QLabel(tr("Both are off until you turn them on, and listen on this computer only. They stay "
+                               "on until cuteNES closes, unless they start with cuteNES. The MCP "
                                "server needs the API, so turning it on turns the API on too. Each start makes a "
                                "new token; a client needs it to connect.\n\nTo let an AI assistant such as Claude "
                                "Code play here, turn on the MCP server and add an MCP server that runs "
@@ -278,6 +318,7 @@ QWidget* SettingsDialog::buildServersPage(QWidget* parent)
     layout->setContentsMargins(16, 4, 4, 4);
     layout->setSpacing(10);
     layout->addLayout(grid);
+    layout->addWidget(m_startWithApp);
     layout->addWidget(m_mcpTokenFile);
     layout->addWidget(note);
     layout->addStretch();
@@ -299,6 +340,12 @@ void SettingsDialog::setServers(const Server& api, const Server& mcp)
     show(m_api, api);
     show(m_mcp, mcp);
     m_mcpTokenFile->setText(mcp.running ? tr("Token file: %1").arg(mcp.tokenFile) : QString());
+}
+
+void SettingsDialog::setServersStartWithApp(bool on)
+{
+    const QSignalBlocker block(m_startWithApp);
+    m_startWithApp->setChecked(on);
 }
 
 QWidget* SettingsDialog::buildVideoPage(QWidget* parent)

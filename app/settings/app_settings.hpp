@@ -49,12 +49,15 @@ public:
     void setSelectedSlot(const QString& sha1, int slot);
 
     // servers.* (data-model "ServerSettings"): both off until the user
-    // turns them on. A port of 0 picks a free one.
+    // turns them on. A port of 0 picks a free one. They last one run
+    // unless startWithApp, which only Settings > Servers turns on, after a
+    // confirmation (#233).
     struct ServerSettings {
         bool apiEnabled = false;
         int apiPort = 8765;
         bool mcpEnabled = false;
         int mcpPort = 8766;
+        bool startWithApp = false;
     };
     ServerSettings servers() const;
     void setServers(const ServerSettings& servers);

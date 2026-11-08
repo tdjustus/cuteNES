@@ -164,6 +164,7 @@ AppSettings::ServerSettings AppSettings::servers() const
     s.apiPort = m_settings.value(QStringLiteral("servers/apiPort"), s.apiPort).toInt();
     s.mcpEnabled = m_settings.value(QStringLiteral("servers/mcpEnabled"), s.mcpEnabled).toBool();
     s.mcpPort = m_settings.value(QStringLiteral("servers/mcpPort"), s.mcpPort).toInt();
+    s.startWithApp = m_settings.value(QStringLiteral("servers/startWithApp"), s.startWithApp).toBool();
     return s;
 }
 
@@ -174,6 +175,7 @@ void AppSettings::setServers(const ServerSettings& s)
     m_settings.setValue(QStringLiteral("servers/apiPort"), s.apiPort);
     m_settings.setValue(QStringLiteral("servers/mcpEnabled"), s.mcpEnabled);
     m_settings.setValue(QStringLiteral("servers/mcpPort"), s.mcpPort);
+    m_settings.setValue(QStringLiteral("servers/startWithApp"), s.startWithApp);
 }
 
 AppSettings::UpdateSettings AppSettings::updates() const

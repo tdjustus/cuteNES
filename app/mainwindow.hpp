@@ -262,6 +262,10 @@ private:
     void updateFps();      // GUI thread, each second: frames shown in the last one
     void applyServers();   // GUI thread: start or stop the listeners to match the settings
     void updateAutomation(); // GUI thread: the automation indicator
+    void stopAutomation();   // GUI thread: Stop, both servers off and every client cut off (#233)
+    // The servers last one run unless they start with cuteNES (#233): off in
+    // the settings at startup and on close.
+    void turnServersOffUnlessKept();
     void releaseHeld(int key); // the release of a hold action's key
     void setRunState(const QString& runState);    // GUI thread
     void showGame();
@@ -339,6 +343,7 @@ private:
     QTimer* m_osdTimer = nullptr;
     std::unique_ptr<Servers> m_servers; // the API and MCP listeners (Settings > Servers)
     QPushButton* m_automation = nullptr; // bottom right while a client is there; opens Settings > Servers
+    QPushButton* m_automationStop = nullptr; // beside it: stopAutomation
     QTimer* m_automationTimer = nullptr;
     std::atomic<bool> m_pausedByAutomation{false};
     QLabel* m_fps = nullptr; // "60 FPS", top left, like the speed indicator (Show FPS)

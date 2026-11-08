@@ -384,6 +384,15 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     connect(m_automation, &QPushButton::clicked, this, [this] {
         runCommand(QStringLiteral("gui.show_settings"), {{QStringLiteral("page"), QStringLiteral("servers")}});
     });
+    m_automationStop = new QPushButton(tr("STOP"), m_pages);
+    m_automationStop->setObjectName(QStringLiteral("automationStop"));
+    m_automationStop->setFlat(true);
+    m_automationStop->setCursor(Qt::PointingHandCursor);
+    m_automationStop->setStyleSheet(m_automation->styleSheet());
+    m_automationStop->setAccessibleName(tr("Stop automation"));
+    m_automationStop->setToolTip(tr("Turn the API and MCP server off and disconnect every client."));
+    m_automationStop->hide();
+    connect(m_automationStop, &QPushButton::clicked, this, &MainWindow::stopAutomation);
     m_automationTimer = new QTimer(this);
     m_automationTimer->setInterval(250);
     connect(m_automationTimer, &QTimer::timeout, this, &MainWindow::updateAutomation);
@@ -431,6 +440,7 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     connect(m_padTimer, &QTimer::timeout, this, &MainWindow::pollGamepads);
     m_padTimer->start();
 
+    turnServersOffUnlessKept(); // left on by a crash, or by a version before #233
     m_runServers = m_options.runApi || m_options.runMcp;
     applyServers(); // clients may come now: every command's data is there
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
@@ -457,6 +467,7 @@ MainWindow::~MainWindow()
     qApp->removeEventFilter(this);
     m_automationTimer->stop();
     m_padTimer->stop();
+    turnServersOffUnlessKept();
     m_servers.reset(); // clients' calls end with ShuttingDown; the token files go
     m_clock->stop();
     m_host->detach(); // its frame runner must not outlive it
@@ -1216,6 +1227,13 @@ void MainWindow::showSettings(const QString& page)
             connect(m_settingsDialog, &SettingsDialog::keyBindingsRequested, this, [this] {
                 runCommand(QStringLiteral("gui.show_shortcuts"), {{QStringLiteral("section"), QStringLiteral("controls")}});
             });
+            connect(m_settingsDialog, &SettingsDialog::serversStartWithAppRequested, this, [this](bool on) {
+                AppSettings::ServerSettings servers = m_settings.servers();
+                servers.startWithApp = on;
+                m_settings.setServers(servers);
+                qCInfo(lcApp) << "servers start with cuteNES:" << on;
+                updateSettingsDialog();
+            });
             connect(m_settingsDialog, &SettingsDialog::settingRequested, this,
                 [this](const QString& key, const QVariant& value) {
                     runCommand(QStringLiteral("gui.set_setting"), {{QStringLiteral("key"), key}, {QStringLiteral("value"), value}});
@@ -1390,6 +1408,7 @@ void MainWindow::updateSettingsDialog()
     };
     m_settingsDialog->setServers(shown(saved.apiEnabled, saved.apiPort, m_servers->api()),
         shown(saved.mcpEnabled, saved.mcpPort, m_servers->mcp()));
+    m_settingsDialog->setServersStartWithApp(saved.startWithApp);
     const AppSettings::InputSettings input = m_settings.input();
     SettingsDialog::Input page{input.turboRate, input.allowOppositeDirections, input.pauseOnGamepadDisconnect, {}};
     for (const Gamepad& pad : gamepads()) page.gamepads << tr("Player %1: %2").arg(pad.port).arg(pad.name);
@@ -1586,6 +1605,7 @@ void MainWindow::applyServers()
     QString error;
     const bool apiBefore = m_servers->api().on;
     const bool mcpBefore = m_servers->mcp().on;
+    const bool wasServing = apiBefore || mcpBefore;
     if (!m_servers->apply(wanted.apiEnabled, wanted.apiPort, wanted.mcpEnabled, wanted.mcpPort, &error)) {
         // A port in use: what could not start is turned off (spec edge
         // case), in the settings too unless the command line asked for it.
@@ -1603,8 +1623,38 @@ void MainWindow::applyServers()
     };
     logChange("API", apiBefore, m_servers->api());
     logChange("MCP server", mcpBefore, m_servers->mcp());
+    if (wasServing && !m_servers->api().on && !m_servers->mcp().on) {
+        // No client is left to let go of the buttons it held (#233); what
+        // the user holds stays.
+        for (const int port : {1, 2}) {
+            m_session->call("core.set_controller", {{"port", port}, {"buttons", api::Json::array()}});
+        }
+    }
     updateSettingsDialog();
     updateAutomation();
+}
+
+void MainWindow::stopAutomation()
+{
+    // Straight from the click, not queued: no client call is on this thread,
+    // and every call in flight ends with ShuttingDown (FR-072).
+    AppSettings::ServerSettings servers = m_settings.servers();
+    servers.apiEnabled = false;
+    servers.mcpEnabled = false;
+    m_settings.setServers(servers);
+    m_runServers = false; // servers --api or --mcp started stop too
+    applyServers();
+    qCInfo(lcApp) << "automation stopped from the window";
+    showOsd(tr("Automation stopped: the API and MCP server are off"));
+}
+
+void MainWindow::turnServersOffUnlessKept()
+{
+    AppSettings::ServerSettings servers = m_settings.servers();
+    if (servers.startWithApp || (!servers.apiEnabled && !servers.mcpEnabled)) return;
+    servers.apiEnabled = false;
+    servers.mcpEnabled = false;
+    m_settings.setServers(servers);
 }
 
 void MainWindow::updateAutomation()
@@ -1619,6 +1669,7 @@ void MainWindow::updateAutomation()
             && std::chrono::steady_clock::now() - a.lastCall < kRecent);
     const bool paused = m_pausedByAutomation && hasGame() && m_runState == QLatin1String("Paused");
     m_automation->setVisible(active || paused);
+    m_automationStop->setVisible(m_automation->isVisible() && (m_servers->api().on || m_servers->mcp().on));
     if (!m_automation->isVisible()) return;
     m_automation->setText(paused ? tr("AUTOMATION · PAUSED") : tr("AUTOMATION"));
     QStringList tip;
@@ -1633,6 +1684,11 @@ void MainWindow::updateAutomation()
     m_automation->move(m_pages->width() - m_automation->width() - kMargin,
         m_pages->height() - m_automation->height() - kMargin);
     m_automation->raise();
+    if (m_automationStop->isVisible()) {
+        m_automationStop->adjustSize();
+        m_automationStop->move(m_automation->x() - m_automationStop->width() - kMargin / 2, m_automation->y());
+        m_automationStop->raise();
+    }
 }
 
 void MainWindow::addRomFolder()

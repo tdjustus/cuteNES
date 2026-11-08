@@ -46,6 +46,8 @@ public:
         QString tokenFile;
     };
     void setServers(const Server& api, const Server& mcp);
+    // "Start the servers when cuteNES starts" (#233).
+    void setServersStartWithApp(bool on);
 
     // Settings > Input: the saved options, and the pads plugged in ("Player
     // 1: name").
@@ -108,6 +110,9 @@ signals:
     // and value.
     void settingRequested(const QString& key, const QVariant& value);
     void keyBindingsRequested();
+    // The servers' startup switch, after the confirmation when on (#233).
+    // Not gui.set_setting: automation may not turn it on.
+    void serversStartWithAppRequested(bool on);
 
 private:
     QListWidget* m_pages;
@@ -127,6 +132,7 @@ private:
     ServerControls m_api;
     ServerControls m_mcp;
     QLabel* m_mcpTokenFile = nullptr;
+    QCheckBox* m_startWithApp = nullptr;
     QWidget* buildServersPage(QWidget* parent);
     QWidget* buildInputPage(QWidget* parent);
     QWidget* buildVideoPage(QWidget* parent);

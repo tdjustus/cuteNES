@@ -3,7 +3,9 @@
 // writes the token file that `cutenes-server --attach` reads; the token
 // opens the window's own session; API off ends clients' calls with
 // ShuttingDown while the game plays on; an indicator shows while a client
-// is there and says when automation paused the game.
+// is there and says when automation paused the game, with a Stop that
+// cuts every client off (#233). The servers last one run unless the user
+// confirms they should start with cuteNES (#233).
 
 #include "gui_support.hpp"
 #include "mainwindow.hpp"
@@ -14,11 +16,15 @@
 #include <QCheckBox>
 #include <QDir>
 #include <QFile>
+#include <QMessageBox>
 #include <QPushButton>
+#include <QSettings>
 
 #include <httplib.h>
 
 #include <gtest/gtest.h>
+
+#include <thread>
 
 using cutenes::api::Json;
 using cutenes::api::Result;
@@ -255,9 +261,196 @@ TEST(GuiServers, TheSettingsPageShowsAndChangesTheServers)
     }
     EXPECT_FALSE(QFile::exists(tokens + QStringLiteral("/mcp.token"))) << "closing the window stops the servers";
     {
-        MainWindow w(options); // turned on, they start with the next launch
-        EXPECT_TRUE(waitUntil([&] { return QFile::exists(tokens + QStringLiteral("/mcp.token")); }));
+        MainWindow w(options); // #233: on for one run unless they start with cuteNES
+        w.show();
+        QCoreApplication::processEvents();
+        EXPECT_FALSE(QFile::exists(tokens + QStringLiteral("/mcp.token")));
+        const Json saved = call(w, "gui.get_settings", {{"group", "servers"}})["values"]["servers"];
+        EXPECT_EQ(saved["apiEnabled"], false);
+        EXPECT_EQ(saved["mcpEnabled"], false);
     }
+}
+
+// #233: Stop on the automation indicator turns both servers off at once.
+// It cuts a call in progress (ShuttingDown) and the token files go, so
+// nothing can carry on or reconnect. The buttons the client held are let
+// go, and the game plays on.
+TEST(GuiServers, StopCutsTheClientOffAndTurnsTheServersOff)
+{
+    QString tokens;
+    MainWindow w(serverOptions(&tokens));
+    w.show();
+    call(w, "gui.open_rom", {{"path", kRom.toStdString()}});
+    anyPorts(w);
+    call(w, "gui.set_setting", {{"key", "servers.mcpEnabled"}, {"value", true}});
+    const QString apiFile = tokens + QStringLiteral("/api.token");
+    const QString mcpFile = tokens + QStringLiteral("/mcp.token");
+    ASSERT_TRUE(waitUntil([&] { return QFile::exists(apiFile) && QFile::exists(mcpFile); }));
+    const auto api = readToken(apiFile);
+    ASSERT_TRUE(api);
+    auto* indicator = w.findChild<QPushButton*>(QStringLiteral("automationIndicator"));
+    auto* stop = w.findChild<QPushButton*>(QStringLiteral("automationStop"));
+    ASSERT_NE(stop, nullptr);
+    EXPECT_FALSE(stop->isVisible()) << "no client yet";
+
+    ASSERT_TRUE(rpc(*api, "core.set_controller", {{"port", 1}, {"buttons", Json::array({"A", "Right"})}}));
+    EXPECT_EQ(call(w, "core.get_controller", {{"port", 1}})["buttons"].size(), 2u);
+    // The longest call a client may make (maxRunFrames): seconds of play,
+    // far longer than the moment it takes to reach the listener.
+    std::optional<Json> longCall;
+    std::thread client([&] { longCall = rpc(*api, "core.run_frames", {{"frames", 3600}}); });
+    EXPECT_TRUE(waitUntil([&] { return stop->isVisible(); }));
+    waitUntil([] { return false; }, 300);
+    stop->click();
+    client.join(); // within the rpc helper's 10 s read timeout
+    ASSERT_TRUE(longCall) << "the call got no reply";
+    ASSERT_TRUE(longCall->contains("error")) << longCall->dump();
+    EXPECT_EQ((*longCall)["error"]["data"].value("name", ""), "ShuttingDown") << longCall->dump();
+
+    EXPECT_FALSE(QFile::exists(apiFile)) << "the token files go";
+    EXPECT_FALSE(QFile::exists(mcpFile));
+    EXPECT_FALSE(rpc(*api, "api.version")) << "nothing listens there now";
+    const Json saved = call(w, "gui.get_settings", {{"group", "servers"}})["values"]["servers"];
+    EXPECT_EQ(saved["apiEnabled"], false);
+    EXPECT_EQ(saved["mcpEnabled"], false);
+    EXPECT_TRUE(call(w, "core.get_controller", {{"port", 1}})["buttons"].empty()) << "the client's buttons are let go";
+    EXPECT_TRUE(waitUntil([&] { return !stop->isVisible() && !indicator->isVisible(); }));
+}
+
+// #233: --api and --mcp are run-only, so Stop also ends servers they started.
+TEST(GuiServers, StopEndsRunOnlyServersToo)
+{
+    QString tokens;
+    MainWindow::Options options = serverOptions(&tokens);
+    options.runApi = true;
+    options.runApiPort = 0;
+    MainWindow w(options);
+    w.show();
+    const QString apiFile = tokens + QStringLiteral("/api.token");
+    ASSERT_TRUE(waitUntil([&] { return QFile::exists(apiFile); }));
+    const auto api = readToken(apiFile);
+    ASSERT_TRUE(api);
+    auto* stop = w.findChild<QPushButton*>(QStringLiteral("automationStop"));
+    ASSERT_TRUE(rpc(*api, "api.version"));
+    ASSERT_TRUE(waitUntil([&] { return stop->isVisible(); }));
+    stop->click();
+    EXPECT_TRUE(waitUntil([&] { return !QFile::exists(apiFile); }));
+    EXPECT_FALSE(rpc(*api, "api.version"));
+}
+
+// #233: the servers are saved as off when the window closes, and a launch
+// that finds them on (a crash, or a version from before #233) starts none.
+TEST(GuiServers, ServersAreOffAtTheNextLaunch)
+{
+    QString tokens;
+    MainWindow::Options options = serverOptions(&tokens);
+    const QString mcpFile = tokens + QStringLiteral("/mcp.token");
+    {
+        MainWindow w(options);
+        w.show();
+        anyPorts(w);
+        call(w, "gui.set_setting", {{"key", "servers.mcpEnabled"}, {"value", true}});
+        ASSERT_TRUE(waitUntil([&] { return QFile::exists(mcpFile); }));
+    }
+    {
+        QSettings ini(options.settingsFile, QSettings::IniFormat);
+        EXPECT_FALSE(ini.value(QStringLiteral("servers/mcpEnabled")).toBool()) << "saved as off on close";
+        EXPECT_FALSE(ini.value(QStringLiteral("servers/apiEnabled")).toBool());
+        // As a crash, or an earlier version, would leave them.
+        ini.setValue(QStringLiteral("servers/apiEnabled"), true);
+        ini.setValue(QStringLiteral("servers/mcpEnabled"), true);
+    }
+    MainWindow w(options);
+    w.show();
+    QCoreApplication::processEvents();
+    EXPECT_FALSE(QFile::exists(mcpFile)) << "on in the file is not consent to start";
+    EXPECT_FALSE(QFile::exists(tokens + QStringLiteral("/api.token")));
+    const Json saved = call(w, "gui.get_settings", {{"group", "servers"}})["values"]["servers"];
+    EXPECT_EQ(saved["mcpEnabled"], false);
+    EXPECT_EQ(saved["startWithApp"], false) << "off by default";
+}
+
+// #233: starting the servers with cuteNES is turned on only in Settings >
+// Servers, after a confirmation that says what it allows. Cancel leaves it
+// off; Turn On keeps the servers across launches.
+TEST(GuiServers, StartingWithCuteNesNeedsTheUsersConfirmation)
+{
+    QString tokens;
+    MainWindow::Options options = serverOptions(&tokens);
+    const QString mcpFile = tokens + QStringLiteral("/mcp.token");
+    const auto confirmation = [&](MainWindow& w) -> QMessageBox* {
+        QMessageBox* box = nullptr;
+        waitUntil([&] {
+            box = w.findChild<QMessageBox*>(QStringLiteral("serversStartupConfirmation"));
+            return box && box->isVisible();
+        });
+        return box;
+    };
+    {
+        MainWindow w(options);
+        w.show();
+        anyPorts(w);
+        call(w, "gui.show_settings", {{"page", "servers"}});
+        QCheckBox* startup = nullptr;
+        ASSERT_TRUE(waitUntil([&] {
+            return (startup = w.findChild<QCheckBox*>(QStringLiteral("serversStartWithApp"))) != nullptr;
+        }));
+        EXPECT_FALSE(startup->isChecked()) << "off by default";
+
+        startup->click();
+        QMessageBox* box = confirmation(w);
+        ASSERT_NE(box, nullptr) << "turning it on asks first";
+        const QString said = box->text() + QLatin1Char('\n') + box->informativeText();
+        for (const char* phrase : {"Every time cuteNES starts", "token file", "control cuteNES", "this computer",
+                 "until you turn it off"}) {
+            EXPECT_TRUE(said.contains(QString::fromLatin1(phrase))) << phrase << " in: " << said.toStdString();
+        }
+        box->button(QMessageBox::Cancel)->click();
+        EXPECT_TRUE(waitUntil([&] { return !startup->isChecked(); })) << "Cancel leaves it off";
+        EXPECT_EQ(call(w, "gui.get_settings", {{"group", "servers"}})["values"]["servers"]["startWithApp"], false);
+
+        startup->click();
+        box = confirmation(w);
+        ASSERT_NE(box, nullptr);
+        QAbstractButton* turnOn = nullptr;
+        for (QAbstractButton* b : box->buttons()) {
+            if (b->text() == QStringLiteral("Turn On")) turnOn = b;
+        }
+        ASSERT_NE(turnOn, nullptr);
+        turnOn->click();
+        EXPECT_TRUE(waitUntil([&] {
+            return call(w, "gui.get_settings", {{"group", "servers"}})["values"]["servers"]["startWithApp"] == true;
+        }));
+        EXPECT_TRUE(startup->isChecked());
+        call(w, "gui.set_setting", {{"key", "servers.mcpEnabled"}, {"value", true}});
+        ASSERT_TRUE(waitUntil([&] { return QFile::exists(mcpFile); }));
+    }
+    {
+        MainWindow w(options); // they start with the next launch, without asking
+        EXPECT_TRUE(waitUntil([&] { return QFile::exists(mcpFile); }));
+        // Turning it off needs no confirmation, and the servers are off at the
+        // next launch again.
+        call(w, "gui.set_setting", {{"key", "servers.startWithApp"}, {"value", false}});
+    }
+    MainWindow w(options);
+    QCoreApplication::processEvents();
+    EXPECT_FALSE(QFile::exists(mcpFile));
+}
+
+// #233: a client could skip the confirmation and make itself start with
+// every launch, so automation can turn the setting off but never on.
+TEST(GuiServers, AutomationCannotMakeTheServersStartWithCuteNes)
+{
+    MainWindow w(serverOptions(nullptr));
+    const Result on = w.session().call("gui.set_setting", {{"key", "servers.startWithApp"}, {"value", true}});
+    ASSERT_TRUE(on.isError());
+    EXPECT_EQ(on.error->name, "InvalidArguments");
+    EXPECT_NE(on.error->message.find("Settings > Servers"), std::string::npos) << on.error->message;
+    EXPECT_EQ(call(w, "gui.get_settings", {{"group", "servers"}})["values"]["servers"]["startWithApp"], false);
+    const Result off = w.session().call("gui.set_setting", {{"key", "servers.startWithApp"}, {"value", false}});
+    EXPECT_FALSE(off.isError()) << (off.isError() ? off.error->message : "");
+    const Json schema = call(w, "gui.get_settings", {{"group", "servers"}})["schema"];
+    EXPECT_TRUE(schema.contains("servers.startWithApp")) << schema.dump();
 }
 
 // contracts/cli.md "Run-only options": --mcp turns both servers on for this

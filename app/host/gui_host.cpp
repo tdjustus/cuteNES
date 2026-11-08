@@ -46,7 +46,7 @@ const std::vector<std::string> kSettingKeys = {"video.scale", "video.fullscreen"
     "audio.device", "audio.volume", "audio.muted", "audio.latencyMs", "audio.fastForwardAudio",
     "emulation.pauseWhenInactive", "emulation.resumeOnOpen", "emulation.fastForwardSpeed", "emulation.region",
     "library.root", "servers.apiEnabled", "servers.apiPort",
-    "servers.mcpEnabled", "servers.mcpPort", "input.turboRate", "input.allowOppositeDirections",
+    "servers.mcpEnabled", "servers.mcpPort", "servers.startWithApp", "input.turboRate", "input.allowOppositeDirections",
     "input.pauseOnGamepadDisconnect", "updates.check", "updates.asked", "updates.skippedVersion"};
 
 void add(api::Registry& registry, const char* name, std::string description, Json input,
@@ -2349,7 +2349,8 @@ void GuiHost::registerCommands(api::Registry& registry)
                                      {"roms", str(library.folder(Library::Folder::Roms))},
                                      {"romFolders", romFoldersValue(m_settings)}}},
                 {"servers", {{"apiEnabled", servers.apiEnabled}, {"apiPort", servers.apiPort},
-                                {"mcpEnabled", servers.mcpEnabled}, {"mcpPort", servers.mcpPort}}},
+                                {"mcpEnabled", servers.mcpEnabled}, {"mcpPort", servers.mcpPort},
+                                {"startWithApp", servers.startWithApp}}},
                 {"updates", {{"check", updates.check}, {"asked", updates.asked},
                                 {"skippedVersion", str(updates.skippedVersion)}}},
                 {"hotkeys", storedBindings(m_window.keyBindings(), false)},
@@ -2383,6 +2384,8 @@ void GuiHost::registerCommands(api::Registry& registry)
                 {"servers.apiPort", s::integer(0, 65535, "the API port; 0 picks a free one")},
                 {"servers.mcpEnabled", s::boolean("the MCP server (off by default; on turns the API on)")},
                 {"servers.mcpPort", s::integer(0, 65535, "the MCP port; 0 picks a free one")},
+                {"servers.startWithApp", s::boolean("start the servers that are on with every launch (off: they last "
+                                                    "one run); automation can turn it off, only Settings > Servers on")},
                 {"updates.check", s::boolean("check GitHub Releases once per launch (off until the user says yes; R16)")},
                 {"updates.asked", s::boolean("the first-launch question has been answered")},
                 {"updates.skippedVersion", s::string("a version Skip This Version declined (MAJOR.MINOR.PATCH), or empty")},
@@ -2467,6 +2470,19 @@ void GuiHost::registerCommands(api::Registry& registry)
             }
             if (key.rfind("servers.", 0) == 0) {
                 AppSettings::ServerSettings servers = m_settings.servers();
+                if (key == "servers.startWithApp") {
+                    // A client must not make itself start with every launch,
+                    // skipping the confirmation (#233).
+                    if (!value.is_boolean()) return invalid("/value", "must be true or false");
+                    if (value.get<bool>()) {
+                        return invalid("/value", "servers.startWithApp can only be turned on in Settings > Servers, "
+                                                 "where cuteNES asks the user first");
+                    }
+                    servers.startWithApp = false;
+                    m_settings.setServers(servers);
+                    m_window.serversChanged();
+                    return Result::ok({{"key", key}, {"value", value}});
+                }
                 if (key == "servers.apiEnabled" || key == "servers.mcpEnabled") {
                     if (!value.is_boolean()) return invalid("/value", "must be true or false");
                     const bool on = value.get<bool>();
