@@ -55,7 +55,6 @@ encoder out of the base download.
 | #207 | Volume and mute per audio channel |
 | #206 | ROMs inside `.zip` and `.7z` archives |
 | #219 | ROM hacks as IPS, BPS or UPS patches, applied on load |
-| #90 | Opt-in game art for the library |
 
 **Tools.** Memory read and write breakpoints (#205). They add the core's
 memory-access hooks, which Lua scripting (#220) needs in 3.0.
@@ -71,6 +70,7 @@ Flatpak (#209), and portable mode (#210).
 |---|---|---|
 | #220 | Lua scripting as a plugin, with a live console and editor, and the whole cuteNES API from Lua | #201, #205 |
 | #224 | Plugins written in Lua, installed in the plugin manager | #201, #220 |
+| #90 | Opt-in game art for the library: the project's first Lua plugin, and the example for other authors | #224 |
 | #221 | Mesen HD packs: replacement graphics and audio | |
 | #211 | TAS tools: an input editor for movies | |
 
@@ -93,6 +93,7 @@ graph LR
   201 --> 220[#220 Lua scripting]
   205[#205 memory breakpoints] --> 220
   220 --> 224[#224 Lua plugins]
+  224 --> 90[#90 game art]
   201 --> 224
   201 --> 212[#212 netplay]
   202[#202 run-ahead] --> 212

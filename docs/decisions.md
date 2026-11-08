@@ -58,7 +58,8 @@ together is in [`roadmap.md`](roadmap.md).
   never turns a feature on never installs it. The first plugin is video
   export (#177), which keeps a video encoder out of the base download.
   Lua scripting (#220), netplay (#212) and achievements (#213) are
-  planned as plugins too. Plugins come from two sources:
+  planned as plugins too, and game art (#90) as the project's first
+  plugin written in Lua. Plugins come from two sources:
   - **the project's own plugins**, dynamic libraries built from the same
     tag as the app. The plugin manager downloads one when the user turns
     it on, checks it like an update, and updates it with the app;
