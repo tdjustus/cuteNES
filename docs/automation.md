@@ -75,7 +75,11 @@ catalog changes. `--mcp-port N` also serves MCP over Streamable HTTP at
 ### Connecting to the desktop application (`--attach`)
 
 The desktop application runs the same API and MCP endpoints behind
-Settings > Servers, both off by default. Many MCP clients only start stdio
+Settings > Servers, both off by default. They stay on for one run, unless
+the user turns on "Start the servers when cuteNES starts" after a
+confirmation, which automation can't do. Disable Automation, at the top
+of Settings > Servers, turns all of that off at once and cuts every client
+off. Clicking the window's AUTOMATION indicator opens that page (#233). Many MCP clients only start stdio
 servers, so `cutenes-server --attach` relays a stdio client to the running
 application, and follows it to a new token or port when the application
 restarts:
@@ -93,7 +97,7 @@ for one run without changing the setting, start the application with
 
 ## Versioning
 
-The command surface has a `MAJOR.MINOR` version, currently 0.6. `api.version`
+The command surface has a `MAJOR.MINOR` version, currently 0.7. `api.version`
 and MCP's `serverInfo.version` report it. It is separate from the
 application's version and the core's
 ([`source-control.md`](source-control.md), "Versions and tags").

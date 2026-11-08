@@ -22,15 +22,54 @@ quitting (`gui.exit`) and reopening the app keeps the same bridge working.
 2. In Claude Code, with `cutenes-server --attach` registered as `cuteNES`:
    ask it to open a ROM and pause. The status-bar indicator shows while it
    is connected and says when automation paused the game.
-3. Quit cuteNES while Claude Code stays open, then reopen it. Ask Claude to
-   do something again: it works without `/mcp` reconnect (the bridge
-   follows the new token).
-4. Start Claude Code while cuteNES is closed, then open cuteNES: the cuteNES
-   tools appear in Claude Code within a few seconds.
+3. Quit cuteNES while Claude Code stays open, then reopen it and turn the
+   MCP server on again (it is off after a restart, #233). Ask Claude to do
+   something again: it works without `/mcp` reconnect (the bridge follows
+   the new token).
+4. Start Claude Code while cuteNES is closed, then open cuteNES and turn on
+   the MCP server: the cuteNES tools appear in Claude Code within a few
+   seconds.
 5. Turn "MCP server" off: Claude's next call says the MCP server is off, and
    the game keeps playing.
 6. Open a second copy of cuteNES (`open -n build/app/cutenes.app`) with
    servers off, and close it: the first copy's MCP connection keeps working.
+
+### Disable Automation, and servers that last one run (#233)
+
+Automated (`GuiServers`):
+- Clicking AUTOMATION opens Settings > Servers. Disable Automation there is
+  enabled only while something is on. Clicking it turns the servers and
+  "start with cuteNES" off. A `core.run_frames` call in progress gets
+  `ShuttingDown`, the token files go, nothing answers at the old address,
+  and the buttons the client held (`core.set_controller`) are let go. It
+  also ends servers that `--api` started.
+- Closing the window saves both servers as off. A settings file that still
+  says on (a crash, or an earlier version) starts none.
+- "Start the servers when cuteNES starts": off by default. Checking it opens
+  the confirmation, which names the token file, control of cuteNES, this
+  computer only and "until you turn it off". Cancel leaves it off. Turn On
+  keeps the servers across a restart. Turning it off over automation works,
+  and the next launch has none.
+- `gui.set_setting` refuses `servers.startWithApp` true with
+  `InvalidArguments`.
+
+By hand, on each OS:
+1. Turn on the MCP server and attach Claude Code. Ask it to do something
+   long (for example, play for a minute). Click AUTOMATION while it runs:
+   Settings > Servers opens with Disable Automation at the top. Click it:
+   the AUTOMATION indicator goes, an on-screen message says automation is
+   disabled, Claude's call fails, and its next call says cuteNES is not
+   reachable. The game keeps playing, with no button stuck down.
+2. Check that Disable Automation is the first thing on the page, is greyed
+   out when everything is off, and reads clearly in the light and dark
+   themes.
+3. Quit and reopen cuteNES: Settings > Servers shows both servers off.
+4. Turn on "Start the servers when cuteNES starts". Read the confirmation:
+   it is clear, it doesn't cut off on a small screen, and Cancel is the
+   default (Enter or Esc doesn't turn it on). Cancel, then turn it on with
+   Turn On. Turn the MCP server on, quit and reopen: the server is on
+   without being asked, and an attached Claude Code reconnects by itself.
+5. Turn the switch off, quit and reopen: both servers are off.
 
 ### The Key Bindings page (G036, #108)
 
@@ -581,7 +620,7 @@ By hand, with Claude Code (which speaks 2026-07-28):
 1. Quit cuteNES. Start Claude Code with cuteNES registered
    (`claude mcp add cuteNES -- /path/to/cutenes-server --attach`). `/mcp`
    shows cuteNES connected, with no tools.
-2. Open cuteNES with Settings > Servers > MCP server on. Within a few
+2. Open cuteNES and turn on Settings > Servers > MCP server. Within a few
    seconds, without restarting Claude Code, `/mcp` lists cuteNES's tools,
    and asking Claude to call `session.status` works.
 

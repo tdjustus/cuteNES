@@ -262,6 +262,12 @@ private:
     void updateFps();      // GUI thread, each second: frames shown in the last one
     void applyServers();   // GUI thread: start or stop the listeners to match the settings
     void updateAutomation(); // GUI thread: the automation indicator
+    // GUI thread: Settings > Servers' Disable Automation, every server
+    // setting off and every client cut off (#233).
+    void disableAutomation();
+    // The servers last one run unless they start with cuteNES (#233): off in
+    // the settings at startup and on close.
+    void turnServersOffUnlessKept();
     void releaseHeld(int key); // the release of a hold action's key
     void setRunState(const QString& runState);    // GUI thread
     void showGame();

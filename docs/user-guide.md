@@ -305,11 +305,25 @@ sees the same game you do, and you can play while it watches or helps.
    the client.
 3. While an agent is connected, **AUTOMATION** shows at the bottom right of
    the window. Click it to open Settings > Servers.
+4. To end it at any time, click **AUTOMATION**, then **Disable
+   Automation** at the top of Settings > Servers. Both servers turn off at
+   once, and so does starting them with cuteNES. The agent is disconnected
+   straight away: it can't finish what it was doing or reconnect, and any
+   buttons it was holding are let go. The game keeps playing.
 
-Turning the server off disconnects the agent; the game keeps playing. The
+Turning the server off in Settings disconnects the agent the same way. The
 **API** switch on the same page is a local JSON interface for your own
 scripts. Each start makes a new access token (**Copy Token**), and the
 servers listen only on this computer.
+
+The servers stay on only until you close cuteNES, so the next start begins
+with them off. To have them start with cuteNES every time, turn on **Start
+the servers when cuteNES starts** in Settings > Servers. cuteNES first
+explains what that allows: while the servers run, any program on this
+computer that runs under your account and can read the token file can
+control cuteNES. That includes playing games, reading and changing memory,
+writing files in your library and changing settings. Choose **Turn On** only
+if that is what you want. An agent can turn this setting off, but never on.
 
 ## Updates
 

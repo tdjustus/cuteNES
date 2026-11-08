@@ -442,9 +442,20 @@ still checks it.
   "AUTOMATION · PAUSED" when `pausedByAutomation` is true, and its tooltip
   lists the listeners and says "Paused by automation". Pause / Resume
   plays on.
-- Clicking it opens Settings > Servers.
+- Clicking it opens Settings > Servers, where Disable Automation is.
 
 ## Settings > Servers (FR-071, FR-072)
+
+- **Disable Automation** is the first control on the page (#233). It is
+  enabled while anything is on: a server's setting, a server running
+  (`--api` or `--mcp` included), or **Start the servers when cuteNES
+  starts**. It turns all of them off at once, as setting each to false
+  would. Calls in progress end with `ShuttingDown`, streams close and the
+  token files go, so a client, an attached `cutenes-server --attach`
+  included, can't continue or reconnect. The buttons automation held
+  (`core.set_controller`) are let go; what the user holds stays. An
+  on-screen message says "Automation disabled". Turning both servers off
+  by any other route lets go of the buttons too.
 
 - "API" and "MCP server", each with a port (0 picks a free one), the address
   while running, and Copy Token. MCP on turns the API on; API off turns MCP
@@ -456,8 +467,24 @@ still checks it.
 - A change through the API itself (a client turning the API off) gets its
   reply first; the listeners change right after, and calls still in flight
   end with `ShuttingDown`. The game plays on.
-- Servers that were on start with the next launch. One that cannot start (a
-  port in use) is turned off, and the user is told.
+- **The servers last one run (#233).** When the window closes, and again
+  when it starts, both are saved as off, unless **Start the servers when
+  cuteNES starts** (`servers.startWithApp`, off by default) is on. With it
+  on, servers that were on start with the next launch, without asking.
+- Turning that switch on asks first, in a confirmation with **Turn On** and
+  **Cancel** (Cancel is the default). It says that each start brings the
+  servers up as they were left, and that any program running under the
+  user's account that can read the token file can then control cuteNES:
+  load and play games, press buttons, read and change memory, save and load
+  states, write files in the library, and change settings. It also says
+  that only this computer can connect, that AUTOMATION shows while a
+  client is connected and Disable Automation disconnects it, and that the
+  setting stays on until turned off. Turning it off needs no confirmation.
+- `gui.set_setting` refuses `servers.startWithApp` true with
+  `InvalidArguments` (a client must not make itself start with every
+  launch), and accepts false. `gui.get_settings` reports it.
+- A server that cannot start (a port in use) is turned off, and the user
+  is told.
 
 ## Key Bindings page (FR-022, #108)
 

@@ -431,6 +431,7 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     connect(m_padTimer, &QTimer::timeout, this, &MainWindow::pollGamepads);
     m_padTimer->start();
 
+    turnServersOffUnlessKept(); // left on by a crash, or by a version before #233
     m_runServers = m_options.runApi || m_options.runMcp;
     applyServers(); // clients may come now: every command's data is there
     for (QAction* action : menuBar()->findChildren<QAction*>()) {
@@ -457,6 +458,7 @@ MainWindow::~MainWindow()
     qApp->removeEventFilter(this);
     m_automationTimer->stop();
     m_padTimer->stop();
+    turnServersOffUnlessKept();
     m_servers.reset(); // clients' calls end with ShuttingDown; the token files go
     m_clock->stop();
     m_host->detach(); // its frame runner must not outlive it
@@ -1216,6 +1218,14 @@ void MainWindow::showSettings(const QString& page)
             connect(m_settingsDialog, &SettingsDialog::keyBindingsRequested, this, [this] {
                 runCommand(QStringLiteral("gui.show_shortcuts"), {{QStringLiteral("section"), QStringLiteral("controls")}});
             });
+            connect(m_settingsDialog, &SettingsDialog::disableAutomationRequested, this, &MainWindow::disableAutomation);
+            connect(m_settingsDialog, &SettingsDialog::serversStartWithAppRequested, this, [this](bool on) {
+                AppSettings::ServerSettings servers = m_settings.servers();
+                servers.startWithApp = on;
+                m_settings.setServers(servers);
+                qCInfo(lcApp) << "servers start with cuteNES:" << on;
+                updateSettingsDialog();
+            });
             connect(m_settingsDialog, &SettingsDialog::settingRequested, this,
                 [this](const QString& key, const QVariant& value) {
                     runCommand(QStringLiteral("gui.set_setting"), {{QStringLiteral("key"), key}, {QStringLiteral("value"), value}});
@@ -1390,6 +1400,7 @@ void MainWindow::updateSettingsDialog()
     };
     m_settingsDialog->setServers(shown(saved.apiEnabled, saved.apiPort, m_servers->api()),
         shown(saved.mcpEnabled, saved.mcpPort, m_servers->mcp()));
+    m_settingsDialog->setServersStartWithApp(saved.startWithApp);
     const AppSettings::InputSettings input = m_settings.input();
     SettingsDialog::Input page{input.turboRate, input.allowOppositeDirections, input.pauseOnGamepadDisconnect, {}};
     for (const Gamepad& pad : gamepads()) page.gamepads << tr("Player %1: %2").arg(pad.port).arg(pad.name);
@@ -1586,6 +1597,7 @@ void MainWindow::applyServers()
     QString error;
     const bool apiBefore = m_servers->api().on;
     const bool mcpBefore = m_servers->mcp().on;
+    const bool wasServing = apiBefore || mcpBefore;
     if (!m_servers->apply(wanted.apiEnabled, wanted.apiPort, wanted.mcpEnabled, wanted.mcpPort, &error)) {
         // A port in use: what could not start is turned off (spec edge
         // case), in the settings too unless the command line asked for it.
@@ -1603,8 +1615,39 @@ void MainWindow::applyServers()
     };
     logChange("API", apiBefore, m_servers->api());
     logChange("MCP server", mcpBefore, m_servers->mcp());
+    if (wasServing && !m_servers->api().on && !m_servers->mcp().on) {
+        // No client is left to let go of the buttons it held (#233); what
+        // the user holds stays.
+        for (const int port : {1, 2}) {
+            m_session->call("core.set_controller", {{"port", port}, {"buttons", api::Json::array()}});
+        }
+    }
     updateSettingsDialog();
     updateAutomation();
+}
+
+void MainWindow::disableAutomation()
+{
+    // Straight from the click, not queued: no client call is on this thread,
+    // and every call in flight ends with ShuttingDown (FR-072).
+    AppSettings::ServerSettings servers = m_settings.servers();
+    servers.apiEnabled = false;
+    servers.mcpEnabled = false;
+    servers.startWithApp = false;
+    m_settings.setServers(servers);
+    m_runServers = false; // servers --api or --mcp started stop too
+    applyServers();
+    qCInfo(lcApp) << "automation disabled from Settings > Servers";
+    showOsd(tr("Automation disabled: the API and MCP server are off"));
+}
+
+void MainWindow::turnServersOffUnlessKept()
+{
+    AppSettings::ServerSettings servers = m_settings.servers();
+    if (servers.startWithApp || (!servers.apiEnabled && !servers.mcpEnabled)) return;
+    servers.apiEnabled = false;
+    servers.mcpEnabled = false;
+    m_settings.setServers(servers);
 }
 
 void MainWindow::updateAutomation()
@@ -1626,7 +1669,7 @@ void MainWindow::updateAutomation()
     if (m_servers->api().on) tip << tr("API: %1").arg(m_servers->api().url);
     if (m_servers->mcp().on) tip << tr("MCP server: %1").arg(m_servers->mcp().url);
     if (paused) tip << tr("Paused by automation. Pause / Resume plays on.");
-    tip << tr("Click for Settings > Servers.");
+    tip << tr("Click for Settings > Servers, where Disable Automation disconnects it.");
     m_automation->setToolTip(tip.join(QLatin1Char('\n')));
     m_automation->adjustSize();
     constexpr int kMargin = 12;
