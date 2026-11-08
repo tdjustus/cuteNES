@@ -108,10 +108,9 @@ condone piracy and is designed not to enable it:
 - Play your own dumps of cartridges you own, or homebrew and public-domain
   games. Do not download or share ROMs you have no right to.
 - Features that touch other people's content are built the same way: game
-  art (#90) uses only sources that allow it, and the planned `.nesx` format
-  (#102) can never contain a ROM. It names its target by hash, and you
-  supply your own copy. `.nesx` will be optional and opt-in: a plugin that
-  cuteNES downloads only when you turn it on in Settings (#198, #201).
+  art (#90) uses only sources that allow it, and the planned support for
+  ROM hacks (#219) applies a hack's patch to your own copy of the game, in
+  memory, so no ROM is ever shipped with one.
 
 ## License
 
