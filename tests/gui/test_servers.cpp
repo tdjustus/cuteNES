@@ -3,8 +3,8 @@
 // writes the token file that `cutenes-server --attach` reads; the token
 // opens the window's own session; API off ends clients' calls with
 // ShuttingDown while the game plays on; an indicator shows while a client
-// is there and says when automation paused the game, with a Stop that
-// cuts every client off (#233). The servers last one run unless the user
+// is there and says when automation paused the game, and opens Settings >
+// Servers, whose Disable Automation cuts every client off (#233). The servers last one run unless the user
 // confirms they should start with cuteNES (#233).
 
 #include "gui_support.hpp"
@@ -271,14 +271,33 @@ TEST(GuiServers, TheSettingsPageShowsAndChangesTheServers)
     }
 }
 
-// #233: Stop on the automation indicator turns both servers off at once.
-// It cuts a call in progress (ShuttingDown) and the token files go, so
-// nothing can carry on or reconnect. The buttons the client held are let
-// go, and the game plays on.
-TEST(GuiServers, StopCutsTheClientOffAndTurnsTheServersOff)
+// The Disable Automation button at the top of Settings > Servers (#233),
+// once the page is shown.
+QPushButton* disableButton(MainWindow& w)
+{
+    QPushButton* button = nullptr;
+    waitUntil([&] {
+        button = w.findChild<QPushButton*>(QStringLiteral("disableAutomation"));
+        return button && button->isVisible();
+    });
+    return button;
+}
+
+// #233: clicking the automation indicator opens Settings > Servers, whose
+// Disable Automation turns every server setting off at once. It cuts a
+// call in progress (ShuttingDown) and the token files go, so nothing can
+// carry on or reconnect. The buttons the client held are let go, and the
+// game plays on.
+TEST(GuiServers, DisableAutomationCutsTheClientOffAndTurnsEverythingOff)
 {
     QString tokens;
-    MainWindow w(serverOptions(&tokens));
+    const MainWindow::Options options = serverOptions(&tokens);
+    {
+        // Kept across launches, as Settings > Servers allows after asking.
+        QSettings ini(options.settingsFile, QSettings::IniFormat);
+        ini.setValue(QStringLiteral("servers/startWithApp"), true);
+    }
+    MainWindow w(options);
     w.show();
     call(w, "gui.open_rom", {{"path", kRom.toStdString()}});
     anyPorts(w);
@@ -288,20 +307,23 @@ TEST(GuiServers, StopCutsTheClientOffAndTurnsTheServersOff)
     ASSERT_TRUE(waitUntil([&] { return QFile::exists(apiFile) && QFile::exists(mcpFile); }));
     const auto api = readToken(apiFile);
     ASSERT_TRUE(api);
-    auto* indicator = w.findChild<QPushButton*>(QStringLiteral("automationIndicator"));
-    auto* stop = w.findChild<QPushButton*>(QStringLiteral("automationStop"));
-    ASSERT_NE(stop, nullptr);
-    EXPECT_FALSE(stop->isVisible()) << "no client yet";
+    EXPECT_EQ(w.findChild<QPushButton*>(QStringLiteral("automationStop")), nullptr) << "no Stop on the indicator";
 
     ASSERT_TRUE(rpc(*api, "core.set_controller", {{"port", 1}, {"buttons", Json::array({"A", "Right"})}}));
     EXPECT_EQ(call(w, "core.get_controller", {{"port", 1}})["buttons"].size(), 2u);
+    auto* indicator = w.findChild<QPushButton*>(QStringLiteral("automationIndicator"));
+    ASSERT_TRUE(waitUntil([&] { return indicator->isVisible(); }));
+    indicator->click();
+    QPushButton* disable = disableButton(w);
+    ASSERT_NE(disable, nullptr) << "the indicator opens Settings > Servers";
+    EXPECT_TRUE(disable->isEnabled());
+
     // The longest call a client may make (maxRunFrames): seconds of play,
     // far longer than the moment it takes to reach the listener.
     std::optional<Json> longCall;
     std::thread client([&] { longCall = rpc(*api, "core.run_frames", {{"frames", 3600}}); });
-    EXPECT_TRUE(waitUntil([&] { return stop->isVisible(); }));
     waitUntil([] { return false; }, 300);
-    stop->click();
+    disable->click();
     client.join(); // within the rpc helper's 10 s read timeout
     ASSERT_TRUE(longCall) << "the call got no reply";
     ASSERT_TRUE(longCall->contains("error")) << longCall->dump();
@@ -313,13 +335,25 @@ TEST(GuiServers, StopCutsTheClientOffAndTurnsTheServersOff)
     const Json saved = call(w, "gui.get_settings", {{"group", "servers"}})["values"]["servers"];
     EXPECT_EQ(saved["apiEnabled"], false);
     EXPECT_EQ(saved["mcpEnabled"], false);
+    EXPECT_EQ(saved["startWithApp"], false) << "every server setting goes off";
     EXPECT_TRUE(call(w, "core.get_controller", {{"port", 1}})["buttons"].empty()) << "the client's buttons are let go";
-    EXPECT_TRUE(waitUntil([&] { return !stop->isVisible() && !indicator->isVisible(); }));
+    EXPECT_TRUE(waitUntil([&] { return !disable->isEnabled() && !indicator->isVisible(); }))
+        << "nothing is left on to disable";
+    EXPECT_FALSE(w.findChild<QCheckBox*>(QStringLiteral("serversStartWithApp"))->isChecked());
 }
 
-// #233: --api and --mcp are run-only, so Stop also ends servers they started.
-TEST(GuiServers, StopEndsRunOnlyServersToo)
+// #233: Disable Automation is available only while something is on, and it
+// also ends servers that --api or --mcp started for one run.
+TEST(GuiServers, DisableAutomationEndsRunOnlyServersToo)
 {
+    {
+        MainWindow w(serverOptions(nullptr));
+        w.show();
+        call(w, "gui.show_settings", {{"page", "servers"}});
+        QPushButton* disable = disableButton(w);
+        ASSERT_NE(disable, nullptr);
+        EXPECT_FALSE(disable->isEnabled()) << "everything is off already";
+    }
     QString tokens;
     MainWindow::Options options = serverOptions(&tokens);
     options.runApi = true;
@@ -330,10 +364,11 @@ TEST(GuiServers, StopEndsRunOnlyServersToo)
     ASSERT_TRUE(waitUntil([&] { return QFile::exists(apiFile); }));
     const auto api = readToken(apiFile);
     ASSERT_TRUE(api);
-    auto* stop = w.findChild<QPushButton*>(QStringLiteral("automationStop"));
-    ASSERT_TRUE(rpc(*api, "api.version"));
-    ASSERT_TRUE(waitUntil([&] { return stop->isVisible(); }));
-    stop->click();
+    call(w, "gui.show_settings", {{"page", "servers"}});
+    QPushButton* disable = disableButton(w);
+    ASSERT_NE(disable, nullptr);
+    EXPECT_TRUE(waitUntil([&] { return disable->isEnabled(); })) << "a run-only server is on";
+    disable->click();
     EXPECT_TRUE(waitUntil([&] { return !QFile::exists(apiFile); }));
     EXPECT_FALSE(rpc(*api, "api.version"));
 }

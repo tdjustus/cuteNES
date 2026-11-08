@@ -384,15 +384,6 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     connect(m_automation, &QPushButton::clicked, this, [this] {
         runCommand(QStringLiteral("gui.show_settings"), {{QStringLiteral("page"), QStringLiteral("servers")}});
     });
-    m_automationStop = new QPushButton(tr("STOP"), m_pages);
-    m_automationStop->setObjectName(QStringLiteral("automationStop"));
-    m_automationStop->setFlat(true);
-    m_automationStop->setCursor(Qt::PointingHandCursor);
-    m_automationStop->setStyleSheet(m_automation->styleSheet());
-    m_automationStop->setAccessibleName(tr("Stop automation"));
-    m_automationStop->setToolTip(tr("Turn the API and MCP server off and disconnect every client."));
-    m_automationStop->hide();
-    connect(m_automationStop, &QPushButton::clicked, this, &MainWindow::stopAutomation);
     m_automationTimer = new QTimer(this);
     m_automationTimer->setInterval(250);
     connect(m_automationTimer, &QTimer::timeout, this, &MainWindow::updateAutomation);
@@ -1227,6 +1218,7 @@ void MainWindow::showSettings(const QString& page)
             connect(m_settingsDialog, &SettingsDialog::keyBindingsRequested, this, [this] {
                 runCommand(QStringLiteral("gui.show_shortcuts"), {{QStringLiteral("section"), QStringLiteral("controls")}});
             });
+            connect(m_settingsDialog, &SettingsDialog::disableAutomationRequested, this, &MainWindow::disableAutomation);
             connect(m_settingsDialog, &SettingsDialog::serversStartWithAppRequested, this, [this](bool on) {
                 AppSettings::ServerSettings servers = m_settings.servers();
                 servers.startWithApp = on;
@@ -1634,18 +1626,19 @@ void MainWindow::applyServers()
     updateAutomation();
 }
 
-void MainWindow::stopAutomation()
+void MainWindow::disableAutomation()
 {
     // Straight from the click, not queued: no client call is on this thread,
     // and every call in flight ends with ShuttingDown (FR-072).
     AppSettings::ServerSettings servers = m_settings.servers();
     servers.apiEnabled = false;
     servers.mcpEnabled = false;
+    servers.startWithApp = false;
     m_settings.setServers(servers);
     m_runServers = false; // servers --api or --mcp started stop too
     applyServers();
-    qCInfo(lcApp) << "automation stopped from the window";
-    showOsd(tr("Automation stopped: the API and MCP server are off"));
+    qCInfo(lcApp) << "automation disabled from Settings > Servers";
+    showOsd(tr("Automation disabled: the API and MCP server are off"));
 }
 
 void MainWindow::turnServersOffUnlessKept()
@@ -1669,7 +1662,6 @@ void MainWindow::updateAutomation()
             && std::chrono::steady_clock::now() - a.lastCall < kRecent);
     const bool paused = m_pausedByAutomation && hasGame() && m_runState == QLatin1String("Paused");
     m_automation->setVisible(active || paused);
-    m_automationStop->setVisible(m_automation->isVisible() && (m_servers->api().on || m_servers->mcp().on));
     if (!m_automation->isVisible()) return;
     m_automation->setText(paused ? tr("AUTOMATION · PAUSED") : tr("AUTOMATION"));
     QStringList tip;
@@ -1677,18 +1669,13 @@ void MainWindow::updateAutomation()
     if (m_servers->api().on) tip << tr("API: %1").arg(m_servers->api().url);
     if (m_servers->mcp().on) tip << tr("MCP server: %1").arg(m_servers->mcp().url);
     if (paused) tip << tr("Paused by automation. Pause / Resume plays on.");
-    tip << tr("Click for Settings > Servers.");
+    tip << tr("Click for Settings > Servers, where Disable Automation disconnects it.");
     m_automation->setToolTip(tip.join(QLatin1Char('\n')));
     m_automation->adjustSize();
     constexpr int kMargin = 12;
     m_automation->move(m_pages->width() - m_automation->width() - kMargin,
         m_pages->height() - m_automation->height() - kMargin);
     m_automation->raise();
-    if (m_automationStop->isVisible()) {
-        m_automationStop->adjustSize();
-        m_automationStop->move(m_automation->x() - m_automationStop->width() - kMargin / 2, m_automation->y());
-        m_automationStop->raise();
-    }
 }
 
 void MainWindow::addRomFolder()

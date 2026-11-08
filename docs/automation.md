@@ -77,9 +77,9 @@ catalog changes. `--mcp-port N` also serves MCP over Streamable HTTP at
 The desktop application runs the same API and MCP endpoints behind
 Settings > Servers, both off by default. They stay on for one run, unless
 the user turns on "Start the servers when cuteNES starts" after a
-confirmation, which automation can't do. STOP, beside the window's
-AUTOMATION indicator, turns them off at once and cuts every client off
-(#233). Many MCP clients only start stdio
+confirmation, which automation can't do. Disable Automation, at the top
+of Settings > Servers, turns all of that off at once and cuts every client
+off. Clicking the window's AUTOMATION indicator opens that page (#233). Many MCP clients only start stdio
 servers, so `cutenes-server --attach` relays a stdio client to the running
 application, and follows it to a new token or port when the application
 restarts:

@@ -285,7 +285,8 @@ QWidget* SettingsDialog::buildServersPage(QWidget* parent)
                "token file can control cuteNES: load and play games, press buttons, read and change memory, "
                "save and load states, write files in your library, and change settings.\n\n"
                "Only programs on this computer can connect. AUTOMATION shows at the bottom right of the "
-               "window while one is connected, and its Stop button disconnects it at any time.\n\n"
+               "window while one is connected, and Disable Automation, at the top of this page, disconnects "
+               "it at any time.\n\n"
                "This stays on until you turn it off here."));
         QPushButton* turnOn = box->addButton(tr("Turn On"), QMessageBox::AcceptRole);
         box->setDefaultButton(QMessageBox::Cancel);
@@ -314,9 +315,19 @@ QWidget* SettingsDialog::buildServersPage(QWidget* parent)
     for (QLabel* label : {note, m_mcpTokenFile}) label->setForegroundRole(QPalette::PlaceholderText);
     note->setWordWrap(true);
 
+    m_disableAutomation = new QPushButton(tr("Disable Automation"), page);
+    m_disableAutomation->setObjectName(QStringLiteral("disableAutomation"));
+    m_disableAutomation->setToolTip(tr("Turn off the API, the MCP server and starting them with cuteNES, and "
+                                       "disconnect every client now."));
+    connect(m_disableAutomation, &QPushButton::clicked, this, &SettingsDialog::disableAutomationRequested);
+    auto* top = new QHBoxLayout;
+    top->addWidget(m_disableAutomation);
+    top->addStretch();
+
     auto* layout = new QVBoxLayout(page);
     layout->setContentsMargins(16, 4, 4, 4);
     layout->setSpacing(10);
+    layout->addLayout(top);
     layout->addLayout(grid);
     layout->addWidget(m_startWithApp);
     layout->addWidget(m_mcpTokenFile);
@@ -340,12 +351,22 @@ void SettingsDialog::setServers(const Server& api, const Server& mcp)
     show(m_api, api);
     show(m_mcp, mcp);
     m_mcpTokenFile->setText(mcp.running ? tr("Token file: %1").arg(mcp.tokenFile) : QString());
+    m_serversOn = api.enabled || api.running || mcp.enabled || mcp.running;
+    updateDisableAutomation();
+}
+
+void SettingsDialog::updateDisableAutomation()
+{
+    m_disableAutomation->setEnabled(m_serversOn || m_startWithApp->isChecked());
 }
 
 void SettingsDialog::setServersStartWithApp(bool on)
 {
-    const QSignalBlocker block(m_startWithApp);
-    m_startWithApp->setChecked(on);
+    {
+        const QSignalBlocker block(m_startWithApp);
+        m_startWithApp->setChecked(on);
+    }
+    updateDisableAutomation();
 }
 
 QWidget* SettingsDialog::buildVideoPage(QWidget* parent)

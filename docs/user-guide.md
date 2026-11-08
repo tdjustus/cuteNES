@@ -305,10 +305,11 @@ sees the same game you do, and you can play while it watches or helps.
    the client.
 3. While an agent is connected, **AUTOMATION** shows at the bottom right of
    the window. Click it to open Settings > Servers.
-4. To end it at any time, click **STOP**, beside AUTOMATION. Both servers
-   turn off at once and the agent is disconnected straight away. It can't
-   finish what it was doing or reconnect, and any buttons it was holding
-   are let go. The game keeps playing.
+4. To end it at any time, click **AUTOMATION**, then **Disable
+   Automation** at the top of Settings > Servers. Both servers turn off at
+   once, and so does starting them with cuteNES. The agent is disconnected
+   straight away: it can't finish what it was doing or reconnect, and any
+   buttons it was holding are let go. The game keeps playing.
 
 Turning the server off in Settings disconnects the agent the same way. The
 **API** switch on the same page is a local JSON interface for your own

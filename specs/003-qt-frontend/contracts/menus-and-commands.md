@@ -442,18 +442,20 @@ still checks it.
   "AUTOMATION · PAUSED" when `pausedByAutomation` is true, and its tooltip
   lists the listeners and says "Paused by automation". Pause / Resume
   plays on.
-- Clicking it opens Settings > Servers.
-- **STOP** sits to its left while a server is on (#233). It turns both
-  servers off, as `servers.apiEnabled` false would, and also ends servers
-  that `--api` or `--mcp` started. Calls in progress end with
-  `ShuttingDown`, streams close and the token files go, so a client, an
-  attached `cutenes-server --attach` included, can't continue or
-  reconnect. The buttons automation held (`core.set_controller`) are let
-  go; what the user holds stays. An on-screen message says "Automation
-  stopped". Turning both servers off by any other route lets go of the
-  buttons too.
+- Clicking it opens Settings > Servers, where Disable Automation is.
 
 ## Settings > Servers (FR-071, FR-072)
+
+- **Disable Automation** is the first control on the page (#233). It is
+  enabled while anything is on: a server's setting, a server running
+  (`--api` or `--mcp` included), or **Start the servers when cuteNES
+  starts**. It turns all of them off at once, as setting each to false
+  would. Calls in progress end with `ShuttingDown`, streams close and the
+  token files go, so a client, an attached `cutenes-server --attach`
+  included, can't continue or reconnect. The buttons automation held
+  (`core.set_controller`) are let go; what the user holds stays. An
+  on-screen message says "Automation disabled". Turning both servers off
+  by any other route lets go of the buttons too.
 
 - "API" and "MCP server", each with a port (0 picks a free one), the address
   while running, and Copy Token. MCP on turns the API on; API off turns MCP
@@ -475,9 +477,9 @@ still checks it.
   user's account that can read the token file can then control cuteNES:
   load and play games, press buttons, read and change memory, save and load
   states, write files in the library, and change settings. It also says
-  that only this computer can connect, that AUTOMATION and its Stop show
-  while a client is connected, and that the setting stays on until turned
-  off. Turning it off needs no confirmation.
+  that only this computer can connect, that AUTOMATION shows while a
+  client is connected and Disable Automation disconnects it, and that the
+  setting stays on until turned off. Turning it off needs no confirmation.
 - `gui.set_setting` refuses `servers.startWithApp` true with
   `InvalidArguments` (a client must not make itself start with every
   launch), and accepts false. `gui.get_settings` reports it.

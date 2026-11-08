@@ -34,11 +34,12 @@ quitting (`gui.exit`) and reopening the app keeps the same bridge working.
 6. Open a second copy of cuteNES (`open -n build/app/cutenes.app`) with
    servers off, and close it: the first copy's MCP connection keeps working.
 
-### Stop, and servers that last one run (#233)
+### Disable Automation, and servers that last one run (#233)
 
 Automated (`GuiServers`):
-- STOP shows beside AUTOMATION only while a client is there. Clicking it
-  turns both servers off. A `core.run_frames` call in progress gets
+- Clicking AUTOMATION opens Settings > Servers. Disable Automation there is
+  enabled only while something is on. Clicking it turns the servers and
+  "start with cuteNES" off. A `core.run_frames` call in progress gets
   `ShuttingDown`, the token files go, nothing answers at the old address,
   and the buttons the client held (`core.set_controller`) are let go. It
   also ends servers that `--api` started.
@@ -54,12 +55,14 @@ Automated (`GuiServers`):
 
 By hand, on each OS:
 1. Turn on the MCP server and attach Claude Code. Ask it to do something
-   long (for example, play for a minute). Click STOP while it runs: the
-   AUTOMATION indicator and STOP go, an on-screen message says automation
-   stopped, Claude's call fails, and its next call says cuteNES is not
+   long (for example, play for a minute). Click AUTOMATION while it runs:
+   Settings > Servers opens with Disable Automation at the top. Click it:
+   the AUTOMATION indicator goes, an on-screen message says automation is
+   disabled, Claude's call fails, and its next call says cuteNES is not
    reachable. The game keeps playing, with no button stuck down.
-2. Check that STOP is easy to see and click over a running game, in the
-   light and dark themes, and that it doesn't cover the AUTOMATION text.
+2. Check that Disable Automation is the first thing on the page, is greyed
+   out when everything is off, and reads clearly in the light and dark
+   themes.
 3. Quit and reopen cuteNES: Settings > Servers shows both servers off.
 4. Turn on "Start the servers when cuteNES starts". Read the confirmation:
    it is clear, it doesn't cut off on a small screen, and Cancel is the

@@ -282,11 +282,12 @@ FR-009, FR-020, FR-021(b)), which #32 tracks.
    inconsistent machine state (002 SC-006).
 7. **Given** the save-state slots, **Then** the slots that automation sees
    are the same slots the menus show.
-8. **Given** a client is connected, **When** the user presses Stop on the
-   automation indicator, **Then** both servers turn off at once: calls in
-   progress fail with `ShuttingDown`, the streams close, the token files go,
-   the buttons the client held are let go, and the game keeps running
-   (#233).
+8. **Given** a client is connected, **When** the user clicks the automation
+   indicator and then Disable Automation at the top of Settings > Servers,
+   **Then** both servers, and starting them with cuteNES, turn off at once:
+   calls in progress fail with `ShuttingDown`, the streams close, the token
+   files go, the buttons the client held are let go, and the game keeps
+   running (#233).
 9. **Given** the servers were on, **When** cuteNES closes and starts again,
    **Then** they are off, unless the user turned on "Start the servers when
    cuteNES starts" in Settings and confirmed what it allows. Automation can
@@ -685,9 +686,10 @@ the same arguments. Launch with a ROM argument: no prompt.
   and close streams, while emulation continues.
 - **FR-073**: The status bar MUST show when automation clients are
   connected and when automation has paused the game. The user MUST always
-  be able to resume or turn the servers off. The indicator MUST offer Stop,
-  which turns both servers off at once and cuts every client off, as
-  FR-072 describes, and lets go of the buttons automation held (#233).
+  be able to resume or turn the servers off. Clicking the indicator MUST
+  open Settings > Servers, whose first control, Disable Automation, MUST
+  turn every server setting off at once, cut every client off as FR-072
+  describes, and let go of the buttons automation held (#233).
 - **FR-074**: In GUI mode, the save-state slots that the API's `session.*`
   slot commands reach MUST be the same persistent slots that the menus show,
   and `session.library_list` MUST list the library browser's ROMs.

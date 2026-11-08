@@ -110,6 +110,9 @@ signals:
     // and value.
     void settingRequested(const QString& key, const QVariant& value);
     void keyBindingsRequested();
+    // Disable Automation: every server setting off, every client cut off
+    // (#233).
+    void disableAutomationRequested();
     // The servers' startup switch, after the confirmation when on (#233).
     // Not gui.set_setting: automation may not turn it on.
     void serversStartWithAppRequested(bool on);
@@ -133,6 +136,9 @@ private:
     ServerControls m_mcp;
     QLabel* m_mcpTokenFile = nullptr;
     QCheckBox* m_startWithApp = nullptr;
+    QPushButton* m_disableAutomation = nullptr;
+    bool m_serversOn = false; // a server on or running: Disable Automation has work to do
+    void updateDisableAutomation();
     QWidget* buildServersPage(QWidget* parent);
     QWidget* buildInputPage(QWidget* parent);
     QWidget* buildVideoPage(QWidget* parent);
