@@ -98,6 +98,14 @@ embedders and left movies with no sign that the core had changed. Now:
   it keep their numbers, but it is no longer returned.
 - Exact replay across core versions is a movie concern, handled by the
   emulation revision and movie checkpoints (#166 steps 2 and 3).
+- **Known bug (#241).** "Resumes under the new core's timing" does not hold
+  across the timing rebuild of 2026-11-03 (#42). A state written by core
+  0.1.0 (cuteNES 0.2.0) loads, with the same frame and master cycle, but
+  the game can then fail: from a frame-30 state of instr_test-v5
+  `01-basics`, the test halts at `$E8D5` instead of passing, while the same
+  build passes from power-on and from its own frame-30 state. Whether such
+  states are refused (a format version or emulation revision in the header)
+  or loaded with a warning is open in #241.
 
 ## Determinism requirement
 

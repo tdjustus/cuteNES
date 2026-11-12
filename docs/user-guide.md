@@ -416,6 +416,11 @@ cutenes [--fullscreen] [--library DIR] [--load-state SLOT|FILE]
   once.
 - **Windows SmartScreen warns about the app.** Choose More info, then Run
   anyway.
+- **A state saved by cuteNES 0.2.0 (alpha 2) or earlier loads, but the game
+  then misbehaves or freezes.** This is a known bug
+  ([#241](https://github.com/tdjustus/cuteNES/issues/241)): the emulation's
+  timing changed after 0.2.0, and those states do not carry over. Start the
+  game afresh, or from its battery save, and save new states.
 
 ### Reporting a problem
 
