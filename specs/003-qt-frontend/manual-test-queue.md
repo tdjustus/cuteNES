@@ -39,13 +39,13 @@ wrong for each item.
 Covered: the window, opening ROMs, pause, reset and power cycle, keys
 reaching the controller, the library's creation, scanning, filtering,
 Enter, recent games and battery saves across a restart and a rename
-(`GuiSkeleton`, `GuiPlay`, `GuiLibraryWindow`, `GuiBattery`).
+(`GuiSkeleton`, `GuiPlay`, `GuiLibraryWindow`, `GuiBattery`); a ROM copied
+into `roms/` listed without a restart (checked through the MCP, #242).
 
 1. Play a game you own for a few minutes with the keyboard (arrows, Z, X,
    Enter, Right Shift). The picture is sharp at 3x with 8:7 proportions,
    the sound is clean, and input feels immediate.
-2. Copy a ROM into `~/Documents/cuteNES/roms` in Finder: it appears in the
-   library without a restart. Drag a `.nes` file onto the window: it opens.
+2. Drag a `.nes` file from Finder onto the window: it opens.
 
 ## Servers, automation and Claude Code (M3; G035, #110, #111, #233, G091)
 
@@ -55,27 +55,24 @@ releasing its buttons, servers off at the next launch, the "start with
 cuteNES" confirmation and its refusal through automation, a second
 window removing only its own token files (`GuiServers`); the bridge
 following a new token after a restart, and answering a client that started
-first (checked through the MCP, `McpAttach`); both surfaces changing the
-state at once (`GuiCoexistence`).
+first (`McpAttach`, and live on 2026-11-11: this Claude Code session got
+the tools within seconds of cuteNES starting, with no `/mcp` reconnect);
+both surfaces changing the state at once (`GuiCoexistence`).
 
 1. Settings > Servers: turn on "MCP server". The page shows the token file
    path, and Copy Token puts the token on the clipboard (paste it
    somewhere).
-2. Quit cuteNES, start Claude Code with `cutenes-server --attach`
-   registered as `cuteNES`, then open cuteNES and turn on the MCP server.
-   Within a few seconds, without `/mcp` reconnect, Claude Code has the
-   cuteNES tools. The AUTOMATION indicator shows while it is connected.
-3. Play Super Mario Bros. while Claude saves to slot 3 and writes your
+2. Play Super Mario Bros. while Claude saves to slot 3 and writes your
    lives at $075A. The picture never glitches or jumps, and the slot menu
    shows Claude's save with its thumbnail.
-4. Ask Claude to play for a minute. While it does, click AUTOMATION:
+3. Ask Claude to play for a minute. While it does, click AUTOMATION:
    Settings > Servers opens with Disable Automation at the top. Click it:
    the indicator goes, a message says automation is disabled, and Claude
    reports that cuteNES is not reachable. The game plays on with no button
    stuck down.
-5. Disable Automation reads clearly and is greyed out when everything is
+4. Disable Automation reads clearly and is greyed out when everything is
    off, in the light and the dark theme.
-6. Turn on "Start the servers when cuteNES starts". The confirmation reads
+5. Turn on "Start the servers when cuteNES starts". The confirmation reads
    clearly, is not cut off on a small window, and Enter or Esc does not
    turn it on. Cancel, then turn it on with Turn On, and tell Claude it is
    on: Claude runs the restart check under "For Claude through the MCP".
@@ -142,7 +139,10 @@ every setting through the MCP. The Metal renderer needs your eyes.
 Covered: the audio settings applying and persisting, fast-forward sound,
 the WAV's format and length, pausing on focus loss in the test platform,
 resuming where you left off (`GuiAudio`); the device list and a recording
-through the MCP.
+through the MCP; real focus changes on macOS (checked through the MCP with
+`osascript` activating Finder and cuteNES, #242: the game pauses with only
+Resume, resumes on return, a pause by hand stays, and Settings opened from
+cuteNES keeps it running).
 
 1. Settings > Audio during a game: the volume slider and Mute act at once.
    Latency 32 ms and 200 ms both play without crackles.
@@ -151,20 +151,15 @@ through the MCP.
    the game never stops.
 3. Fast-forward (Tab) at 200 %: the sound speeds up; with "Mute" chosen
    for fast-forward it goes silent while held.
-4. Click another application during a game: it pauses, and the pause menu
-   shows only Resume. Click back: it plays on. Pause it yourself with P,
-   click away and back: it stays paused. Opening Settings from cuteNES
-   does not pause.
 
 ## Region and palettes (M6; G6, #98)
 
 Covered: PAL timing at the power cycle, the RGB palette's table, a `.pal`
 file colouring the picture and persisting (`GuiRegionPalette`); PAL at
-50.007 fps through the MCP.
+50.007 fps through the MCP, and its music lower in pitch by the clock
+ratio, 0.9289, measured in recorded WAVs (#242).
 
-1. Emulation > Region > PAL, then Power Cycle: the music is lower in pitch.
-   Automatic and another power cycle bring it back.
-2. View > Palette > Load .pal…: the macOS file dialog opens, and the chosen
+1. View > Palette > Load .pal…: the macOS file dialog opens, and the chosen
    palette colours the picture.
 
 ## Cheats and movies (M7; G071-G072, #99, #121)
@@ -172,7 +167,8 @@ file colouring the picture and persisting (`GuiRegionPalette`); PAL at
 Covered: the cheat search, edits, freeze, Game Genie, saving per game
 (`GuiCheatSearch`, `GuiCheats`); recording, playback, takeover, refusals,
 cheats and battery in movies (`GuiMovies`); a cheat search on Super Mario
-Bros. and a 1349-frame replay through the MCP.
+Bros., Game Genie SXIOPO keeping the lives there, and a 1349-frame replay
+through the MCP.
 
 1. Tools > Cheat Search… on Super Mario Bros.: narrow to your lives
    ($075A) with the window's own controls, double-click the value and type
@@ -187,13 +183,17 @@ Covered: breakpoints, stepping against nestest's log, register edits, Step
 Frame (`GuiDebugger`); viewing without side effects and editing every
 memory space (`GuiMemoryViewer`); the PPU viewer's pictures pixel by pixel
 (`GuiPpuViewer`); the trace against nestest's log and the dump
-(`GuiTraceLogger`); all of them on Super Mario Bros. through the MCP.
+(`GuiTraceLogger`); all of them on Super Mario Bros. through the MCP, and
+the debugger coming back by itself at the next stop after being closed
+(#242).
 
 1. Open the Debugger, Memory Viewer, PPU Viewer (each tab) and Trace Logger
    during a game: each is laid out legibly, updates while the game runs,
    and the game keeps full speed and never stutters while you scroll.
-2. In the Debugger, set a breakpoint and Run, then close the window: at the
-   next stop it comes back by itself, in front.
+2. In the Debugger, set a breakpoint and Run, then close the window: when
+   it comes back at the next stop, it is in front of the game window.
+   (Checking the order needs macOS Accessibility permission, which the
+   MCP's shell does not have.)
 3. While the game runs, start typing a value into a register field: what
    you type is not overwritten until you press Enter.
 
@@ -245,8 +245,10 @@ feed, Skip and Later, no check with a ROM on the command line
 path on a temporary package (`UpdateInstall`, `GuiUpdates`).
 
 1. The first-launch question ("Check for updates when cuteNES starts?")
-   and the update prompt read well. To see the prompt, run a local build
-   with `CUTENES_APP_VERSION` lowered below the latest release.
+   and the update prompt read well, including the reason Install is
+   missing when the bundle is in a folder you cannot write. To see the
+   prompt, run a local build with `CUTENES_APP_VERSION` lowered below the
+   latest release.
 2. Install, once a release above the installed one is offered (the updater
    skips beta and RC tags, so how this runs is open in #232): install the
    previous release's zip, start it with `--fullscreen`, and say Yes to
@@ -254,9 +256,8 @@ path on a temporary package (`UpdateInstall`, `GuiUpdates`).
    then the new version starts full screen, and Help > About shows it. At
    the next start no `.cutenes-old.app` is beside the bundle.
 3. Turn Wi-Fi off during the download: an error says what failed, and the
-   installed version still starts.
-4. With the bundle in a folder you cannot write: the prompt has no Install
-   and says why.
+   installed version still starts. (Claude cannot do this: it would cut
+   its own connection.)
 
 ## The macOS package (M9; G093)
 
@@ -264,8 +265,8 @@ Covered: the CI `package` job builds every package, starts it and runs
 `cutenes-server --help`; the macOS zip was checked against SHA256SUMS and
 ran from its own frameworks.
 
-1. Download the macOS zip of the latest packaged run and check it against
-   SHA256SUMS. Unzip and open cutenes.app: Gatekeeper asks once
+1. Unzip the macOS zip of the latest packaged run (Claude can download it
+   and check it against SHA256SUMS) and open cutenes.app: Gatekeeper asks once
    (right-click > Open). The Dock and Finder show the cuteNES icon, and
    Help > About lists the licenses.
 2. Double-click a `.nes` file in Finder: the packaged app opens it.
@@ -280,14 +281,11 @@ Steps the MCP can run that have not been run yet. Claude runs them when the
 MCP server is on, records the result in the PR or #190, and deletes the
 step. A step that turns out to need a person moves up into its section.
 
-- **Restart with "start with cuteNES" on (#233)**, after step 6 of
+- **Restart with "start with cuteNES" on (#233)**, after step 5 of
   "Servers": `gui.exit`, relaunch with `open build/app/cutenes.app`, and
   check the cuteNES tools come back with no `/mcp` reconnect.
 - **A hidden game keeps its speed when the display sleeps (#124)**: with
   Pause When Inactive off and a game running, `pmset displaysleepnow`, wait
   a minute, and check `core.run_state`'s frame grew by about 60 a second.
-  Restore the setting afterwards.
-- **Old states still load (#92)**: a state saved by cuteNES 0.2.0 (alpha 2)
-  to a file loads into its own game with `gui.load_state_file`.
-- **Game Genie on a real game (G071)**: SXIOPO on Super Mario Bros. keeps
-  the lives at $075A after a life is lost; HELLO1 is refused.
+  Restore the setting afterwards. It blanks the maintainer's screen, so run
+  it when they say so.
