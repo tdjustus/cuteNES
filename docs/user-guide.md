@@ -5,6 +5,11 @@ desktop application: finding your games, playing, saving, the settings, and
 the tools for cheats, movies and debugging. It is also in the application,
 under **Help > User Guide**.
 
+cuteNES is tested by hand on macOS. Windows and Linux are supported on a
+best-effort basis: the automated tests run on them, but nobody plays them by
+hand before a release. If something goes wrong there, please report it (see
+[Reporting a problem](#reporting-a-problem)).
+
 On macOS, read **Ctrl** as **Cmd** throughout. Items marked † are in the
 cuteNES application menu on macOS rather than the menu named here.
 
@@ -420,4 +425,6 @@ you restarted it, the earlier file has what happened. Attach the right one
 to a bug report on
 [GitHub](https://github.com/tdjustus/cuteNES/issues). The log holds file
 paths (the games you opened) but never your server tokens; look it over
-before sharing it.
+before sharing it. On Windows and Linux, which are not tested by hand, a
+report is often the only way a problem is found, so please send one and
+name your OS and version.

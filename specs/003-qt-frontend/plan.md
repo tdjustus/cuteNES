@@ -38,8 +38,8 @@ one machine through one command queue (spec FR-075, 002 FR-007).
    palette selection and Game Genie (R10).
 
 The phases are ordered so that each PR gives the maintainer something to
-launch and test by hand (the manual test checklists are in
-[quickstart.md](quickstart.md)).
+launch and test by hand (the hands-on checks are in
+[manual-test-queue.md](manual-test-queue.md), on macOS).
 
 Decisions and sources: [research.md](research.md).
 
@@ -69,11 +69,13 @@ Decisions and sources: [research.md](research.md).
   CI needs no display or sound device.
 - The `api` tests cover the real-time mode.
 - The core additions add `unit`/`tier1` tests.
-- Each phase also has a **manual test checklist** that the maintainer runs
-  before its PR merges.
+- Each phase also has hands-on checks, which the maintainer runs on macOS
+  before a beta (since 2026-10-31 they are queued in
+  [manual-test-queue.md](manual-test-queue.md) rather than run per PR).
 
 **Target platform**: Windows 10+, macOS 13+ and Linux (X11 and Wayland)
-(constitution IV).
+(constitution IV). macOS is tested by hand; Windows and Linux are best
+effort, covered by CI and users' reports.
 
 **Project type**: one library (`cutenes-qt`) and one desktop application
 (`cutenes`), plus small additions to `cutenes-api` and `cutenes-core`.
@@ -162,7 +164,8 @@ dependencies enforce it. `cutenes-server` stays Qt-free.
 ## Phasing (one branch and PR each, merged before the next)
 
 Every phase ends with the automated tests green on all three OSes **and the
-maintainer's manual test passing** (quickstart.md "Manual checklists").
+maintainer's manual test passing** (now queued in
+[manual-test-queue.md](manual-test-queue.md), macOS only).
 
 | Phase | Delivers | Exit |
 |---|---|---|

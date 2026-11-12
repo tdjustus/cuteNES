@@ -173,8 +173,8 @@ each has its own users:
   with manual checks still queued, saying so in its notes. A beta, a
   release candidate or a production release ships only after every manual
   test has passed: the whole `specs/003-qt-frontend/manual-test-queue.md`
-  and the phase checklists (M3 to M9) in feature 003's `quickstart.md`,
-  reported by the maintainer. A beta tells testers the application is
+  (which now holds the phase checklists too), run on macOS and reported by
+  the maintainer. Windows and Linux are best effort: their check is CI. A beta tells testers the application is
   feature-complete and checked; an alpha only that it is worth trying.
 - History: alpha 1 predates this scheme and is tagged
   `core-v0.1.0-alpha.1`. Alpha 2 is `v0.2.0-alpha.2`. It was first tagged

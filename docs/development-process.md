@@ -120,7 +120,7 @@ Releases are tagged from `main`. Before 1.0, each is an alpha or beta, with
 the count running across the project (alpha 4 was `v0.3.1-alpha.4`; the
 first beta will be `v0.9.0-beta.1`). An alpha may ship with manual checks
 still queued; a beta or a production release waits until every manual test
-has passed. The tag's CI builds the packages for all three platforms and their
+has passed (on macOS; Windows and Linux are best effort, checked by CI). The tag's CI builds the packages for all three platforms and their
 `SHA256SUMS`; the packages are downloaded, checked against the sums, and
 published with notes that say what changed, what is known not to work, how
 to open an unsigned build, and the licenses. Every line of the notes is
