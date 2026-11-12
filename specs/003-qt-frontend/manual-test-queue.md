@@ -189,7 +189,9 @@ the debugger coming back by itself at the next stop after being closed
 
 1. Open the Debugger, Memory Viewer, PPU Viewer (each tab) and Trace Logger
    during a game: each is laid out legibly, updates while the game runs,
-   and the game keeps full speed and never stutters while you scroll.
+   and the game keeps full speed and never stutters while you scroll. (The
+   first Debugger or Memory Viewer open stalls about 63 ms until #244 is
+   fixed; note it only if it is longer.)
 2. In the Debugger, set a breakpoint and Run, then close the window: when
    it comes back at the next stop, it is in front of the game window.
    (Checking the order needs macOS Accessibility permission, which the
@@ -275,6 +277,17 @@ ran from its own frameworks.
    `cutenes-server --attach`. Note anything missing (a plugin, a codec, a
    font).
 
+## Bugs these checks found
+
+Each is a 1.0 issue; the re-check after its fix is in the list below.
+
+- **#241**: a save state from cuteNES 0.2.0 (alpha 2) loads, but the game
+  then hangs (instr_test-v5 `01-basics` halts at `$E8D5` instead of
+  passing). Found by the "old states still load (#92)" step.
+- **#244**: the Debugger and Memory Viewer ask for the font family
+  "monospace", which macOS lacks, and Qt stalls 63 ms looking for it.
+  Found in the app log during these checks.
+
 ## For Claude through the MCP
 
 Steps the MCP can run that have not been run yet. Claude runs them when the
@@ -289,3 +302,10 @@ step. A step that turns out to need a person moves up into its section.
   a minute, and check `core.run_state`'s frame grew by about 60 a second.
   Restore the setting afterwards. It blanks the maintainer's screen, so run
   it when they say so.
+- **Old states, after #241 is fixed (#92)**: save a frame-30 state of
+  instr_test-v5 `01-basics` with the 0.2.0 release's `cutenes-server`
+  (`core.capture_state`, `session.blob_read`), and load it with
+  `gui.load_state_file`. It is either refused with the reason or loads and
+  passes by frame 630, whichever #241 decides.
+- **Fixed-width fonts, after #244 is fixed**: open the Debugger and Memory
+  Viewer during a game; the log has no `qt.qpa.fonts` warning.

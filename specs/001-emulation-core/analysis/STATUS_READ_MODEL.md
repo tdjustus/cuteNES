@@ -211,6 +211,9 @@ What landed, against the plan above:
 - **Save states.** The plan's step 5 (bump `formatVersion` to 2) was not
   needed. No field changed meaning, and the two retired PPU bytes are written
   as zero and ignored on load, so states saved by earlier builds still load.
+  They load, but they do not always run correctly afterwards: the saved PPU
+  and CPU phase belongs to the old model, and a 0.2.0 state of `01-basics`
+  halts instead of passing (#241, found 2026-11-11).
 - **Sweep harness.** Not committed (step 2). Once the analysis showed the
   read and write offsets were already right, the space was a handful of
   discrete choices (read latency 0 or 1, NMI sample lead, skip decision dot,
