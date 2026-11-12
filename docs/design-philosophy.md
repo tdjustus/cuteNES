@@ -119,7 +119,9 @@ platform late costs far more than building for three from the start.
 
 **For the NES.** Windows, macOS and Linux build from one tree with CMake.
 Qt 6 is the only UI toolkit, and SDL3 handles sound and gamepads. CI builds
-and tests all three on every pull request.
+and tests all three on every pull request. Hands-on testing is on macOS
+only; Windows and Linux are best effort, and rely on CI and users' bug
+reports.
 
 ## 7. Write it down first
 

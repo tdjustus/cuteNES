@@ -23,6 +23,13 @@ Get the latest release from
 | `cuteNES-<version>-windows-x64.zip` | Windows 10 or later, 64-bit |
 | `cuteNES-<version>-linux-x86_64.AppImage` | Linux x86-64 with glibc 2.35 or later (Ubuntu 22.04 and newer); needs `libfuse2` |
 
+cuteNES is developed and tested by hand on macOS. **Windows and Linux are
+supported on a best-effort basis:** every change is built and run through
+the automated tests on both, but nobody plays them by hand before a
+release. If something goes wrong there, please
+[report it](#reporting-a-problem); those reports are how problems on
+Windows and Linux get found.
+
 The builds are not signed by a publisher, so the first start needs one
 extra step:
 
@@ -79,6 +86,8 @@ covers everything else:
 ## Reporting a problem
 
 Report bugs on the [issue tracker](https://github.com/tdjustus/cuteNES/issues).
+Reports from Windows and Linux are especially welcome, since those
+platforms are not tested by hand; say which OS and version you use.
 **Help > Open Log Folder** shows cuteNES's log; attaching it helps. The log
 holds file paths (the games you opened) but never your server tokens, so
 look it over before sharing it.

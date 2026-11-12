@@ -1,762 +1,293 @@
 # Manual test queue (feature 003)
 
-The maintainer runs this queue once, when every G0xx task is done
-(instruction of 2026-10-31). Until then each GUI PR merges when CI is green
-and after Claude has checked it through the MCP tools; its manual steps are
-added here. The phase checklists M3-M9 in `quickstart.md` still apply; this
-file lists what to try for each merged change, with steps.
+The maintainer runs this queue once, before a beta or production release
+(#190). Each GUI PR merges when CI is green and after Claude has checked it
+through the MCP tools; what is left for a person goes here.
 
-Launch: `open build/app/cutenes.app` (add `--args <ROM>` for a game).
-Report "passed" or what went wrong for each item.
+## What belongs here
 
-## G3: menus, states, servers
+Only what has not been, and cannot be, fully tested by the automated tests
+or through the MCP:
 
-### Settings > Servers and the automation indicator (G035, PR #110)
+- what needs eyes or ears: how something looks or sounds, smoothness,
+  legibility, the light and dark themes;
+- real hardware: a gamepad, an audio device, a display's refresh rate, a
+  Retina screen, a second monitor;
+- the operating system itself: Finder, Gatekeeper, the menu bar, the
+  clipboard, window focus and stacking, VoiceOver, the browser, native file
+  dialogs;
+- a real MCP client (Claude Code) starting, stopping and reconnecting;
+- a person's judgement: reading the guide as a new player would.
 
-Checked through MCP: the bridge attaches, `gui.*` and `core.*` work, and
-quitting (`gui.exit`) and reopening the app keeps the same bridge working.
+Each section says what is already covered, so the steps stay short. When a
+new PR adds a hands-on step, it goes here; a step the MCP could run goes
+under "For Claude through the MCP" at the end instead, and Claude runs it.
+The phase checklists (M0 to M9) that used to be in `quickstart.md` are
+folded in here.
 
-1. Settings > Servers: turn on "MCP server". The API turns on too and the
-   page shows the token file path. Copy Token puts the token on the
-   clipboard.
-2. In Claude Code, with `cutenes-server --attach` registered as `cuteNES`:
-   ask it to open a ROM and pause. The status-bar indicator shows while it
-   is connected and says when automation paused the game.
-3. Quit cuteNES while Claude Code stays open, then reopen it and turn the
-   MCP server on again (it is off after a restart, #233). Ask Claude to do
-   something again: it works without `/mcp` reconnect (the bridge follows
-   the new token).
-4. Start Claude Code while cuteNES is closed, then open cuteNES and turn on
-   the MCP server: the cuteNES tools appear in Claude Code within a few
-   seconds.
-5. Turn "MCP server" off: Claude's next call says the MCP server is off, and
-   the game keeps playing.
-6. Open a second copy of cuteNES (`open -n build/app/cutenes.app`) with
-   servers off, and close it: the first copy's MCP connection keeps working.
+**macOS only.** The maintainer tests on a Mac. Windows and Linux are
+supported on a best-effort basis: CI builds, tests and packages them on
+every pull request and release, and problems found there come from users'
+bug reports (see the README). No step here asks for Windows or Linux.
 
-### Disable Automation, and servers that last one run (#233)
+Launch: `open build/app/cutenes.app` (add `--args <ROM>` for a game), or
+the packaged app for the release walkthrough. Report "passed" or what went
+wrong for each item.
 
-Automated (`GuiServers`):
-- Clicking AUTOMATION opens Settings > Servers. Disable Automation there is
-  enabled only while something is on. Clicking it turns the servers and
-  "start with cuteNES" off. A `core.run_frames` call in progress gets
-  `ShuttingDown`, the token files go, nothing answers at the old address,
-  and the buttons the client held (`core.set_controller`) are let go. It
-  also ends servers that `--api` started.
-- Closing the window saves both servers as off. A settings file that still
-  says on (a crash, or an earlier version) starts none.
-- "Start the servers when cuteNES starts": off by default. Checking it opens
-  the confirmation, which names the token file, control of cuteNES, this
-  computer only and "until you turn it off". Cancel leaves it off. Turn On
-  keeps the servers across a restart. Turning it off over automation works,
-  and the next launch has none.
-- `gui.set_setting` refuses `servers.startWithApp` true with
-  `InvalidArguments`.
+## First play and the library (M0, M1, M2)
 
-By hand, on each OS:
-1. Turn on the MCP server and attach Claude Code. Ask it to do something
-   long (for example, play for a minute). Click AUTOMATION while it runs:
+Covered: the window, opening ROMs, pause, reset and power cycle, keys
+reaching the controller, the library's creation, scanning, filtering,
+Enter, recent games and battery saves across a restart and a rename
+(`GuiSkeleton`, `GuiPlay`, `GuiLibraryWindow`, `GuiBattery`).
+
+1. Play a game you own for a few minutes with the keyboard (arrows, Z, X,
+   Enter, Right Shift). The picture is sharp at 3x with 8:7 proportions,
+   the sound is clean, and input feels immediate.
+2. Copy a ROM into `~/Documents/cuteNES/roms` in Finder: it appears in the
+   library without a restart. Drag a `.nes` file onto the window: it opens.
+
+## Servers, automation and Claude Code (M3; G035, #110, #111, #233, G091)
+
+Covered: turning the servers on and off, the token files, the indicator
+and its automation pause, Disable Automation cutting a client off and
+releasing its buttons, servers off at the next launch, the "start with
+cuteNES" confirmation and its refusal through automation, a second
+window removing only its own token files (`GuiServers`); the bridge
+following a new token after a restart, and answering a client that started
+first (checked through the MCP, `McpAttach`); both surfaces changing the
+state at once (`GuiCoexistence`).
+
+1. Settings > Servers: turn on "MCP server". The page shows the token file
+   path, and Copy Token puts the token on the clipboard (paste it
+   somewhere).
+2. Quit cuteNES, start Claude Code with `cutenes-server --attach`
+   registered as `cuteNES`, then open cuteNES and turn on the MCP server.
+   Within a few seconds, without `/mcp` reconnect, Claude Code has the
+   cuteNES tools. The AUTOMATION indicator shows while it is connected.
+3. Play Super Mario Bros. while Claude saves to slot 3 and writes your
+   lives at $075A. The picture never glitches or jumps, and the slot menu
+   shows Claude's save with its thumbnail.
+4. Ask Claude to play for a minute. While it does, click AUTOMATION:
    Settings > Servers opens with Disable Automation at the top. Click it:
-   the AUTOMATION indicator goes, an on-screen message says automation is
-   disabled, Claude's call fails, and its next call says cuteNES is not
-   reachable. The game keeps playing, with no button stuck down.
-2. Check that Disable Automation is the first thing on the page, is greyed
-   out when everything is off, and reads clearly in the light and dark
-   themes.
-3. Quit and reopen cuteNES: Settings > Servers shows both servers off.
-4. Turn on "Start the servers when cuteNES starts". Read the confirmation:
-   it is clear, it doesn't cut off on a small screen, and Cancel is the
-   default (Enter or Esc doesn't turn it on). Cancel, then turn it on with
-   Turn On. Turn the MCP server on, quit and reopen: the server is on
-   without being asked, and an attached Claude Code reconnects by itself.
-5. Turn the switch off, quit and reopen: both servers are off.
-
-### The Key Bindings page (G036, #108)
-
-Checked through MCP: `gui.set_binding` (a second binding, a refused
-conflict), `gui.show_shortcuts` opening the page and pausing the game, and
-`gui.reset_bindings`. The key presses on the page are covered by
-`GuiKeyBindings` tests.
-
-1. In the library, click **Key Bindings** (top right). The page lists the
-   game controls for players 1 and 2, then every menu action grouped by
-   menu, with the current keys in the platform's symbols (⌘S on macOS).
-2. Click Quick Save's binding and press ⌘⇧K. The row shows it at once, and
-   File > Quick Save shows ⌘⇧K.
-3. Click Quick Save's second binding and press ⌘L. A question says Quick
-   Load uses it. Answer No: nothing changes. Try again and answer Yes:
-   Quick Load loses ⌘L.
-4. Start a capture and press Esc: the capture ends and nothing changes.
-   Press Esc again: you are back where you came from.
-5. Bind Player 1 A to K, open a game, and check that K presses A (and X no
-   longer does). Bind Player 2 Start to a key and check Start on player 2.
-6. Type "slot" in the filter: only the slot actions show.
-7. Select a row and press Delete (clears it), then Reset (back to its
-   default), then Reset All.
-8. Quit and reopen cuteNES: your changes are still there.
-9. During a game, Help > Keyboard Shortcuts opens the page and pauses the
-   game; Back resumes it. Settings > Hotkeys… opens it at the menu actions
-   (Settings > Input… is now a settings page, see G4).
-10. With the page open, use only the keyboard (Tab, arrows, Enter, Esc):
-    every control is reachable, and VoiceOver reads each binding.
-
-### Gamepads, turbo and Settings > Input (G040-G042, #96, #108)
-
-Checked through MCP: `gui.list_gamepads` (no pad attached here),
-`gui.get_settings` input defaults, `gui.list_bindings` with the pad
-defaults and the turbo entries, and Settings > Input opening. The pad
-events themselves are covered by `GuiGamepads` tests with a fake pad; these
-steps need a real one.
-
-1. Plug in a gamepad: "Player 1: <name>" shows. In the library, the D-pad
-   and left stick move the selection, A (South) opens the game, and B
-   (East) goes back.
-2. In a game, the pad plays as player 1: A/X (South/West) are A/B, Back is
-   Select, Start is Start, the D-pad and left stick move.
-3. Hold Y (North): A fires repeatedly (turbo A); X/B (East) is turbo B.
-   Settings > Input: set the turbo rate to 5 and back to 30; the rate
-   follows. Keyboard S and A are turbo A and B too.
-4. Hold Left, then press Right: only Right counts (watch a game that
-   shows it). Turn on "Allow opposite directions": both count.
-5. Plug in a second pad: it drives player 2. Unplug it during play: the
-   game pauses and says "Player 2's controller was disconnected". Plug it
-   back in: it is player 2 again. Turn off "Pause when a gamepad is
-   unplugged" and unplug: play goes on.
-6. Quit and reopen with both pads plugged in the other order: each pad
-   keeps its player.
-7. On the Key Bindings page, click Player 1 B's second binding and press
-   the right shoulder: it shows "Pad Right Shoulder", and the shoulder now
-   presses B.
-8. Click Quick Save's second binding, hold Back and press the left
-   shoulder, then let go: it shows "Pad Back + Left Shoulder". In a game
-   that combination opens the Quick Save name dialog, and Select is not
-   left pressed.
-9. Settings > Input lists the pads plugged in, and Key Bindings… opens the
-   page at the game controls. The Settings list has no Hotkeys entry; the
-   Settings > Hotkeys… menu item still opens the page.
-
-### Video settings (G050-G051, #97)
-
-Checked through MCP: `gui.set_scale`, `gui.set_filter`, `gui.set_overscan`,
-`gui.toggle_fullscreen` (in and out) and `gui.get_settings` video, during a
-game. Window sizes and each filter's pixels are covered by `GuiVideo` tests
-on the raster renderer; the GPU renderer (Metal here) needs your eyes.
-
-1. View > Scale > 1x … 6x: the window resizes each time, the picture fills
-   it with no border, and the checked item follows.
-2. View > Aspect Ratio: Square Pixels is narrower than 8:7; 4:3 is wider.
-   Overscan > None shows 8 more lines at the top and bottom than TV.
-3. View > Filter > Smooth blurs the pixel edges; Scanlines darkens the
-   lower part of every line (look closely at 3x or more); Nearest is sharp.
-   Try each in a moving game: no flicker or tearing.
-4. View > Overscan > Custom… opens Settings > Video. Change each edge: the
-   picture crops at once and the window resizes.
-5. F11 (or View > Fullscreen): the picture fills the screen. On macOS the
-   menu bar appears at the top edge. F11 again returns to the window at its
-   scale. Uncheck Integer Scaling in fullscreen: the picture grows to fill
-   the height.
-6. View > Always on Top: the window stays above another app's window.
-7. Quit and reopen: every video setting is as you left it, fullscreen
-   included.
-8. On a Retina screen at 2x, the pixels are sharp and even (no uneven
-   rows), with Nearest and integer scaling on.
-
-### Sound, focus and resuming (G052-G053, #97)
-
-Checked through MCP: `gui.list_audio_devices` (it listed the MacBook
-speakers and Teams Audio), and Record Audio over 120 frames gave a WAV of
-1.9967 s, which `afinfo` reads as 48 kHz mono 16-bit. Settings, the WAV
-header and length, focus pausing and resuming are covered by `GuiAudio`
-tests.
-
-1. Settings > Audio: move the volume slider during a game: the sound
-   follows at once. Mute silences it; unmute brings it back.
-2. Pick another output device (headphones, AirPods): the sound moves to
-   it. Unplug or disconnect it during play: a message says so, the sound
-   goes to the speakers, and the game never stops.
-3. Set the latency to 32 ms, then 200 ms: both play without crackles (200
-   lags a little behind the picture).
-4. Fast-forward (Tab) at 200 % (Settings > Emulation): the sound speeds up.
-   Choose "Mute" for fast-forward sound: it goes silent while held.
-5. Tools > Record Audio, play for a while, Tools > Stop Recording: a WAV
-   in the library's recordings folder plays back what you heard.
-6. Click another application during a game: the game pauses. Click back:
-   it plays on. Pause it yourself, click away and back: it stays paused.
-   Open Settings from cuteNES during a game: it keeps playing.
-7. Turn on "Resume games where I left off", play a little, close the game,
-   and open it again: you are asked, and Yes goes on from where you were;
-   No starts afresh.
-
-### Frame pacing (G051, #97)
-
-Checked through MCP: on the MacBook's 120 Hz display, `video.pacingNow`
-reported sync to display with a frame every second refresh (60 fps);
-`video.pacing` `audio` went back to 60.0988 fps. The choice rules are
-covered by `GuiFrameClock` and `GuiVideo` tests.
-
-1. Settings > Video > Frame pacing shows "Automatic" and, under it, what it
-   is doing ("a frame every 2 refreshes of the 120.00 Hz display" on a ProMotion
-   MacBook, or "in step with the 60.00 Hz display" on a 60 Hz monitor).
-2. Play a side-scroller (Mega Man 2's intro, or a level) for a minute on
-   Automatic: the scrolling is smooth, with no regular hitch, and the
-   sound has no crackle.
-3. Switch to "Sync to audio" and compare: on a 60 Hz display you may see a
-   small hitch every several seconds; Automatic should look as good or
-   better.
-4. With an external monitor at a different rate (75 or 144 Hz), drag the
-   window onto it: the note changes to the console's own rate and play
-   stays smooth. Drag it back: it follows the display again.
-
-### Region, palettes and Game Genie (G6, #98)
-
-Checked through MCP: with Emulation > Region on PAL, Mega Man 2 (an NTSC
-cartridge) ran as PAL at 50.007 fps, and the RGB PPU palette coloured the
-picture; switching back to Automatic during play reported that it applies
-at the next power cycle. Settings were restored afterwards. Game Genie has
-no menu yet (G7 adds the cheat list); it is tested through
-`core.set_game_genie`.
-
-1. Emulation > Region > PAL during a game: a message says PAL timing starts
-   at the next power cycle. Emulation > Power Cycle: the game runs about
-   17% slower, and its music is lower in pitch. Automatic and another power
-   cycle bring it back.
-2. View > Palette > RGB PPU (2C03): the colours change at once (brighter,
-   flatter); Default brings the usual colours back. The check mark follows.
-3. View > Palette > Load .pal…, choose any 192-byte .pal file you have: the
-   picture takes its colours, and Load .pal… is checked. Quit and reopen:
-   the same palette is in use.
-4. Take a screenshot with a non-default palette: it shows the colours you
-   see.
-
-### Cheats and the cheat search (G071, #99)
-
-Checked through MCP: on Mega Man 2 the search covered 10240 bytes (RAM and
-PRG-RAM), one "changed" filter left 13, and the game kept running with the
-search window open. Narrowing by value, 2-byte values, edits, freeze, set,
-Game Genie and saving per game are covered by the `GuiCheatSearch` and
-`GuiCheats` tests on a counter ROM.
-
-1. Super Mario Bros.: Tools > Cheat Search…, New Search (1 byte). Filter
-   "Equal to" 3 (your lives). Lose a life, filter "Equal to" 2. Repeat until
-   one address is left (it should be $075A). The game never paused.
-2. Select it, type a label ("Lives"), press Freeze: Tools > Cheats… lists
-   it, switched on. Lose a life: the count stays.
-3. In the results, double-click the value and type 9: the lives counter
-   shows it at once, while the game runs.
-4. Press Watch: the watch list shows the address with its live value; type
-   a new value there too.
-5. Tools > Cheats…, Kind "Game Genie", code SXIOPO (Super Mario Bros.
-   infinite lives), Add: it works as the accessory did. A wrong code, like
-   HELLO1, is refused with the reason.
-6. Untick a cheat: it stops. Close and reopen the game: the cheats and the
-   watch list are back, ticked as you left them.
-
-### Movies (G072, #99)
-
-Checked through MCP: on Super Mario Bros. a 1349-frame movie from power-on
-(Start, then running and jumping) replayed to the same final hash and
-master cycle while Left was held, then paused on its last frame.
-Replays from power-on and from a state, refusal for another game,
-takeover, the refused commands and the file format are covered by the
-`GuiMovies` tests on an input-summing ROM.
-
-1. Super Mario Bros.: Tools > Movie > Record from Power-On…. The save
-   dialog opens in the library's `movies/<game>/` folder with a dated name;
-   save. The game restarts, and "● REC 0" counts up under the FPS (or at
-   the top left).
-2. Play for 20 to 30 seconds, press Reset once (Emulation > Reset), play on,
-   then Tools > Movie > Stop: "Movie saved (N frames)". Stop and Read-Only
-   are greyed out again.
-3. Tools > Movie > Play…, choose the file: the game restarts, "▶ n / N"
-   counts up, and Read-Only is checked. Press buttons: nothing you press
-   changes what Mario does. The reset happens where you pressed it. At the
-   end the game pauses on the last frame: "Movie finished".
-4. While it plays, try Emulation > Reset, Quick Load and holding Rewind:
-   each is refused with a message.
-5. Play it again, and part way through untick Tools > Movie > Read-Only:
-   "Recording from frame n", the overlay turns to "● REC". Play on, then
-   Stop. Play the file: it follows the original up to that frame and your
-   new input after it.
-6. Pause a game, Tools > Movie > Record from Current State…, play a little,
-   Stop. Keep playing elsewhere, then Play… the file: it jumps back to where
-   the recording began and replays.
-7. Open another game and Play… the Super Mario Bros. movie: refused (it was
-   recorded on another game); the game keeps running.
-
-### Debugger (G081, #100)
-
-Checked through MCP: on Super Mario Bros. a breakpoint at the NMI handler
-($8082, from the vector at $FFFA) stopped the game there on frame 305 and,
-after Run, again on frame 306 (one frame of master cycles later); three
-steps ran LDA $0778 / AND #$7F / STA $0778 as the ROM has them; removing it
-let the game run at full speed. Stopping at nestest's breakpoints with the
-log's registers, stepping against the log, Step Frame and register edits in
-the window are covered by the `GuiDebugger` tests.
-
-1. Super Mario Bros.: Debug > Debugger (Ctrl+D). The window shows PC, A, X,
-   Y, S, P, the flag boxes and a listing from PC, all changing while the
-   game runs.
-2. Pause. Press Step Instruction a few times: PC moves to the next line of
-   the listing each time (the first line, in bold with ▶). Step Frame: the
-   picture moves on one frame.
-3. Type 8082 in the breakpoint field and press Add (or double-click a line
-   of the listing): it is listed, and marked ● in the listing. Press Run:
-   the game stops at once at $8082 with "Breakpoint at $8082", the window
-   in front. Run again: it stops again a frame later, not straight away.
-4. Press Run, then close the debugger window while the breakpoint is set:
-   at the next stop the window comes back by itself.
-5. Remove the breakpoint and Run: the game plays at full speed.
-6. Paused, type a new value into A (for example 42) and press Enter: the
-   field keeps it and the next Step uses it. Untick or tick Z: P changes.
-   Typing over a field while the game runs is not overwritten until you
-   press Enter.
-
-### Memory viewer (G082, #100)
-
-Checked through MCP: the viewer opened on Super Mario Bros. while it ran.
-That viewing changes no state (over the PPU registers too), the hex layout,
-and edits in all four spaces are covered by the `GuiMemoryViewer` tests; a
-test variant that read with side effects failed, as it should.
-
-1. Super Mario Bros.: Debug > Memory Viewer (Ctrl+M). CPU memory shows
-   from $0000, 16 bytes a row, and the values change while the game runs.
-2. Type 075A in Go To and press Enter: the row $0750 comes first. The
-   byte at column A is your lives less one (2 on a new game). Double-click
-   it, type 05, Enter: the next "WORLD 1-1" screen shows 6 lives.
-3. Choose PPU memory and go to 2000: the nametable bytes of the screen.
-   Choose OAM: the sprites' bytes, Mario's among them, moving as he moves.
-   Choose Palette RAM: two rows; change $3F00 (the first byte) to 0F and
-   the sky turns black.
-4. Type 1FF or ZZ into a cell: it is refused and shows the memory again.
-5. Scroll through CPU memory with the scroll bar while the game runs: the
-   game never stutters or changes.
-
-### PPU viewer (G083, #100)
-
-Checked through MCP: the viewer opened on Super Mario Bros. at the
-nametables while it ran, and `core.read_ppu_scroll` gave the title screen's
-scroll (0, 0). The pictures are checked pixel by pixel by the
-`GuiPpuViewer` tests against a test ROM's CHR decoded independently; a
-variant with the two bit planes swapped failed them, as it should.
-
-1. Super Mario Bros.: Debug > PPU Viewer > Pattern Tables (Ctrl+P). The
-   left table ($0000) is the sprites (Mario, Goombas, Koopas), the right
-   ($1000) the background (letters, blocks, pipes). Change the palette in
-   the list: the colours change, the shapes do not.
-2. Nametables tab: the title screen, with the red rectangle round it and
-   "Scroll: X 0, Y 0 (nametable 0)". Start a game and walk right: the
-   level appears in the nametables and the rectangle moves right with
-   the scroll, wrapping from the right half to the left.
-3. Sprites tab: Mario's tiles in the first cells, and the list's X and Y
-   change as he moves. Jump: his Y gets smaller.
-4. Palette tab: two rows of 16, each cell in its colour; the sky blue is
-   the first cell ($3F00 = 22).
-5. View > Palette, choose another palette: the viewer's colours follow.
-6. With the viewer open the game runs at full speed and plays as before.
-
-### Trace logger and memory dump (G084, #100)
-
-Checked through MCP on Super Mario Bros.: a trace of about six seconds of
-play held 3,573,361 lines, as many as reported, with 370 entries to the NMI
-handler at $8082 in 370 frames; the dump file began `CUNEDMP1`. That the
-trace equals nestest.log line for line, the file names, and the dump's
-layout are covered by the `GuiTraceLogger` tests.
-
-1. Super Mario Bros.: Debug > Trace Logger. Press Start Logging: the
-   window shows the file (in the library's `debug` folder) and a count that
-   climbs fast. The game keeps its speed.
-2. After a few seconds press Stop Logging: "Saved …" with the count. Open
-   the file in a text editor (it is large, ~55 MB a second): each line is
-   like `8057  4C 57 80  JMP $8057 … A:90 X:00 Y:00 P:A5 SP:FF PPU:…
-   CYC:…`.
-3. Start logging again and close the game (File > Close Game): logging
-   stops, and the file is complete.
-4. Debug > Write Memory Dump: the status bar names a `.dmp` file, and it
-   is in the `debug` folder (about 90 KB for Super Mario Bros.).
-5. Delete the trace files when done; they are big.
-
-### Menu audit and window commands (G090, #101)
-
-Automated: the `GuiAudit` tests read the menu contract and compare it with
-the menus, shortcuts, Game column and the `gui.*` catalog. They found three
-contract commands that had never been built (`gui.state`,
-`gui.list_windows`, `gui.close_window`), which are now added and covered by
-the `GuiWindowCommands` tests. Nothing to do by hand but a look:
-
-1. Open a game and Debug > Debugger, Debug > Memory Viewer and Help >
-   About. Through the MCP, `gui.list_windows` names them, and
-   `gui.close_window` with `all` closes them.
-2. Every menu item shows the shortcut the Keyboard Shortcuts page lists.
-
-### Human and AI together (G091, #101, #32)
-
-Automated by `GuiCoexistence`:
-- While the game runs, the window and an HTTP API client change the state
-  at the same time: 300 rounds of memory writes, saves and loads, resets and
-  input. Neither side ever reads a half-written block or loads a state
-  caught part way through a write.
-- A state the client saves into a slot is the one the window loads from it.
-- Afterwards both sides see the same frame, CPU, memory and controller.
-- The real `cutenes-server --attach` reaches the real window through the MCP
-  token file and sees its catalog; opening a game through it shows the game
-  in the window.
-
-By hand, once:
-1. Settings > Servers: turn on the MCP server. Connect Claude (or any MCP
-   client) through `cutenes-server --attach`.
-2. Play Super Mario Bros. while the client saves to slot 3 and writes
-   memory (for example lives at $075A). The game never glitches or jumps;
-   the slot menu shows the client's save, and loading it from the menu
-   gives the client's state.
-3. Turn the API off in Settings: the client's next call fails with
-   ShuttingDown and the game keeps playing.
-
-### Pacing soak (G092, #101)
-
-Automated by `GuiPacing` (Release): ten simulated minutes per display (60,
-59.94, 120 and 144 Hz for NTSC, 50 Hz for PAL), with a sound card a little
-fast or slow. No underrun and no dropped or repeated frame where synced to
-the display. The simulation cannot see the real display's timing, so SC-004
-needs one look by hand:
-
-1. Release build, a 60 Hz display, Super Mario Bros. Play for ten minutes
-   (World 1-1 to 1-4 is about right) with headphones on.
-2. Listen for crackles or gaps, and watch the scrolling for a hitch or a
-   double step. Note any, with the time it happened.
-3. Settings > Video shows "Now: in step with the 60.00 Hz display" under
-   the pacing setting.
-
-
-### Packages (G093, #101)
-
-Automated by the CI `package` job (on tags, the weekly scheduled run and
-by hand, never on pull requests): each platform's package is built from the installed app
-component, the app starts from it (`--version`; on Windows it stays up for
-ten seconds) and `cutenes-server --help` runs, then SHA256SUMS lists all
-three. The macOS zip was also downloaded and checked against SHA256SUMS,
-and ran from its own bundled frameworks. What only a person can judge:
-
-1. From the artifacts of the latest run that packaged (Actions > Build > Artifacts),
-   download the package for each machine you have and check it against
-   SHA256SUMS.
-2. macOS: unzip, then open cutenes.app. Gatekeeper asks once (ad-hoc
-   signed: right-click > Open). The Dock and Finder show the cuteNES icon.
-3. Windows: unzip anywhere, run cutenes.exe on a machine without Qt or the
-   Visual C++ redistributable. (The first zips had Qt in a `bin/` folder
-   and started only where Qt was on PATH; the zip is now one flat folder
-   and the CI smoke test runs without Qt on PATH, so this checks the fix.) SmartScreen may warn (unsigned). The window
-   and taskbar show the icon.
-4. Linux: `chmod +x` the AppImage and run it (libfuse2 needed). The window
-   shows the icon.
-5. On each: open a game, hear sound, use a gamepad, and connect an MCP
-   client to the packaged `cutenes-server --attach` (in the bundle on
-   macOS, beside the app elsewhere; on Linux it cannot yet be started
-   from the AppImage (#134), so attach from a build for now). Note anything missing (a plugin, a
-   codec, a font).
-
-### User guide (G094)
-
-Automated by `GuiUserGuide`: the guide's shortcut table is exactly the
-contract's shortcuts, and its controls table is the contract's defaults.
-Help > User Guide shows the built-in copy of `docs/user-guide.md`, and
-`gui.list_windows` and `gui.close_window` treat it as `user_guide`.
-Checked through the MCP: the live app opens it and lists it. A screenshot
-could not be taken (no screen-recording permission), so how it looks is
-unchecked:
-
-1. Help > User Guide. The guide opens in its own window, with headings,
-   lists and tables laid out (not raw `|` and `#` characters), and the
-   tree in "The library folder" in a fixed-width font.
-2. Click the Model Context Protocol link: it opens in your browser.
-3. Read it as a new player would. Note anything wrong, unclear, or
-   missing; it is written from the contracts, so a difference from what
-   the app does is a bug in one of them.
-4. The README's "Getting started" and "Learn more" read well on GitHub, and its link to the guide
-   works.
-
-### Log and Open Log Folder (G094a)
-
-Automated by `GuiAppLog`:
-- each run keeps the one before;
-- the line format, and whole lines from 16 threads at once;
-- the size limit;
-- the errors the window shows are logged, and the token never is;
-- `gui.open_log_folder` makes and returns the folder.
-
-Mutation-checked: no rotation, no limit, no lock, errors not logged and a logged token each fail. Checked through the MCP on the live app:
-- Open Log Folder returned `~/Library/Application Support/cuteNES/cuteNES/logs`;
-- the log had the versions and system, the API and MCP addresses, and nestest opened and closed;
-- no token, and not the client's own failed call.
-
-By hand:
-1. Help > Open Log Folder: the file manager opens on the folder, with
-   `cutenes.log` in it (Finder, Explorer, or your Linux file manager).
-2. Quit and start cuteNES again: `cutenes.previous.log` is the last run.
-3. Do something that fails from the menus (Quick Load an empty slot):
-   the log gains a `gui.quick_load: NotFound` line.
-4. On Windows and Linux, check the folder is under
-   `%LOCALAPPDATA%\cuteNES\cuteNES\logs` or
-   `~/.local/share/cuteNES/cuteNES/logs`.
-
-### Updates: the check, the question and the prompt (G097, G098, #105)
-
-Automated by `UpdateFeed` (the choice: versions, drafts, prereleases, platform assets, the skipped version, SHA256SUMS lines, HTTPS only) and `GuiUpdates` against a fake feed on loopback:
-- no request with checks off;
-- the question asked once, with either answer kept;
-- Yes checks at once;
-- one request carrying only `User-Agent: cuteNES/<version>` and the JSON Accept type;
-- the prompt shows both versions and has no Install in a non-release build;
-- Skip is kept per version, and a newer version still prompts;
-- Later keeps nothing, and See Details opens the page;
-- no prompt while a game runs, and no check with a ROM on the command line;
-- a rate-limit answer is logged only;
-- the Settings > Updates page.
-
-Mutation-checked (six faults, each caught). Through the MCP on the live app: `updates` is `check: false, asked: false`, the log shows no update request, and Settings > Updates opens.
-
-**Your first launch of this build shows the question. It is your answer**: I left it unanswered.
-
-By hand:
-1. Start cuteNES. "Check for updates when cuteNES starts?" appears once
-   the window is up. Answer **No**: Settings > Updates shows the box
-   unchecked, and the next start does not ask.
-2. To see the question again, set `updates.asked` to false (`gui_set_setting`
-   or the INI file) and restart. Answer **Yes**. Until a release newer than
-   0.1.0 exists, no prompt appears; the log says "this is the newest
-   version" or why the check failed.
-3. Start cuteNES with a ROM on the command line: no question and no check
-   (the log has no update line for that run).
-4. Once a release above the running version exists (or with a local build
-   whose `CUTENES_APP_VERSION` is lowered), the prompt shows both versions,
-   the notes, and Ask Again Later, Skip This Version and See Details, with
-   the reason Install is missing. See Details opens the GitHub page.
-5. Settings > Updates: the skipped version and Offer It Again.
-
-### Updates: Install (G099, #105)
-
-Automated:
-- `UpdateInstall`:
-  - the Windows-style folder swap, file by file, with old files kept aside as `.cutenes-old` and every rename undone on failure;
-  - on Windows CI, renaming a loaded DLL, which the Windows swap rests on;
-  - the AppImage rename;
-  - on macOS, the bundle unpacked and renamed in, and a zip without `cutenes.app` refused;
-  - the next start removing what was kept aside.
-- `GuiUpdates`, driving the whole Install path on a temporary AppImage against the fake feed:
-  - Install appears only for a release package with write access;
-  - the build is downloaded, checked and swapped in;
-  - `updateInstalled` gives the new program and the launch's arguments;
-  - a bad or missing checksum, and Cancel, leave the install untouched and no download behind.
-- Mutation-checked: checksum not compared, no undo, no write check, and arguments dropped are each caught. Leaving the download behind on cancel is also covered by the download's destructor.
-- The CI package job now builds each package with its `CUTENES_PACKAGE` and fails if Qt's TLS plugin is missing.
-
-This needs a real release above the installed version, but the updater ignores tags with a suffix, so a beta or release candidate is never offered. How this test runs is open in #232. On each OS:
-1. Install the previous release's package (unzip, or `chmod +x` the
-   AppImage), start it with an argument you can see (e.g. `--fullscreen`),
-   say Yes to update checks.
-2. Restart it with no game: the prompt offers Install. Click it: a
-   progress bar, then cuteNES closes and the new version starts, full
-   screen (the argument carried over). Help > About shows the new version.
-3. The old version is gone at the next start: no `.cutenes-old.app`
-   beside the bundle (macOS), no `*.cutenes-old` files in the folder
-   (Windows).
-4. Put the package in a folder you cannot write (e.g. `/Applications`
-   owned by root, or `C:\Program Files`): the prompt has no Install and
-   says why.
-5. Pull the network cable during a download: an error says what failed,
-   and the installed version still starts.
-
-### Linux AppImage: the server (#134)
-
-Automated:
-- The CI package job runs `cuteNES-<v>.AppImage server --help` and, through a link named `cutenes-server`, `./cutenes-server --help`. Both must reach the server. `--version` still reaches the app.
-- The AppRun's choice was also checked locally with stand-in programs: an app argument, `server`, a `cutenes-server` link, and the image's own name.
-
-By hand, on Linux with the AppImage:
-1. `claude mcp add cutenes -- /path/to/cuteNES-<v>-linux-x86_64.AppImage server --attach`.
-   With cuteNES running and Settings > Servers > MCP server on, the
-   client lists cuteNES's tools and AUTOMATION shows in the window.
-2. `ln -s cuteNES-<v>-linux-x86_64.AppImage cutenes-server`, then
-   `./cutenes-server --help` prints the server's help.
-3. Double-clicking the AppImage, or opening a `.nes` with it, still starts
-   the app.
-
-### macOS: a hidden or unattended game keeps its speed (#124)
-
-Automated:
-- `GuiWindowCommands.AnActivityIsHeldExactlyWhileAGameRuns`: the window holds the activity while a game runs, and not with no game, paused or closed. A version that never holds it fails.
-- Checked live through the MCP (Pause When Inactive turned off for the test, then back on): with the app hidden for 45 s, nestest ran 977 frames in 16.3 s, 60 fps.
-
-By hand, on macOS (the original report was with the display asleep, which the automated check could not cause):
-1. Turn off Settings > Emulation > Pause When Inactive, and open a game.
-2. Connect an MCP client (or just watch the FPS counter, View > Show FPS),
-   then put the display to sleep (`pmset displaysleepnow`) for a minute.
-3. Wake it: the game has kept going at full speed. Through the MCP,
-   `core.run_state`'s frame grows by about 60 a second throughout, not 1.
-4. Pause the game: in Activity Monitor's CPU tab, cuteNES may show
-   App Nap "Yes" after a while (an idle app is allowed to nap).
-
-### Movies keep their cheats and battery save (#121)
-
-Automated:
-- `GuiMovies.AMovieKeepsItsCheatsAndBatteryAndLeavesThePlayersAlone`: a recording keeps its cheats, a change to them, and the power-on battery save. Playback uses the movie's own and gives the player's back afterwards. Three broken versions each fail it: one that does not load the movie's battery, one that plays with the player's cheats, and one that does not restore.
-- Checked live through the MCP with nestest: a freeze cheat ($50 = 7) was recorded from power-on and switched off at frame 191. The file's header lists the cheat, and a `cheats` event at frame 191 empties it. With the player's copy disabled, playback still froze $50 to 7. Afterwards the player's cheat list was unchanged.
-
-By hand, with a battery-backed game (for example, one with save files):
-1. Add and enable a cheat, then Movies > Record from power-on. Play a little,
-   turn the cheat off, play a little more, and stop.
-2. Delete or disable the cheat, play on to change the game's save, then
-   Movies > Play the movie. It plays as recorded, from the save it started with,
-   and with the cheat on until the point it was turned off.
-3. When it ends (or on Stop), the cheat list is as you left it and the
-   game's own save is back: the save from step 2, not the movie's.
-
-### MCP client started before cuteNES (#111)
-
-Automated:
-- `McpAttach.TheBridgeAnswersA20260728ClientUntilAnInstanceStarts`: with no instance, a 2026-07-28 client's `server/discover` and empty `tools/list` are answered with a 5 s cache lifetime, a call fails naming the setting, and `subscriptions/listen` is acknowledged. When an instance starts, the subscription hears `notifications/tools/list_changed` instead of a second acknowledgement, and then the instance's own list changes. A version that passes the instance's acknowledgement through fails it.
-- Checked live with the built `cutenes-server --attach` and the running app. The bridge first pointed at an empty token path: discover, an empty list, a refused call and an acknowledged subscription. Copying the app's `mcp.token` there brought `list_changed` on the subscription, 150 tools, and a working `session.status`.
-
-By hand, with Claude Code (which speaks 2026-07-28):
-1. Quit cuteNES. Start Claude Code with cuteNES registered
-   (`claude mcp add cuteNES -- /path/to/cutenes-server --attach`). `/mcp`
-   shows cuteNES connected, with no tools.
-2. Open cuteNES and turn on Settings > Servers > MCP server. Within a few
-   seconds, without restarting Claude Code, `/mcp` lists cuteNES's tools,
-   and asking Claude to call `session.status` works.
-
-### A state from another game on the same board is refused (#92)
-
-Automated:
-- `ApiBranching.AStateFromAnotherGameOnTheSameBoardIsWrongCartridge`: blargg's 02-implied and 01-basics are on the same board (NROM, 32K PRG, 8K CHR, vertical). A state from one is refused by the other with `WrongCartridge`, and nothing changes. The test failed before the fix.
-- `ApiBranching.AStateWithoutTheRomSectionStillLoads`: a state without the new `ROM ` section, as every earlier build wrote, still loads into its own game.
-- Checked live through the MCP on the new build:
-  - A state file saved from 02-implied was refused by 01-basics with `WrongCartridge`.
-  - 01-basics's own state file loaded.
-  - The file's sections end with an 8-byte `ROM ` section.
-
-By hand:
-1. Save a state to a file in one game, then open another game on the same
-   kind of cartridge (two of blargg's instr_test-v5 singles will do) and
-   Load State from File. It is refused with a message, and the game goes on
-   as it was.
-2. A state saved by cuteNES 0.2.0 (alpha 2), to a slot or a file, still
-   loads into its own game.
-
-### Hiding games from the library (#181)
-
-Automated:
-- `GuiHiddenGames.*`: the `.hiddenroms` format (comments, a bad line skipped,
-  upper-case hex, a duplicate ignored), the atomic write that keeps comment
-  lines and removes an empty file, hiding through `gui.library_hide` (the
-  ROM untouched, still hidden after a rename and a move), unhiding (one
-  that is not hidden refused), Recent and `gui.open_recent` counting only
-  the games shown, the game menu's Hide, and Settings > Library's list and
-  Unhide.
-- Checked live through the MCP: see the PR.
-
-By hand:
-1. Point at a card in the library: a ⋯ button shows in its top-right
-   corner, and goes when the pointer leaves the card (not when it moves
-   onto the button). Click it: the menu has Hide.
+   the indicator goes, a message says automation is disabled, and Claude
+   reports that cuteNES is not reachable. The game plays on with no button
+   stuck down.
+5. Disable Automation reads clearly and is greyed out when everything is
+   off, in the light and the dark theme.
+6. Turn on "Start the servers when cuteNES starts". The confirmation reads
+   clearly, is not cut off on a small window, and Enter or Esc does not
+   turn it on. Cancel, then turn it on with Turn On, and tell Claude it is
+   on: Claude runs the restart check under "For Claude through the MCP".
+   Turn it off afterwards.
+
+## Keyboard, Key Bindings and gamepads (M4; G036, G040-G042, #108, #181)
+
+Covered: every binding, rebinding by key press, conflicts, Esc during a
+capture, clearing and resetting, persistence, remapped game buttons, the
+page from Help and Settings (`GuiKeyBindings`); turbo, opposite
+directions, pad bindings, sticks and triggers, ports kept by GUID
+(`GuiInput`); the pad driving the library, the game menu, the shoulders
+and the UI Navigation group, with a fake pad (`GuiGamepads`).
+
+1. The Key Bindings page lists the keys in macOS symbols (⌘S). Click Quick
+   Save's binding and press ⌘⇧K on the real keyboard: the row shows ⌘⇧K,
+   and so does File > Quick Save in the menu bar. Reset All afterwards.
+2. Use the page with the keyboard alone (Tab, arrows, Enter, Esc): every
+   control is reachable, and VoiceOver reads each binding.
+3. Plug in a real gamepad: "Player 1: <name>" shows, and Settings > Input
+   lists it. In the library the D-pad and left stick move, South opens a
+   game, East goes back, North opens the game's menu, and East closes it
+   without a click to give the pad back to the library.
+4. In a game: South and West are A and B, Back is Select, Start is Start,
+   the D-pad and left stick move. Hold North: A fires repeatedly; East is
+   turbo B. Both shoulders show the library and pause; East resumes. macOS
+   (Game Center, Launchpad) does not take the shoulders.
+5. Plug in a second pad: it is player 2. Unplug it during play: the game
+   pauses and says "Player 2's controller was disconnected". Plug it back:
+   it is player 2 again. Quit and reopen with the pads plugged in the
+   other order: each keeps its player.
+6. On the Key Bindings page, capture a pad control (the right shoulder for
+   Player 1 B) and a pad combination (Back + left shoulder for Quick Save):
+   each shows its name and works in a game, and Select is not left pressed.
+   Reset All afterwards.
+
+## Display (M5; G050-G051, #97)
+
+Covered: window sizes for every scale, aspect ratio and overscan, each
+filter's pixels on the raster renderer, fullscreen and always-on-top
+toggling, persistence, the pacing choice and its note (`GuiVideo`); ten
+simulated minutes of pacing on 60, 120 and 144 Hz displays (`GuiPacing`);
+every setting through the MCP. The Metal renderer needs your eyes.
+
+1. View > Scale 1x to 6x, each aspect ratio, and each filter (Nearest,
+   Smooth, Scanlines at 3x or more) in a moving game: the picture fills the
+   window with no border, and has no flicker or tearing.
+2. On the Retina screen at 2x, Nearest with integer scaling: the pixels are
+   sharp and even, with no uneven rows.
+3. F11: the picture fills the screen, and the menu bar appears at the top
+   edge when you point there. F11 again returns to the window at its scale.
+   Unchecking Integer Scaling in fullscreen fills the height.
+4. View > Always on Top: the window stays above another app's window.
+5. Pacing soak (SC-004): set the display to 60 Hz (System Settings >
+   Displays), and play Super Mario Bros. from World 1-1 to 1-4 with
+   headphones on, on Automatic pacing. Note any crackle, gap, hitch or
+   double step with its time. Settings > Video says "in step with the 60.00
+   Hz display". Back on ProMotion (120 Hz), scrolling is as smooth.
+6. With an external monitor at another rate (75 or 144 Hz), drag the window
+   onto it: the pacing note changes and play stays smooth. Drag it back.
+
+## Sound and focus (M5; G052-G053, #97)
+
+Covered: the audio settings applying and persisting, fast-forward sound,
+the WAV's format and length, pausing on focus loss in the test platform,
+resuming where you left off (`GuiAudio`); the device list and a recording
+through the MCP.
+
+1. Settings > Audio during a game: the volume slider and Mute act at once.
+   Latency 32 ms and 200 ms both play without crackles.
+2. Pick another output (headphones or AirPods): the sound moves. Disconnect
+   it during play: a message says so, the sound goes to the speakers, and
+   the game never stops.
+3. Fast-forward (Tab) at 200 %: the sound speeds up; with "Mute" chosen
+   for fast-forward it goes silent while held.
+4. Click another application during a game: it pauses, and the pause menu
+   shows only Resume. Click back: it plays on. Pause it yourself with P,
+   click away and back: it stays paused. Opening Settings from cuteNES
+   does not pause.
+
+## Region and palettes (M6; G6, #98)
+
+Covered: PAL timing at the power cycle, the RGB palette's table, a `.pal`
+file colouring the picture and persisting (`GuiRegionPalette`); PAL at
+50.007 fps through the MCP.
+
+1. Emulation > Region > PAL, then Power Cycle: the music is lower in pitch.
+   Automatic and another power cycle bring it back.
+2. View > Palette > Load .pal…: the macOS file dialog opens, and the chosen
+   palette colours the picture.
+
+## Cheats and movies (M7; G071-G072, #99, #121)
+
+Covered: the cheat search, edits, freeze, Game Genie, saving per game
+(`GuiCheatSearch`, `GuiCheats`); recording, playback, takeover, refusals,
+cheats and battery in movies (`GuiMovies`); a cheat search on Super Mario
+Bros. and a 1349-frame replay through the MCP.
+
+1. Tools > Cheat Search… on Super Mario Bros.: narrow to your lives
+   ($075A) with the window's own controls, double-click the value and type
+   9. The game never paused, and the lives counter shows 9.
+2. Tools > Movie > Record from Power-On…: the save dialog opens in the
+   library's `movies/<game>/` folder with a dated name. "● REC" and "▶ n /
+   N" read clearly over the picture.
+
+## Debugging tools (M8; G081-G084, #100)
+
+Covered: breakpoints, stepping against nestest's log, register edits, Step
+Frame (`GuiDebugger`); viewing without side effects and editing every
+memory space (`GuiMemoryViewer`); the PPU viewer's pictures pixel by pixel
+(`GuiPpuViewer`); the trace against nestest's log and the dump
+(`GuiTraceLogger`); all of them on Super Mario Bros. through the MCP.
+
+1. Open the Debugger, Memory Viewer, PPU Viewer (each tab) and Trace Logger
+   during a game: each is laid out legibly, updates while the game runs,
+   and the game keeps full speed and never stutters while you scroll.
+2. In the Debugger, set a breakpoint and Run, then close the window: at the
+   next stop it comes back by itself, in front.
+3. While the game runs, start typing a value into a register field: what
+   you type is not overwritten until you press Enter.
+
+## The pause menu (#235)
+
+Covered: the full menu from Pause and only Resume otherwise, Save, Battery
+Save, Quit's confirmation, keyboard and pad focus and Esc or East
+(`GuiPauseMenu`, `GuiGamepads.ThePadUsesThePauseMenu`).
+
+1. Open a game with a save battery and press P. The menu is legible over a
+   bright and a dark picture, PAUSED is in the middle of the picture, and
+   Resume has a visible focus ring.
+2. Work the menu with the mouse, with the keyboard alone, and with a
+   gamepad alone.
+3. In fullscreen (F11) the menu is in the middle of the screen and works
+   the same way.
+
+## Hiding games (#181)
+
+Covered: `.hiddenroms`, hiding and unhiding, Recent, the game menu's Hide
+and Settings > Library (`GuiHiddenGames`).
+
+1. Point at a card: a ⋯ button shows in its top-right corner and stays
+   while the pointer moves onto it. Click it: the menu has Hide.
 2. Right-click a card, and a row in the list view: the same menu. In the
    list, the ⋯ button sits at the end of the row.
-3. With a game selected, press the keyboard's Menu key (or Shift+F10): the
-   menu opens on that game.
-4. Hide a game: it leaves the library and File > Open Recent at once.
-   Restart cuteNES: it is still hidden.
-5. Open `.hiddenroms` in the library folder in a text editor: it lists the
-   game by SHA-1 and name. Add a `#` comment line, then hide another game:
-   the comment is still there.
-6. Settings > Library: Hidden games lists both. Select one and Unhide: it
-   is back in the library with its saves and states.
+3. With a game selected, Shift+F10 opens the menu on that game.
 
-### A gamepad alone drives the library and gets back to it (#181)
+## The user guide, the log and the README (G094, G094a)
 
-Automated:
-- `GuiGamepads.NorthOpensTheGamesMenuAndThePadDrivesIt`: North opens the
-  selected game's menu, East closes it, and D-pad Down then South choose
-  Hide.
-- `GuiGamepads.BothShouldersReturnToTheLibraryAndEastToTheGame`: the
-  default binding is listed, both shoulders show the library and pause the
-  game, and East resumes it.
-- `GuiGamepads.UiNavigationIsItsOwnGroupOfPadBindings`: the nine `ui.*`
-  entries and their defaults; a key or a two-control binding is refused; a
-  game button's control can be shared, but a hotkey's or another
-  navigation button's cannot.
-- `GuiGamepads.RemappedNavigationDrivesTheLibrary`: the triggers move the
-  focus out of the game list and back; remapped buttons move the selection
-  and start a game, and the old controls stop doing so.
-- The offscreen test platform leaves no window active after a menu closes,
-  so that test activates the window again; a desktop does it by itself.
+Covered: the guide's tables against the contract, the guide window, the
+log's rotation, format, size limit and missing token (`GuiUserGuide`,
+`GuiAppLog`); the log folder and its contents through the MCP.
 
-By hand, with a real pad and no keyboard or mouse:
-1. In the library, move with the D-pad and the left stick, press North:
-   the game's menu opens on the selected card. Close it with East: the
-   library takes the pad again at once (no click needed).
-2. Start a game with South, play, press both shoulders: the library shows
-   and the game pauses. East: back in the game, running.
-3. On macOS, check that the shoulders are not taken by the system (Game
-   Center or Launchpad react to the Home button, not the shoulders).
-4. In the library, press the right trigger until the search field has the
-   focus, then the left trigger back to the games. Change the view or the
-   sort with the pad alone.
-5. On the Key Bindings page, check the UI Navigation group is there and
-   its rows can be captured with the pad (a key press is refused with a
-   message). Rebind Accept to Start, check Start opens a game, then Reset
-   All.
+1. Help > User Guide: headings, lists and tables are laid out (not raw `|`
+   and `#`), and the library tree is in a fixed-width font. The Model
+   Context Protocol link opens your browser.
+2. Read the guide as a new player would. Note anything wrong, unclear or
+   missing.
+3. The README's "Getting started" and "Learn more" read well on GitHub, and
+   its link to the guide works.
+4. Help > Open Log Folder opens Finder on the folder with `cutenes.log`.
 
-### Windows and Linux: a hidden game keeps its speed (#151)
+## Updates (G097-G099, #105)
 
-Automated:
-- `GuiWindowCommands.OnWindowsARunningGameIsNotThrottled` (Windows CI only): while a game runs, Windows reports both bits in the power-throttling control mask, execution speed and the timer-resolution exemption, with no throttling. Paused, the control mask is empty and Windows decides again.
-- `GuiWindowCommands.DisplayPacingKeepsAHiddenWindowsGameRunning`: with display pacing in use (offscreen reports 60 Hz) and Pause When Inactive off, the window is shown and then hidden, and the game keeps running. The frame clock never waits for the window system's frame callbacks, which Wayland withholds from hidden windows.
-- Not checked live: this Mac cannot run Windows or a Wayland session.
+Covered: the feed's choices, the question and the prompt against a fake
+feed, Skip and Later, no check with a ROM on the command line
+(`UpdateFeed`, `GuiUpdates`); the macOS bundle swap and the whole Install
+path on a temporary package (`UpdateInstall`, `GuiUpdates`).
 
-By hand, on Windows 11 and on a Linux Wayland desktop:
-1. Turn off Settings > Emulation > Pause When Inactive, set Settings > Video
-   > Frame pacing to Display, and open a game.
-2. Minimize the window for a minute, with an MCP client connected (or
-   watch View > Show FPS when you bring it back). Through the MCP,
-   `core.run_state`'s frame grows by about 60 a second throughout.
-3. Windows: in Task Manager's Details tab, add the "Efficiency mode"
-   column. cuteNES is not in efficiency mode while the game runs, and the
-   leaf icon may appear once it is paused.
+1. The first-launch question ("Check for updates when cuteNES starts?")
+   and the update prompt read well. To see the prompt, run a local build
+   with `CUTENES_APP_VERSION` lowered below the latest release.
+2. Install, once a release above the installed one is offered (the updater
+   skips beta and RC tags, so how this runs is open in #232): install the
+   previous release's zip, start it with `--fullscreen`, and say Yes to
+   update checks. Restart with no game and click Install: a progress bar,
+   then the new version starts full screen, and Help > About shows it. At
+   the next start no `.cutenes-old.app` is beside the bundle.
+3. Turn Wi-Fi off during the download: an error says what failed, and the
+   installed version still starts.
+4. With the bundle in a folder you cannot write: the prompt has no Install
+   and says why.
 
-### The pause menu (#235)
+## The macOS package (M9; G093)
 
-Automated:
-- `GuiPauseMenu.PausingWithPauseShowsTheFullMenuAndRunsNoFrame`: Pause
-  shows Resume, Save and Quit (no Battery Save for a game without a
-  battery), PAUSED stays visible, no frame runs while the menu shows, and
-  Resume plays on and hides it.
-- `GuiPauseMenu.OtherPausesShowOnlyResume`: an automation pause, and Frame
-  Advance after Pause, show only Resume.
-- `GuiPauseMenu.SaveDoesWhatQuickSaveDoes`: Save asks for a name, saves the
-  selected slot, and the game stays paused with the menu.
-- `GuiPauseMenu.BatterySaveShowsForABatteryGameAndWritesAtOnce`: with the
-  write interval set to an hour, Battery Save writes the game's signature
-  to the save file at once.
-- `GuiPauseMenu.WriteBatterySaveNeedsABattery`: `gui.write_battery_save`
-  fails with `NoBattery` for a game without one.
-- `GuiPauseMenu.QuitAsksFirstAndAClientNeverIsAsked`: Cancel keeps the
-  game, Close Game closes it and shows the library, and `gui.close_game`
-  closes without a dialog.
-- `GuiPauseMenu.TheKeyboardMovesBetweenTheButtonsAndEscResumes` and
-  `GuiGamepads.ThePadUsesThePauseMenu`: the arrows and the D-pad move the
-  focus (hidden buttons skipped, wrapping round), the game hears none of
-  it, and Esc or East resumes.
+Covered: the CI `package` job builds every package, starts it and runs
+`cutenes-server --help`; the macOS zip was checked against SHA256SUMS and
+ran from its own frameworks.
 
-By hand, on each OS:
-1. Open a game with a save battery and press P. Check the menu is legible
-   over a bright and a dark picture, PAUSED is in the middle of the
-   picture, and Resume has a visible focus ring.
-2. Use the menu with the mouse, then with the keyboard alone (arrows,
-   Enter, Space, Esc), then with a gamepad alone (D-pad, South, East).
-3. Battery Save: the "Battery save written" message shows, and the file in
-   the library's `saves` folder has a new modification time.
-4. Quit: Cancel, then Quit again and Close Game. The library shows.
-5. Switch to another application with the game running: only Resume shows
-   while the window is in the background, and the game plays on when you
-   come back.
-6. Fullscreen (F11): the menu is in the middle of the screen and works the
-   same way.
+1. Download the macOS zip of the latest packaged run and check it against
+   SHA256SUMS. Unzip and open cutenes.app: Gatekeeper asks once
+   (right-click > Open). The Dock and Finder show the cuteNES icon, and
+   Help > About lists the licenses.
+2. Double-click a `.nes` file in Finder: the packaged app opens it.
+3. Play a session from launch to quit with the packaged app: the library,
+   states, a gamepad, sound, and Claude Code attached through the bundle's
+   `cutenes-server --attach`. Note anything missing (a plugin, a codec, a
+   font).
+
+## For Claude through the MCP
+
+Steps the MCP can run that have not been run yet. Claude runs them when the
+MCP server is on, records the result in the PR or #190, and deletes the
+step. A step that turns out to need a person moves up into its section.
+
+- **Restart with "start with cuteNES" on (#233)**, after step 6 of
+  "Servers": `gui.exit`, relaunch with `open build/app/cutenes.app`, and
+  check the cuteNES tools come back with no `/mcp` reconnect.
+- **A hidden game keeps its speed when the display sleeps (#124)**: with
+  Pause When Inactive off and a game running, `pmset displaysleepnow`, wait
+  a minute, and check `core.run_state`'s frame grew by about 60 a second.
+  Restore the setting afterwards.
+- **Old states still load (#92)**: a state saved by cuteNES 0.2.0 (alpha 2)
+  to a file loads into its own game with `gui.load_state_file`.
+- **Game Genie on a real game (G071)**: SXIOPO on Super Mario Bros. keeps
+  the lives at $075A after a life is lost; HELLO1 is refused.

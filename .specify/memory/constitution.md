@@ -59,6 +59,9 @@ cuteNES MUST build and run on Windows, macOS, and Linux from a single codebase.
   be isolated behind interfaces; it MAY NOT leak into the emulation core or UI logic.
 - CI MUST build and run the test suite on all three supported platforms for every
   release.
+- Hands-on (manual) testing is done on macOS only, the maintainer's platform. Windows and
+  Linux are supported on a best-effort basis: CI is their check, and the user-facing
+  documentation MUST say so and ask users there to report bugs.
 
 Rationale: as an open-source project, reach across the three major desktop platforms
 is a founding requirement; Qt was chosen specifically to make this cheap to maintain.
@@ -131,4 +134,4 @@ determinism keep the GUI and automation surfaces from diverging.
 - Feature scope decisions are governed by the specs that reference this constitution;
   expanding scope requires amending the relevant spec, not silent addition.
 
-**Version**: 1.1.0 | **Ratified**: 2026-10-17 | **Last Amended**: 2026-10-27
+**Version**: 1.2.0 | **Ratified**: 2026-10-17 | **Last Amended**: 2026-11-11
