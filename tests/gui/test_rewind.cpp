@@ -214,7 +214,7 @@ TEST(GuiSpeed, SpeedIndicatorsLookLikePausedInTheTopRight)
     EXPECT_TRUE(shows(QStringLiteral("▶▶ UNLIMITED")));
     call(w, "core.pause");
     EXPECT_TRUE(waitUntil([&] { return paused->isVisible(); }));
-    EXPECT_EQ(paused->geometry().center(), w.view()->rect().center()) << "PAUSED stays in the middle";
+    EXPECT_EQ(paused->mapTo(w.view(), paused->rect().center()), w.view()->rect().center()) << "PAUSED stays in the middle";
     // One design at half the size: the same colours and weight, half the
     // type, so half the height.
     EXPECT_EQ(speed->font().pixelSize() * 2, paused->font().pixelSize());

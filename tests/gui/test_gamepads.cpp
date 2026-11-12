@@ -497,3 +497,30 @@ TEST(GuiGamepads, RemappedNavigationDrivesTheLibrary)
     EXPECT_TRUE(waitUntil([&] { return f.w.windowTitle().contains(QStringLiteral("b-second.nes")); }))
         << "Start now starts the game";
 }
+
+// The pause menu works with a pad alone (FR-038, #235): Resume has the
+// focus, the D-pad moves it, and Back resumes, while the game hears none of
+// the presses.
+TEST(GuiGamepads, ThePadUsesThePauseMenu)
+{
+    Fixture f;
+    f.pads->plug(1, "guid-one", "Pad One");
+    f.openGame();
+    call(f.w, "gui.toggle_pause");
+    QWidget* menu = nullptr;
+    ASSERT_TRUE(waitUntil([&] {
+        menu = f.w.findChild<QWidget*>(QStringLiteral("pauseMenu"));
+        return menu && menu->isVisible();
+    }));
+    auto* resume = f.w.findChild<QAbstractButton*>(QStringLiteral("pauseResume"));
+    auto* save = f.w.findChild<QAbstractButton*>(QStringLiteral("pauseSave"));
+    ASSERT_TRUE(waitUntil([&] { return f.w.focusWidget() == resume; })) << "Resume has the focus";
+
+    f.pads->press(1, PadControl::DPadDown);
+    EXPECT_TRUE(waitUntil([&] { return f.w.focusWidget() == save; }));
+    EXPECT_FALSE(holds(f.w, 1, "Down")) << "the game hears no menu presses";
+    f.pads->release(1, PadControl::DPadDown);
+    f.pads->press(1, PadControl::East); // Back
+    f.pads->release(1, PadControl::East);
+    EXPECT_TRUE(waitUntil([&] { return runState(f.w) == "Running"; }));
+}

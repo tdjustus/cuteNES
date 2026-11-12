@@ -206,6 +206,15 @@ frames.
 7. **Given** a state saved by another core version that cannot be loaded,
    **When** it is loaded, **Then** the reason is shown and the game in
    progress is untouched.
+8. **Given** a running game, **When** the user pauses it with Pause, **Then**
+   a pause menu shows over the picture with Resume, Save, Battery Save
+   (only for a game with a save battery) and Quit. Save does what Quick
+   Save does. Battery Save writes the battery save at once. Quit asks first,
+   then closes the game. The menu works with the mouse, the keyboard and a
+   gamepad (#235).
+9. **Given** a game paused any other way (the window lost the focus, a
+   gamepad was unplugged, automation paused it, a state was loaded during play, or a
+   frame was advanced), **Then** PAUSED shows with only a Resume button.
 
 ---
 
@@ -611,6 +620,15 @@ the same arguments. Launch with a ROM argument: no prompt.
 - **FR-037**: The application MUST be able to resume where the user left off:
   an optional automatic state on close, offered when the game is next
   opened (off by default).
+- **FR-038**: A pause the player starts with Pause MUST show a pause menu
+  over the game with Resume, Save, Battery Save and Quit (#235). Battery
+  Save MUST appear only for a game with battery-backed RAM, and MUST write
+  the save at once. Save MUST do what Quick Save does. Quit MUST ask for
+  confirmation, then close the game as Close Game does. Any other pause
+  MUST show PAUSED with only a Resume button. Every button MUST work with
+  the mouse, the keyboard and a gamepad, and MUST run a `gui.*` command, so
+  automation does the same without a dialog. Showing or using the menu MUST
+  NOT run a frame.
 
 **Display and sound**
 

@@ -721,3 +721,42 @@ By hand, on Windows 11 and on a Linux Wayland desktop:
 3. Windows: in Task Manager's Details tab, add the "Efficiency mode"
    column. cuteNES is not in efficiency mode while the game runs, and the
    leaf icon may appear once it is paused.
+
+### The pause menu (#235)
+
+Automated:
+- `GuiPauseMenu.PausingWithPauseShowsTheFullMenuAndRunsNoFrame`: Pause
+  shows Resume, Save and Quit (no Battery Save for a game without a
+  battery), PAUSED stays visible, no frame runs while the menu shows, and
+  Resume plays on and hides it.
+- `GuiPauseMenu.OtherPausesShowOnlyResume`: an automation pause, and Frame
+  Advance after Pause, show only Resume.
+- `GuiPauseMenu.SaveDoesWhatQuickSaveDoes`: Save asks for a name, saves the
+  selected slot, and the game stays paused with the menu.
+- `GuiPauseMenu.BatterySaveShowsForABatteryGameAndWritesAtOnce`: with the
+  write interval set to an hour, Battery Save writes the game's signature
+  to the save file at once.
+- `GuiPauseMenu.WriteBatterySaveNeedsABattery`: `gui.write_battery_save`
+  fails with `NoBattery` for a game without one.
+- `GuiPauseMenu.QuitAsksFirstAndAClientNeverIsAsked`: Cancel keeps the
+  game, Close Game closes it and shows the library, and `gui.close_game`
+  closes without a dialog.
+- `GuiPauseMenu.TheKeyboardMovesBetweenTheButtonsAndEscResumes` and
+  `GuiGamepads.ThePadUsesThePauseMenu`: the arrows and the D-pad move the
+  focus (hidden buttons skipped, wrapping round), the game hears none of
+  it, and Esc or East resumes.
+
+By hand, on each OS:
+1. Open a game with a save battery and press P. Check the menu is legible
+   over a bright and a dark picture, PAUSED is in the middle of the
+   picture, and Resume has a visible focus ring.
+2. Use the menu with the mouse, then with the keyboard alone (arrows,
+   Enter, Space, Esc), then with a gamepad alone (D-pad, South, East).
+3. Battery Save: the "Battery save written" message shows, and the file in
+   the library's `saves` folder has a new modification time.
+4. Quit: Cancel, then Quit again and Close Game. The library shows.
+5. Switch to another application with the game running: only Resume shows
+   while the window is in the background, and the game plays on when you
+   come back.
+6. Fullscreen (F11): the menu is in the middle of the screen and works the
+   same way.

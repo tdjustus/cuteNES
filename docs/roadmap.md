@@ -28,9 +28,8 @@ Two decisions shape everything after 1.0 (both are in
 
 ## 1.0: finishing
 
-One 1.0 feature is still to build: a pause menu (#235), with Resume, Save,
-Battery Save (for games with a save battery) and Quit (with a
-confirmation) buttons. After it, what remains is:
+Every 1.0 feature is merged, the last being the pause menu (#235). What
+remains is:
 
 - the hands-on test pass before the first beta (#190);
 - deciding how the updater's install test can run, since the updater

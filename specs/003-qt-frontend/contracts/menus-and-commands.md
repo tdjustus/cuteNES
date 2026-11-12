@@ -418,11 +418,43 @@ still checks it.
 
 | Command | Returns |
 |---|---|
-| `gui.state` | `page` (`library`, `game` or `key_bindings`), `game` (one is open), `fullscreen`, `scale`, `speed` (percent; 0 is Unlimited), `fastForward`, `rewinding`, `movie` (as `gui.movie_status`), `selectedSlot`, `windows` (as `gui.list_windows`) |
+| `gui.state` | `page` (`library`, `game` or `key_bindings`), `game` (one is open), `pauseMenu` (`full`, `resume` or `none`, above), `fullscreen`, `scale`, `speed` (percent; 0 is Unlimited), `fastForward`, `rewinding`, `movie` (as `gui.movie_status`), `selectedSlot`, `windows` (as `gui.list_windows`) |
 | `gui.list_slots` | For each slot 1-10: `empty`, or `name`, `savedAt` (ISO 8601, UTC), `size`, and the `state` and `thumbnail` file paths; and the game's `selectedSlot` |
 | `gui.list_recent` | Recent games with path, identity and whether the file exists |
 | `gui.library_list` | The browser's entries (data-model "LibraryEntry"), hidden games left out. In GUI mode `session.library_list` returns the same (FR-074) |
 | `gui.library_hidden` | `hidden`: the hidden games (`identity`, `name`) in the file's order (#181) |
+
+## Pause menu (FR-038, #235)
+
+A paused game shows "PAUSED" over the middle of the picture, with buttons
+under it. Which buttons depends on how the game was paused:
+
+- **Paused with Pause** (`gui.toggle_pause`, from the menu, its key, a
+  gamepad hotkey, or a client): the full menu.
+- **Paused any other way**: only Resume. That covers the window losing the
+  focus, an unplugged gamepad, automation (`core.pause` and the advance
+  commands), a state loaded during play, a resume question, and Frame Advance, which
+  leaves the picture clear to study.
+
+| Button | Does | Command |
+|---|---|---|
+| Resume | Plays on | `gui.toggle_pause` |
+| Save | What Quick Save does: asks for a name, then saves to the selected slot | `gui.quick_save` |
+| Battery Save | Writes the battery save now. Shown only for a game with battery-backed RAM | `gui.write_battery_save` |
+| Quit | Asks "Close *game*?", then closes it as Close Game does, back to the library | `gui.close_game` |
+
+- The buttons are in a column, Resume first and focused. The arrow keys
+  (and a gamepad's D-pad) move between them, Enter or Space (a gamepad's
+  confirm button) presses one, and Esc (a gamepad's back button) resumes.
+  While the menu shows, game keys don't reach the game.
+- `gui.write_battery_save` has no arguments. It fails with `NoBattery` for
+  a game without battery RAM, `MoviePlaying` while a movie plays (the RAM
+  is the movie's, #121), and `Busy` when another cuteNES has the game's
+  save. On success it shows "Battery save written" and returns `path`.
+- A client never sees the Quit confirmation: `gui.close_game` closes
+  without asking, as it always has.
+- `gui.state` returns `pauseMenu`: `full`, `resume` (only Resume), or
+  `none`.
 
 ## Status bar and indicator (FR-073)
 

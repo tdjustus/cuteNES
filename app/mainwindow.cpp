@@ -17,6 +17,7 @@
 #include "library/library_browser.hpp"
 #include "library/library_index.hpp"
 #include "media/palettes.hpp"
+#include "widgets/pause_menu.hpp"
 
 #include <cutenes/qt/audio_output.hpp>
 #include <cutenes/qt/emulation_view.hpp>
@@ -296,9 +297,13 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_osdTimer->setSingleShot(true);
     m_osdTimer->setInterval(2500);
     connect(m_osdTimer, &QTimer::timeout, m_osd, &QWidget::hide);
-    m_paused = new QLabel(tr("PAUSED"), m_view);
-    m_paused->setObjectName(QStringLiteral("pausedOverlay"));
-    m_paused->setStyleSheet(overlayStyle(1));
+    m_pauseMenu = new PauseMenu(overlayStyle(1), m_view);
+    connect(m_pauseMenu, &PauseMenu::resumeRequested, this, [this] {
+        if (m_runState == QLatin1String("Paused")) runCommand(QStringLiteral("gui.toggle_pause"));
+    });
+    connect(m_pauseMenu, &PauseMenu::saveRequested, this, [this] { askSaveState(m_host->selectedSlot()); });
+    connect(m_pauseMenu, &PauseMenu::batterySaveRequested, this, [this] { runCommand(QStringLiteral("gui.write_battery_save")); });
+    connect(m_pauseMenu, &PauseMenu::quitRequested, this, &MainWindow::askQuit);
     m_speed = new QLabel(m_view);
     m_speed->setObjectName(QStringLiteral("speedOverlay"));
     m_speed->setStyleSheet(overlayStyle(2));
@@ -311,7 +316,7 @@ MainWindow::MainWindow(const Options& options, QWidget* parent)
     m_movie = new QLabel(m_view);
     m_movie->setObjectName(QStringLiteral("movieOverlay"));
     m_movie->setStyleSheet(overlayStyle(2));
-    for (QLabel* overlay : {m_paused, m_speed, m_fps, m_movie}) {
+    for (QLabel* overlay : {m_speed, m_fps, m_movie}) {
         overlay->setAttribute(Qt::WA_TransparentForMouseEvents);
         overlay->hide();
     }
@@ -1013,7 +1018,8 @@ void MainWindow::padControl(Port port, qt::PadControl control, bool pressed)
         return;
     }
 
-    if (free && m_pages->currentWidget() == m_view && hasGame()) {
+    // The pause menu takes the pad as the rest of the UI does (FR-038).
+    if (free && m_pages->currentWidget() == m_view && hasGame() && !m_pauseMenu->isVisible()) {
         if (m_input.handlePad(port, control, true)) pushInput();
         return;
     }
@@ -2208,10 +2214,23 @@ void MainWindow::followScreen()
 void MainWindow::updateOverlays()
 {
     const bool game = hasGame();
-    m_paused->setVisible(game && m_runState == QLatin1String("Paused"));
-    m_paused->adjustSize();
-    m_paused->move(m_view->rect().center() - m_paused->rect().center());
-    m_paused->raise();
+    // FR-038: the full menu after the player's Pause, only Resume after any
+    // other pause. Resume takes the focus, for the keys and the gamepad.
+    PauseMenu::Mode menu = PauseMenu::Mode::None;
+    if (game && m_host && m_runState == QLatin1String("Paused")) {
+        menu = m_host->pauseMenu() == GuiHost::PauseMenu::Full ? PauseMenu::Mode::Full : PauseMenu::Mode::Resume;
+    }
+    QWidget* focus = focusWidget();
+    const bool hadFocus = focus && m_pauseMenu->isAncestorOf(focus);
+    m_pauseMenu->setMode(menu, m_host && m_host->gameHasBattery());
+    // PAUSED stays in the middle of the picture; the buttons hang under it.
+    m_pauseMenu->move(m_view->rect().center() - m_pauseMenu->label()->geometry().center());
+    m_pauseMenu->raise();
+    if (menu != PauseMenu::Mode::None && m_pages->currentWidget() == m_view && (!hadFocus || !focus->isVisible())) {
+        m_pauseMenu->resumeButton()->setFocus(Qt::OtherFocusReason);
+    } else if (menu == PauseMenu::Mode::None && hadFocus) {
+        m_view->setFocus(Qt::OtherFocusReason);
+    }
 
     const Playback now = playback();
     const bool faster = now.speed == 0 || now.speed > 1;
@@ -2281,6 +2300,27 @@ void MainWindow::placeOsd()
 {
     constexpr int kMargin = 12;
     m_osd->move(kMargin, m_pages->height() - m_osd->height() - kMargin);
+}
+
+void MainWindow::pauseMenuChanged()
+{
+    QMetaObject::invokeMethod(this, [this] { updateOverlays(); }, Qt::QueuedConnection);
+}
+
+void MainWindow::askQuit()
+{
+    if (!hasGame() || findChild<QMessageBox*>(QStringLiteral("pauseQuitConfirmation"))) return;
+    auto* box = new QMessageBox(QMessageBox::Question, tr("Quit"), tr("Close %1?").arg(m_romName),
+        QMessageBox::Cancel, this);
+    box->setObjectName(QStringLiteral("pauseQuitConfirmation"));
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    if (m_host->gameHasBattery()) box->setInformativeText(tr("Its battery save is written first."));
+    QPushButton* close = box->addButton(tr("Close Game"), QMessageBox::AcceptRole);
+    box->setDefaultButton(QMessageBox::Cancel);
+    connect(box, &QMessageBox::buttonClicked, this, [this, close](QAbstractButton* clicked) {
+        if (clicked == close) runCommand(QStringLiteral("gui.close_game"));
+    });
+    box->open(); // never blocks: automation keeps running
 }
 
 void MainWindow::askSaveState(int slot)
@@ -2477,6 +2517,8 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
             || QApplication::activeModalWidget() || m_pages->currentWidget() != m_view) {
             break;
         }
+        // The pause menu has the keys; a release still reaches the game.
+        if (m_pauseMenu->isVisible() && event->type() == QEvent::KeyPress) break;
         if (key->isAutoRepeat()) {
             return m_input.isBound(key->key());
         }
